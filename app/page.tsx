@@ -1,17 +1,13 @@
-"use client"
+import React from 'react'
+import ChatInputBox from './_components/ChatInputBox'
 
-import { Button } from "@/components/ui/button";
-import { useTheme } from "next-themes";
-
-export default function Home() {
-  const { setTheme } = useTheme();
-
+const Page = () => {
   return (
-    <div>
-      <h1>DISI AI</h1>
-      <Button onClick={() => setTheme("dark")}>Dark</Button>
-      <Button onClick={() => setTheme("light")}>Light</Button>
+    <div className="flex flex-col h-[calc(100vh-4rem)] items-center justify-end pb-10">
+      <ChatInputBox />
     </div>
-  );
+  )
 }
+
+export default Page
 
