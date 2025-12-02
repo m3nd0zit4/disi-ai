@@ -188,3 +188,18 @@
     letter-spacing: var(--tracking-normal);
   }
 }
+
+@font-face {
+    font-family: "Milven";
+    src: url("../public/fonts/Milven-Regular.otf");
+    font-weight: normal;
+    font-style: normal;
+}
+
+.logo-font {
+    font-family: "Milven", sans-serif;
+    font-weight: normal; 
+    font-size: 2rem;
+    line-height: 1; 
+}
+    
