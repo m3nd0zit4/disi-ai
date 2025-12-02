@@ -8,7 +8,6 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarHeader,
-  SidebarSeparator,
 } from "@/components/ui/sidebar"
 import Image from "next/image"
 import { Moon, Sun, Plus } from "lucide-react"
