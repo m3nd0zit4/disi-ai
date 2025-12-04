@@ -1,16 +1,18 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { motion, useMotionValue, useSpring, useTransform, MotionValue, Reorder } from "framer-motion";
 import AI_MODELS from "@/shared/AiModelList";
+import { AIModel } from "@/types/AiModel";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { Plus } from "lucide-react";
+import { useAIContext } from "@/context/AIContext";
 
 // Constants for the dock effect - Smaller icons 
 const BASE_WIDTH = 40;
 const DISTANCE = 140;
-const MAGNIFICATION = 60;
+const MAGNIFICATION = 50;
 const MAX_VISIBLE_ITEMS = 8;
 
 function DockIcon({
@@ -26,7 +28,7 @@ function DockIcon({
   alt: string;
   isSelected: boolean;
   onClick: () => void;
-  item: any;
+  item: AIModel;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -94,16 +96,12 @@ export default function AiDock() {
   // Actually, if we reorder, we probably want to reorder the underlying list.
   
   const [items, setItems] = useState(AI_MODELS.slice(0, MAX_VISIBLE_ITEMS));
-  const [selectedModels, setSelectedModels] = useState<string[]>(AI_MODELS[0]?.model ? [AI_MODELS[0].model] : []);
+  const { selectedModels, toggleModelSelection } = useAIContext();
 
   const hasMore = AI_MODELS.length > MAX_VISIBLE_ITEMS;
 
   const toggleSelection = (model: string) => {
-    setSelectedModels((prev) => 
-      prev.includes(model) 
-        ? prev.filter((m) => m !== model) 
-        : [...prev, model]
-    );
+    toggleModelSelection(model);
   };
 
   return (
