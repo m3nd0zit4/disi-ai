@@ -21,8 +21,13 @@ import { SearchButton } from "./actions/SearchButton"
 import { CodeButton } from "./actions/CodeButton"
 import { ImageButton } from "./actions/ImageButton"
 import { VideoButton } from "./actions/VideoButton"
+import { useAIContext } from "@/context/AIContext"
+import { useCommonTools } from "@/hooks/useCommonTools"
 
 export default function ChatInputBox() {
+  const { selectedModels } = useAIContext()
+  const commonCapabilities = useCommonTools(selectedModels)
+
   const [prompt, setPrompt] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   
@@ -32,19 +37,15 @@ export default function ChatInputBox() {
   
   // State for dropdowns
   const [showAddMenu, setShowAddMenu] = useState(false)
-  const [showConnectMenu, setShowConnectMenu] = useState(false)
+
 
   const addMenuRef = useRef<HTMLDivElement>(null)
-  const connectMenuRef = useRef<HTMLDivElement>(null)
 
   // Close menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
         setShowAddMenu(false)
-      }
-      if (connectMenuRef.current && !connectMenuRef.current.contains(event.target as Node)) {
-        setShowConnectMenu(false)
       }
     }
 
@@ -125,25 +126,33 @@ export default function ChatInputBox() {
               </div>
 
               {/* Action Buttons */}
-              <SearchButton 
-                isActive={isSearchActive} 
-                onClick={() => setIsSearchActive(!isSearchActive)} 
-              />
+              {commonCapabilities?.search && (
+                <SearchButton 
+                  isActive={isSearchActive} 
+                  onClick={() => setIsSearchActive(!isSearchActive)} 
+                />
+              )}
               
-              <CodeButton 
-                isActive={activeMode === 'code'} 
-                onClick={() => toggleMode('code')} 
-              />
+              {commonCapabilities?.code && (
+                <CodeButton 
+                  isActive={activeMode === 'code'} 
+                  onClick={() => toggleMode('code')} 
+                />
+              )}
               
-              <ImageButton 
-                isActive={activeMode === 'image'} 
-                onClick={() => toggleMode('image')} 
-              />
+              {commonCapabilities?.image && (
+                <ImageButton 
+                  isActive={activeMode === 'image'} 
+                  onClick={() => toggleMode('image')} 
+                />
+              )}
               
-              <VideoButton 
-                isActive={activeMode === 'video'} 
-                onClick={() => toggleMode('video')} 
-              />
+              {commonCapabilities?.video && (
+                <VideoButton 
+                  isActive={activeMode === 'video'} 
+                  onClick={() => toggleMode('video')} 
+                />
+              )}
             </div>
             
             <div className="flex items-center gap-2">

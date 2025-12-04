@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "./theme-provider";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+import { AIContextProvider } from "@/context/AIContext";
+import { SidebarProvider } from "@/components/ui/sidebar"
 import { AppSidebar } from "./_components/AppSidebar"
 import AppHeader from "./_components/AppHeader";
 
@@ -32,13 +33,15 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ThemeProvider attribute="class">
-          <SidebarProvider>
-            <AppSidebar />
-            <div className="w-full">
-              <AppHeader />
-              {children}
-            </div>
-          </SidebarProvider>
+          <AIContextProvider>
+            <SidebarProvider>
+              <AppSidebar />
+              <div className="w-full">
+                <AppHeader />
+                {children}
+              </div>
+            </SidebarProvider>
+          </AIContextProvider>
         </ThemeProvider>
       </body>
     </html>
