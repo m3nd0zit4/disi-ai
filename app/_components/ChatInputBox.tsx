@@ -1,97 +1,69 @@
-"use client"
+"use client";
 
 import {
   PromptInput,
   PromptInputAction,
   PromptInputActions,
   PromptInputTextarea,
-} from "@/components/ui/prompt-input"
-import { Button } from "@/components/ui/button"
-import {
-  ArrowUp,
-  Mic,
-  Plus,
-  Github,
-  Figma,
-  FolderOpen,
-} from "lucide-react"
-import { useState, useRef, useEffect } from "react"
-import { cn } from "@/lib/utils"
-import { SearchButton } from "./actions/SearchButton"
-import { CodeButton } from "./actions/CodeButton"
-import { ImageButton } from "./actions/ImageButton"
-import { VideoButton } from "./actions/VideoButton"
-import { useAIContext } from "@/context/AIContext"
-import { useCommonTools } from "@/hooks/useCommonTools"
-import { ConversationTurn as ConversationTurnType } from "@/types/ChatMessage"
-import AI_MODELS from "@/shared/AiModelList"
+} from "@/components/ui/prompt-input";
+import { Button } from "@/components/ui/button";
+import { ArrowUp, Mic, Plus, Github, Figma, FolderOpen } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { cn } from "@/lib/utils";
+import { SearchButton } from "./actions/SearchButton";
+import { CodeButton } from "./actions/CodeButton";
+import { ImageButton } from "./actions/ImageButton";
+import { VideoButton } from "./actions/VideoButton";
+import { useAIContext } from "@/context/AIContext";
+import { useCommonTools } from "@/hooks/useCommonTools";
 
-export default function ChatInputBox() {
-  const { selectedModels } = useAIContext()
-  const commonCapabilities = useCommonTools(selectedModels)
+interface ChatInputBoxProps {
+  onSendMessage?: (message: string) => void;
+}
 
-  const [prompt, setPrompt] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  
-  // State for active toggles
-  const [isSearchActive, setIsSearchActive] = useState(false)
-  const [activeMode, setActiveMode] = useState<'code' | 'image' | 'video' | null>(null)
-  
-  // State for dropdowns
-  const [showAddMenu, setShowAddMenu] = useState(false)
+export default function ChatInputBox({ onSendMessage }: ChatInputBoxProps) {
+  const { selectedModels, hasModelsSelected } = useAIContext();
 
+  const modelIds = selectedModels.map((m) => m.modelId);
+  const commonCapabilities = useCommonTools(modelIds);
 
-  const addMenuRef = useRef<HTMLDivElement>(null)
+  const [prompt, setPrompt] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Close menus when clicking outside
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [activeMode, setActiveMode] = useState<"code" | "image" | "video" | null>(null);
+  const [showAddMenu, setShowAddMenu] = useState(false);
+
+  const addMenuRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
-        setShowAddMenu(false)
+        setShowAddMenu(false);
       }
-    }
+    };
 
-    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside)
-    }
-  }, [])
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const handleSubmit = () => {
-    if (!prompt.trim()) return
+    if (!prompt.trim() || !hasModelsSelected) return;
+
     setIsLoading(true);
+    onSendMessage?.(prompt);
+    setPrompt("");
 
-    const newTurn: ConversationTurnType = {
-      userMessage: {
-        id: Date.now().toString(),
-        role: "user",
-        content: prompt,
-        timestamp: new Date(),
-      },
-      modelResponse: selectedModels.map(modelId => {
-        const model = AI_MODELS.find(m => m.model === modelId)
-        return {
-          modelId,
-          subModelId: model?.subModel[0]?.id || "",
-          content: "",
-          isLoading: true,
-          isExpanded: true,
-          responseTime: 0,
-        }
-      })
-    }
-
-    // Simulate API call
-    console.log("Processing:", prompt)
     setTimeout(() => {
-      setPrompt("")
-      setIsLoading(false)
-    }, 1500)
-  }
+      setIsLoading(false);
+    }, 500);
+  };
 
-  const toggleMode = (mode: 'code' | 'image' | 'video') => {
-    setActiveMode(prev => prev === mode ? null : mode)
-  }
+  const toggleMode = (mode: "code" | "image" | "video") => {
+    setActiveMode((prev) => (prev === mode ? null : mode));
+  };
 
   return (
     <div className="absolute inset-x-0 bottom-0 mx-auto max-w-3xl px-3 pb-3 md:px-5 md:pb-5">
@@ -100,17 +72,22 @@ export default function ChatInputBox() {
         value={prompt}
         onValueChange={setPrompt}
         onSubmit={handleSubmit}
+        disabled={!hasModelsSelected}
         className="border-input bg-popover relative z-10 w-full rounded-3xl border p-0 pt-1 shadow-xs"
       >
         <div className="flex flex-col">
           <PromptInputTextarea
-            placeholder="Ask anything"
+            placeholder={
+              hasModelsSelected
+                ? "Pregunta lo que quieras..."
+                : "Selecciona un modelo en el dock primero..."
+            }
             className="min-h-[44px] pt-3 pl-4 text-base leading-[1.3] sm:text-base md:text-base"
+            disabled={!hasModelsSelected}
           />
 
           <PromptInputActions className="mt-5 flex w-full items-center justify-between gap-2 px-3 pb-3">
             <div className="flex items-center gap-2">
-              {/* Add Files Dropdown */}
               <div className="relative" ref={addMenuRef}>
                 <PromptInputAction tooltip="Add Files">
                   <Button
@@ -121,11 +98,12 @@ export default function ChatInputBox() {
                       showAddMenu && "bg-primary text-primary-foreground rotate-45"
                     )}
                     onClick={() => setShowAddMenu(!showAddMenu)}
+                    disabled={!hasModelsSelected}
                   >
                     <Plus size={18} />
                   </Button>
                 </PromptInputAction>
-                
+
                 {showAddMenu && (
                   <div className="absolute bottom-12 left-0 z-50 min-w-[200px] overflow-hidden rounded-xl border bg-popover p-1 shadow-md animate-in fade-in zoom-in-95 duration-200 slide-in-from-bottom-2">
                     <div className="grid gap-0.5">
@@ -146,63 +124,42 @@ export default function ChatInputBox() {
                 )}
               </div>
 
-              {/* Action Buttons */}
               {commonCapabilities?.search && (
-                <SearchButton 
-                  isActive={isSearchActive} 
-                  onClick={() => setIsSearchActive(!isSearchActive)} 
-                />
+                <SearchButton isActive={isSearchActive} onClick={() => setIsSearchActive(!isSearchActive)} />
               )}
-              
+
               {commonCapabilities?.code && (
-                <CodeButton 
-                  isActive={activeMode === 'code'} 
-                  onClick={() => toggleMode('code')} 
-                />
+                <CodeButton isActive={activeMode === "code"} onClick={() => toggleMode("code")} />
               )}
-              
+
               {commonCapabilities?.image && (
-                <ImageButton 
-                  isActive={activeMode === 'image'} 
-                  onClick={() => toggleMode('image')} 
-                />
+                <ImageButton isActive={activeMode === "image"} onClick={() => toggleMode("image")} />
               )}
-              
+
               {commonCapabilities?.video && (
-                <VideoButton 
-                  isActive={activeMode === 'video'} 
-                  onClick={() => toggleMode('video')} 
-                />
+                <VideoButton isActive={activeMode === "video"} onClick={() => toggleMode("video")} />
               )}
             </div>
-            
+
             <div className="flex items-center gap-2">
               <PromptInputAction tooltip="Voice input">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-9 rounded-full"
-                >
+                <Button variant="outline" size="icon" className="size-9 rounded-full" disabled={!hasModelsSelected}>
                   <Mic size={18} />
                 </Button>
               </PromptInputAction>
 
               <Button
                 size="icon"
-                disabled={!prompt.trim() || isLoading}
+                disabled={!prompt.trim() || isLoading || !hasModelsSelected}
                 onClick={handleSubmit}
                 className="size-9 rounded-full"
               >
-                {!isLoading ? (
-                  <ArrowUp size={18} />
-                ) : (
-                  <span className="size-3 rounded-xs bg-white" />
-                )}
+                {!isLoading ? <ArrowUp size={18} /> : <span className="size-3 rounded-xs bg-white" />}
               </Button>
             </div>
           </PromptInputActions>
         </div>
       </PromptInput>
     </div>
-  )
+  );
 }
