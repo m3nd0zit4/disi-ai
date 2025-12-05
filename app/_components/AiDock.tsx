@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 import { Plus } from "lucide-react";
 import { useAIContext } from "@/context/AIContext";
 
-// Constants for the dock effect - Smaller icons 
 const BASE_WIDTH = 40;
 const DISTANCE = 140;
 const MAGNIFICATION = 50;
@@ -55,11 +54,11 @@ function DockIcon({
     >
       {src ? (
         <div className="relative w-full h-full p-2">
-            <Image src={src} alt={alt} fill className="object-contain pointer-events-none" />
+          <Image src={src} alt={alt} fill className="object-contain pointer-events-none" />
         </div>
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-muted rounded-full">
-            <span className="text-xs font-bold">{alt[0]}</span>
+          <span className="text-xs font-bold">{alt[0]}</span>
         </div>
       )}
     </Reorder.Item>
@@ -67,42 +66,33 @@ function DockIcon({
 }
 
 function MoreIcon({ mouseX }: { mouseX: MotionValue }) {
-    const ref = useRef<HTMLDivElement>(null);
-  
-    const distance = useTransform(mouseX, (val) => {
-      const bounds = ref.current?.getBoundingClientRect() ?? { x: 0, width: 0 };
-      return val - bounds.x - bounds.width / 2;
-    });
-  
-    const widthSync = useTransform(distance, [-DISTANCE, 0, DISTANCE], [BASE_WIDTH, MAGNIFICATION, BASE_WIDTH]);
-    const width = useSpring(widthSync, { mass: 0.1, stiffness: 150, damping: 12 });
-  
-    return (
-      <motion.div
-        ref={ref}
-        style={{ width }}
-        className="aspect-square rounded-full flex items-center justify-center cursor-pointer hover:bg-accent bg-muted text-muted-foreground"
-      >
-        <Plus className="w-1/2 h-1/2" />
-      </motion.div>
-    );
-  }
+  const ref = useRef<HTMLDivElement>(null);
+
+  const distance = useTransform(mouseX, (val) => {
+    const bounds = ref.current?.getBoundingClientRect() ?? { x: 0, width: 0 };
+    return val - bounds.x - bounds.width / 2;
+  });
+
+  const widthSync = useTransform(distance, [-DISTANCE, 0, DISTANCE], [BASE_WIDTH, MAGNIFICATION, BASE_WIDTH]);
+  const width = useSpring(widthSync, { mass: 0.1, stiffness: 150, damping: 12 });
+
+  return (
+    <motion.div
+      ref={ref}
+      style={{ width }}
+      className="aspect-square rounded-full flex items-center justify-center cursor-pointer hover:bg-accent bg-muted text-muted-foreground"
+    >
+      <Plus className="w-1/2 h-1/2" />
+    </motion.div>
+  );
+}
 
 export default function AiDock() {
   const mouseX = useMotionValue(Infinity);
-  // Initialize with all models, but we will only render visible ones in the dock if needed, 
-  // or maybe the user wants to reorder ALL of them? 
-  // For now, let's stick to the visible slice logic but allow reordering within that slice.
-  // Actually, if we reorder, we probably want to reorder the underlying list.
-  
   const [items, setItems] = useState(AI_MODELS.slice(0, MAX_VISIBLE_ITEMS));
-  const { selectedModels, toggleModelSelection } = useAIContext();
+  const { isModelSelected, toggleModel } = useAIContext();
 
   const hasMore = AI_MODELS.length > MAX_VISIBLE_ITEMS;
-
-  const toggleSelection = (model: string) => {
-    toggleModelSelection(model);
-  };
 
   return (
     <motion.div
@@ -110,12 +100,7 @@ export default function AiDock() {
       onMouseLeave={() => mouseX.set(Infinity)}
       className="mx-auto flex h-16 items-end gap-4 rounded-2xl bg-background/50 px-4 pb-3 border shadow-sm"
     >
-      <Reorder.Group 
-        axis="x" 
-        values={items} 
-        onReorder={setItems} 
-        className="flex items-end gap-4"
-      >
+      <Reorder.Group axis="x" values={items} onReorder={setItems} className="flex items-end gap-4">
         {items.map((model) => (
           <DockIcon
             key={model.model}
@@ -123,8 +108,8 @@ export default function AiDock() {
             mouseX={mouseX}
             src={model.icon}
             alt={model.model}
-            isSelected={selectedModels.includes(model.model)}
-            onClick={() => toggleSelection(model.model)}
+            isSelected={isModelSelected(model.model)}
+            onClick={() => toggleModel(model.model)}
           />
         ))}
       </Reorder.Group>

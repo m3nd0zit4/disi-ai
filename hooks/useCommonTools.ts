@@ -8,15 +8,12 @@ export function useCommonTools(selectedModelIds: string[]) {
       return null;
     }
 
-    // Get the actual model objects for the selected IDs
     const selectedModels = AI_MODELS.filter(model => 
       selectedModelIds.includes(model.model)
     );
 
     if (selectedModels.length === 0) return null;
 
-    // Start with the capabilities of the first selected model (using its first submodel as reference)
-    // We assume the first submodel represents the main capabilities for now
     const firstModel = selectedModels[0];
     const firstSubModel = firstModel.subModel[0];
     
@@ -24,10 +21,9 @@ export function useCommonTools(selectedModelIds: string[]) {
 
     const capabilities: ModelCapabilities = { ...firstSubModel.capabilities };
 
-    // Intersect with all other selected models
     for (let i = 1; i < selectedModels.length; i++) {
       const model = selectedModels[i];
-      const subModel = model.subModel[0]; // Again, using first submodel as reference
+      const subModel = model.subModel[0];
       
       if (!subModel) continue;
 
