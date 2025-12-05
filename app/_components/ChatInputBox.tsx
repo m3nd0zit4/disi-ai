@@ -23,6 +23,8 @@ import { ImageButton } from "./actions/ImageButton"
 import { VideoButton } from "./actions/VideoButton"
 import { useAIContext } from "@/context/AIContext"
 import { useCommonTools } from "@/hooks/useCommonTools"
+import { ConversationTurn as ConversationTurnType } from "@/types/ChatMessage"
+import AI_MODELS from "@/shared/AiModelList"
 
 export default function ChatInputBox() {
   const { selectedModels } = useAIContext()
@@ -57,8 +59,27 @@ export default function ChatInputBox() {
 
   const handleSubmit = () => {
     if (!prompt.trim()) return
+    setIsLoading(true);
 
-    setIsLoading(true)
+    const newTurn: ConversationTurnType = {
+      userMessage: {
+        id: Date.now().toString(),
+        role: "user",
+        content: prompt,
+        timestamp: new Date(),
+      },
+      modelResponse: selectedModels.map(modelId => {
+        const model = AI_MODELS.find(m => m.model === modelId)
+        return {
+          modelId,
+          subModelId: model?.subModel[0]?.id || "",
+          content: "",
+          isLoading: true,
+          isExpanded: true,
+          responseTime: 0,
+        }
+      })
+    }
 
     // Simulate API call
     console.log("Processing:", prompt)
