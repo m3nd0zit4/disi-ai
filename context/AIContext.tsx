@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import AI_MODELS from '@/shared/AiModelList';
 
-interface SelectedModel {
+export interface SelectedModel {
   modelId: string;
   subModelId: string;
 }

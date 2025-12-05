@@ -24,8 +24,7 @@ interface ChatInputBoxProps {
 export default function ChatInputBox({ onSendMessage }: ChatInputBoxProps) {
   const { selectedModels, hasModelsSelected } = useAIContext();
 
-  const modelIds = selectedModels.map((m) => m.modelId);
-  const commonCapabilities = useCommonTools(modelIds);
+  const commonCapabilities = useCommonTools(selectedModels);
 
   const [prompt, setPrompt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
