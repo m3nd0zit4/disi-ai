@@ -23,7 +23,7 @@ const Page = () => {
       content: '',
       isLoading: true,
       isExpanded: index < 2, // Primeras 2 expandidas
-      responseTime: undefined,
+      responseTime: 0, // Will be updated when response arrives
       error: undefined,
     }));
 
