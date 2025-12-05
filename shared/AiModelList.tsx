@@ -240,7 +240,7 @@ const AI_MODELS: AIModel[] = [
                 enabled: true, 
                 id: "deepseek-r1",
                 capabilities: {
-                    search: false,
+                    search: true,
                     code: true,
                     image: false,
                     video: false,
@@ -255,7 +255,7 @@ const AI_MODELS: AIModel[] = [
                 capabilities: {
                     search: true,
                     code: true,
-                    image: true,
+                    image: false,
                     video: false,
                     files: { github: true, figma: false, local: true }
                 }
