@@ -6,6 +6,8 @@ import { AIContextProvider } from "@/context/AIContext";
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { AppSidebar } from "./_components/AppSidebar"
 import AppHeader from "./_components/AppHeader";
+import ConvexClientProvider from './ConvexClientProvider'
+import { ClerkProvider } from "@clerk/nextjs";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,22 +30,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <ThemeProvider attribute="class">
-          <AIContextProvider>
-            <SidebarProvider>
-              <AppSidebar />
-              <div className="w-full">
-                <AppHeader />
-                {children}
-              </div>
-            </SidebarProvider>
-          </AIContextProvider>
-        </ThemeProvider>
-      </body>
-    </html>
+    <ClerkProvider>
+      <ConvexClientProvider>
+        <html lang="en" suppressHydrationWarning>
+          <body
+            className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+          >
+            <ThemeProvider attribute="class">
+              <AIContextProvider>
+                <SidebarProvider>
+                  <AppSidebar />
+                  <div className="w-full">
+                    <AppHeader />
+                        {children}
+                  </div>
+                </SidebarProvider>
+              </AIContextProvider>
+            </ThemeProvider>
+          </body>
+        </html>
+      </ConvexClientProvider>
+    </ClerkProvider>
   );
 }

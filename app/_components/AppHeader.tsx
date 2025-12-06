@@ -10,7 +10,7 @@ const AppHeader = () => {
         <div className="flex-1 flex justify-center">
           <AiDock />
         </div>
-        <Button>
+        <Button className="cursor-pointer">
           Sign In
         </Button>
     </div>
