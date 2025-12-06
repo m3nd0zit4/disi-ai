@@ -12,6 +12,7 @@ import {
 import Image from "next/image"
 import { Moon, Sun, Plus } from "lucide-react"
 import { useTheme } from "next-themes"
+import { SignInButton } from "@clerk/nextjs"
 
 export function AppSidebar() {
     const { theme, setTheme } = useTheme();
@@ -31,7 +32,7 @@ export function AppSidebar() {
                             { theme === 'light'? <Button variant={'ghost'} onClick={() => setTheme('dark')}> <Sun/> </Button>: <Button variant={'ghost'} onClick={() => setTheme('light')}> <Moon/> </Button>}
                         </div>
                     </div>
-                    <Button className="mt-7 w-full justify-start"><Plus/> New Chat</Button>
+                    <Button className="mt-7 w-full justify-start cursor-pointer"><Plus/> New Chat</Button>
                 </div>
             </SidebarHeader>
             <SidebarContent>
@@ -41,8 +42,12 @@ export function AppSidebar() {
                 </SidebarGroup>
             </SidebarContent>
         <SidebarFooter>
+            {/* SignIn and SignUp */}
             <div className="p-3">
-                <Button variant={'outline'} className="w-full justify-center">Sign In / Sign Up</Button>
+                <SignInButton>
+                    <Button variant={'outline'} className="w-full justify-center cursor-pointer">Sign In </Button>
+                </SignInButton>
+
             </div>
         </SidebarFooter>
         </Sidebar>
