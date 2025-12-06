@@ -1,6 +1,6 @@
-import React from 'react'
+"use client"
+
 import { SidebarTrigger } from '@/components/ui/sidebar'
-import { Button } from '@/components/ui/button'
 import AiDock from './AiDock'
 
 const AppHeader = () => {
@@ -10,9 +10,6 @@ const AppHeader = () => {
         <div className="flex-1 flex justify-center">
           <AiDock />
         </div>
-        <Button className="cursor-pointer">
-          Sign In
-        </Button>
     </div>
   )
 }
