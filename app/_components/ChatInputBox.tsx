@@ -11,7 +11,7 @@ import { ArrowUp, Mic, Plus, Github, Figma, FolderOpen } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { SearchButton } from "./actions/SearchButton";
-import { CodeButton } from "./actions/CodeButton";
+import { DeepThoughtButton } from "./actions/DeepThoughtButton";
 import { ImageButton } from "./actions/ImageButton";
 import { VideoButton } from "./actions/VideoButton";
 import { useAIContext } from "@/context/AIContext";
@@ -31,7 +31,7 @@ export default function ChatInputBox({ onSendMessage }: ChatInputBoxProps) {
   const [isLoading, setIsLoading] = useState(false);
 
   const [isSearchActive, setIsSearchActive] = useState(false);
-  const [activeMode, setActiveMode] = useState<"code" | "image" | "video" | null>(null);
+  const [activeMode, setActiveMode] = useState<"image" | "video" | "deepThought" | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
 
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -61,7 +61,7 @@ export default function ChatInputBox({ onSendMessage }: ChatInputBoxProps) {
     }, 500);
   };
 
-  const toggleMode = (mode: "code" | "image" | "video") => {
+  const toggleMode = (mode: "image" | "video" | "deepThought") => {
     setActiveMode((prev) => (prev === mode ? null : mode));
   };
 
@@ -128,8 +128,8 @@ export default function ChatInputBox({ onSendMessage }: ChatInputBoxProps) {
                 <SearchButton isActive={isSearchActive} onClick={() => setIsSearchActive(!isSearchActive)} />
               )}
 
-              {commonCapabilities?.code && (
-                <CodeButton isActive={activeMode === "code"} onClick={() => toggleMode("code")} />
+              {commonCapabilities?.deepthought && (
+                <DeepThoughtButton isActive={activeMode === "deepThought"} onClick={() => toggleMode("deepThought")} />
               )}
 
               {commonCapabilities?.image && (

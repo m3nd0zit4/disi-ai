@@ -28,13 +28,9 @@ export function useCommonTools(selectedModelIds: string[]) {
       if (!subModel) continue;
 
       capabilities.search = capabilities.search && subModel.capabilities.search;
-      capabilities.code = capabilities.code && subModel.capabilities.code;
+      capabilities.deepthought = capabilities.deepthought && subModel.capabilities.deepthought;
       capabilities.image = capabilities.image && subModel.capabilities.image;
       capabilities.video = capabilities.video && subModel.capabilities.video;
-      
-      capabilities.files.github = capabilities.files.github && subModel.capabilities.files.github;
-      capabilities.files.figma = capabilities.files.figma && subModel.capabilities.files.figma;
-      capabilities.files.local = capabilities.files.local && subModel.capabilities.files.local;
     }
 
     return capabilities;

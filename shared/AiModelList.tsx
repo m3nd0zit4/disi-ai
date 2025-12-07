@@ -8,96 +8,77 @@ const AI_MODELS: AIModel[] = [
         enabled: true,
         subModel: [
             { 
-                name: "GPT 3.5", 
+                name: "GPT 5.1", 
                 premium: false, 
                 enabled: true, 
-                id: "gpt-3.5",
+                id: "gpt-5.1-2025-11-13",
                 capabilities: {
                     search: true,
-                    code: true,
-                    image: false,
-                    video: false,
-                    files: { github: false, figma: false, local: true }
-                }
-            },
-            { 
-                name: "GPT 3.5 turbo", 
-                premium: false, 
-                enabled: true, 
-                id: "gpt-3.5-turbo",
-                capabilities: {
-                    search: true,
-                    code: true,
-                    image: false,
-                    video: false,
-                    files: { github: true, figma: false, local: true }
-                }
-            },
-            { 
-                name: "GPT 4.1 mini", 
-                premium: false, 
-                enabled: true, 
-                id: "gpt-4.1-mini",
-                capabilities: {
-                    search: true,
-                    code: true,
+                    deepthought: false,
                     image: true,
                     video: false,
-                    files: { github: true, figma: false, local: true }
-                }
-            },
-            { 
-                name: "GPT 4.1", 
-                premium: true, 
-                enabled: true, 
-                id: "gpt-4.1",
-                capabilities: {
-                    search: true,
-                    code: true,
-                    image: true,
-                    video: false,
-                    files: { github: true, figma: false, local: true }
-                }
-            },
-            { 
-                name: "GPT 5 nano", 
-                premium: false, 
-                enabled: true, 
-                id: "gpt-5-nano",
-                capabilities: {
-                    search: true,
-                    code: true,
-                    image: true,
-                    video: false,
-                    files: { github: true, figma: false, local: true }
                 }
             },
             { 
                 name: "GPT 5 mini", 
                 premium: false, 
                 enabled: true, 
-                id: "gpt-5-mini",
+                id: "gpt-5-mini-2025-08-07",
                 capabilities: {
                     search: true,
-                    code: true,
+                    deepthought: false,
+                    image: false,
+                    video: false,
+                }
+            },
+            { 
+                name: "GPT 5 nano", 
+                premium: false, 
+                enabled: true, 
+                id: "gpt-5-nano-2025-08-07",
+                capabilities: {
+                    search: true,
+                    deepthought: false,
                     image: true,
-                    video: true,
-                    files: { github: true, figma: false, local: true }
+                    video: false,
+                }
+            },
+            { 
+                name: "GPT 5 pro", 
+                premium: true, 
+                enabled: true, 
+                id: "gpt-5-pro-2025-10-06",
+                capabilities: {
+                    search: true,
+                    deepthought: false,
+                    image: true,
+                    video: false,
                 }
             },
             { 
                 name: "GPT 5", 
                 premium: true, 
                 enabled: true, 
-                id: "gpt-5",
+                id: "gpt-5-2025-08-07",
                 capabilities: {
                     search: true,
-                    code: true,
+                    deepthought: false,
                     image: true,
-                    video: true,
-                    files: { github: true, figma: true, local: true }
+                    video: false,
                 }
-            }
+            },
+            { 
+                name: "GPT 4.1", 
+                premium: false, 
+                enabled: true, 
+                id: "gpt-4.1-2025-04-14",
+                capabilities: {
+                    search: true,
+                    deepthought: false,
+                    image: true,
+                    video: false,
+                }
+            },
         ],
     },
     {
@@ -107,42 +88,75 @@ const AI_MODELS: AIModel[] = [
         enabled: true,
         subModel: [
             { 
-                name: "Gemini 2.5 Lite", 
+                name: "Gemini 3 Pro Preview", 
                 premium: false, 
                 enabled: true, 
-                id: "gemini-2.5-flash-lite",
+                id: "gemini-3-pro-preview",
                 capabilities: {
                     search: true,
-                    code: true,
+                    deepthought: true,
+                    image: false,
+                    video: false,
+                }
+            },
+            { 
+                name: "Gemini 3 Pro Image Preview", 
+                premium: false, 
+                enabled: true, 
+                id: "gemini-3-pro-image-preview",
+                capabilities: {
+                    search: true,
+                    deepthought: true,
                     image: true,
                     video: false,
-                    files: { github: true, figma: false, local: true }
                 }
             },
             { 
                 name: "Gemini 2.5 Flash", 
-                premium: false, 
+                premium: true, 
                 enabled: true, 
                 id: "gemini-2.5-flash",
                 capabilities: {
                     search: true,
-                    code: true,
-                    image: true,
-                    video: true,
-                    files: { github: true, figma: false, local: true }
+                    deepthought: true,
+                    image: false,
+                    video: false,
                 }
             },
-            { 
-                name: "Gemini 2.5 Pro", 
+            {
+                name: "Gemini 2.5 Flash Image",
+                premium: true, 
+                enabled: true, 
+                id: "gemini-2.5-flash-image",
+                capabilities: {
+                    search: true,
+                    deepthought: true,
+                    image: true,
+                    video: false,
+                }
+            },
+            {
+                name: "Gemini 2.5 Flash-Lite",
+                premium: true, 
+                enabled: true, 
+                id: "gemini-2.5-flash-lite",
+                capabilities: {
+                    search: true,
+                    deepthought: true,
+                    image: false,
+                    video: false,
+                }
+            },
+            {
+                name: "Gemini 2.5 Pro",
                 premium: true, 
                 enabled: true, 
                 id: "gemini-2.5-pro",
                 capabilities: {
                     search: true,
-                    code: true,
-                    image: true,
-                    video: true,
-                    files: { github: true, figma: true, local: true }
+                    deepthought: true,
+                    image: false,
+                    video: false,
                 }
             }
         ],
@@ -154,42 +168,51 @@ const AI_MODELS: AIModel[] = [
         enabled: true,
         subModel: [
             { 
-                name: "Claude 3.5 Sonnet", 
+                name: "Claude Sonnet 4.5", 
                 premium: false, 
                 enabled: true, 
-                id: "claude-3.5-sonnet",
+                id: "claude-sonnet-4-5-20250929",
                 capabilities: {
                     search: true,
-                    code: true,
-                    image: true,
+                    deepthought: true,
+                    image: false,
                     video: false,
-                    files: { github: true, figma: true, local: true }
                 }
             },
             { 
-                name: "Claude 3.5 Haiku", 
+                name: "Claude Haiku 4.5", 
                 premium: false, 
                 enabled: true, 
-                id: "claude-3.5-haiku",
+                id: "claude-haiku-4-5-20251001",
                 capabilities: {
                     search: true,
-                    code: true,
-                    image: true,
+                    deepthought: true,
+                    image: false,
                     video: false,
-                    files: { github: true, figma: false, local: true }
                 }
             },
             { 
-                name: "Claude 3.5", 
+                name: "Claude Opus 4.5", 
                 premium: true, 
                 enabled: true, 
-                id: "claude-3.5",
+                id: "claude-opus-4-5-20251101",
                 capabilities: {
                     search: true,
-                    code: true,
-                    image: true,
+                    deepthought: true,
+                    image: false,
                     video: false,
-                    files: { github: true, figma: true, local: true }
+                }
+            },
+            {
+                name: "Claude Opus 4.1 (Legacy)",
+                premium: true,
+                enabled: true,
+                id: "claude-opus-4-1-20250805",
+                capabilities: {
+                    search: true,
+                    deepthought: true,
+                    image: false,
+                    video: false,
                 }
             }
         ],
@@ -201,29 +224,51 @@ const AI_MODELS: AIModel[] = [
         enabled: true,
         subModel: [
             { 
-                name: "Grok 3 Mini", 
+                name: "Grok 4.1 Fast Reasoning", 
                 premium: false, 
                 enabled: true, 
-                id: "grok-3-mini",
+                id: "grok-4-1-fast-reasoning",
                 capabilities: {
                     search: true,
-                    code: true,
+                    deepthought: true,
                     image: true,
                     video: true,
-                    files: { github: false, figma: false, local: true }
                 }
             },
             { 
-                name: "Grok 3", 
+                name: "Grok 4.1 Fast Non-Reasoning", 
                 premium: true, 
                 enabled: true, 
-                id: "grok-3",
+                id: "grok-4-1-fast-non-reasoning",
                 capabilities: {
                     search: true,
-                    code: true,
+                    deepthought: true,
                     image: true,
                     video: true,
-                    files: { github: true, figma: false, local: true }
+                }
+            },
+            {
+                name: "Grok 4 Fast Reasoning",
+                premium: true,
+                enabled: true,
+                id: "grok-4-fast-reasoning",
+                capabilities: {
+                    search: true,
+                    deepthought: true,
+                    image: true,
+                    video: true,
+                }
+            },
+            {
+                name: "Grok 4 Fast Non-Reasoning",
+                premium: true,
+                enabled: true,
+                id: "grok-4-fast-non-reasoning",
+                capabilities: {
+                    search: true,
+                    deepthought: true,
+                    image: true,
+                    video: true,
                 }
             }
         ],
@@ -235,31 +280,17 @@ const AI_MODELS: AIModel[] = [
         enabled: true,
         subModel: [
             { 
-                name: "DeepSeek R1", 
+                name: "DeepSeek V3.2", 
                 premium: false, 
                 enabled: true, 
-                id: "deepseek-r1",
+                id: "deepseek-reasoner",
                 capabilities: {
                     search: true,
-                    code: true,
+                    deepthought: true,
                     image: false,
                     video: false,
-                    files: { github: true, figma: false, local: true }
                 }
             },
-            { 
-                name: "DeepSeek R1 0528", 
-                premium: true, 
-                enabled: true, 
-                id: "deepseek-r1-0528",
-                capabilities: {
-                    search: true,
-                    code: true,
-                    image: false,
-                    video: false,
-                    files: { github: true, figma: false, local: true }
-                }
-            }
         ],
     }
 ];

@@ -1,23 +1,23 @@
 import { PromptInputAction } from "@/components/ui/prompt-input"
 import { Button } from "@/components/ui/button"
-import { Code } from "lucide-react"
+import { BrainCircuit } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-interface CodeButtonProps {
+interface DeepThoughtButtonProps {
   isActive: boolean
   onClick: () => void
 }
 
-export function CodeButton({ isActive, onClick }: CodeButtonProps) {
+export function DeepThoughtButton({ isActive, onClick }: DeepThoughtButtonProps) {
   return (
-    <PromptInputAction tooltip="Code">
+    <PromptInputAction tooltip="Deep Thought">
       <Button
         variant={isActive ? "default" : "outline"}
         className={cn("rounded-full transition-all", isActive && "px-4")}
         onClick={onClick}
       >
-        <Code size={18} />
-        {isActive && <span className="ml-1">Code</span>}
+        <BrainCircuit size={18} />
+        {isActive && <span className="ml-1">Deep Thought</span>}
       </Button>
     </PromptInputAction>
   )
