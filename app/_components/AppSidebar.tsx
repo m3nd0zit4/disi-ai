@@ -12,8 +12,9 @@ import {
 import Image from "next/image"
 import { Moon, Sun, Plus } from "lucide-react"
 import { useTheme } from "next-themes"
-import { SignUpButton, UserButton } from "@clerk/nextjs"
+import { UserButton } from "@clerk/nextjs"
 import { useUser } from "@clerk/nextjs"
+import Link from "next/link"
 
 export function AppSidebar() {
     const { theme, setTheme } = useTheme();
@@ -49,11 +50,17 @@ export function AppSidebar() {
             </SidebarContent>
         <SidebarFooter>
             {/* SignIn and SignUp */}
-            <div className="p-3">
-                {!user? <SignUpButton>
-                    <Button variant={'outline'} className="w-full justify-center cursor-pointer"> Sign Up </Button>
-                </SignUpButton>
-                :
+            <div className="p-3 flex gap-2">
+                {!user ? (
+                    <>
+                        <Link href="/sign-in" className="w-full">
+                            <Button variant={'outline'} className="w-full justify-center cursor-pointer"> Sign In </Button>
+                        </Link>
+                        <Link href="/sign-up" className="w-full">
+                            <Button className="w-full justify-center cursor-pointer"> Sign Up </Button>
+                        </Link>
+                    </>
+                ) : (
                 <UserButton
                     showName
                     appearance={
@@ -68,7 +75,7 @@ export function AppSidebar() {
                         }
                     }
                 />
-                }
+                )}
             </div>
         </SidebarFooter>
         </Sidebar>

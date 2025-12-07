@@ -93,6 +93,16 @@ export const sendMessage = mutation({
       });
     }
 
+    // Programar la generación de respuestas
+    for (let i = 0; i < responseIds.length; i++) {
+      await ctx.scheduler.runAfter(0, internal.ai.generateResponse, {
+        responseId: responseIds[i],
+        modelId: args.models[i].modelId,
+        subModelId: args.models[i].subModelId,
+        userMessage: args.content,
+      });
+    }
+
     return {
       messageId,
       responseIds,

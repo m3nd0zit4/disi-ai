@@ -16,16 +16,21 @@ import { ImageButton } from "./actions/ImageButton";
 import { VideoButton } from "./actions/VideoButton";
 import { useAIContext } from "@/context/AIContext";
 import { useCommonTools } from "@/hooks/useCommonTools";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
+import { useRouter } from "next/navigation";
 
 interface ChatInputBoxProps {
-  onSendMessage?: (message: string) => void;
+  conversationId?: Id<"conversations">;
 }
 
-export default function ChatInputBox({ onSendMessage }: ChatInputBoxProps) {
+export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
   const { selectedModels, hasModelsSelected } = useAIContext();
+  const router = useRouter();
 
-  const modelIds = selectedModels.map((m) => m.modelId);
-  const commonCapabilities = useCommonTools(modelIds);
+  // Pasar los submodelos completos (modelId + subModelId) al hook
+  const commonCapabilities = useCommonTools(selectedModels);
 
   const [prompt, setPrompt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -35,6 +40,10 @@ export default function ChatInputBox({ onSendMessage }: ChatInputBoxProps) {
   const [showAddMenu, setShowAddMenu] = useState(false);
 
   const addMenuRef = useRef<HTMLDivElement>(null);
+
+  // Convex mutations
+  const createConversation = useMutation(api.conversations.createConversation);
+  const sendMessage = useMutation(api.messages.sendMessage);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -49,16 +58,44 @@ export default function ChatInputBox({ onSendMessage }: ChatInputBoxProps) {
     };
   }, []);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!prompt.trim() || !hasModelsSelected) return;
 
     setIsLoading(true);
-    onSendMessage?.(prompt);
-    setPrompt("");
+    
+    try {
+      let currentConversationId = conversationId;
 
-    setTimeout(() => {
+      // Si no hay conversación, crear una nueva
+      if (!currentConversationId) {
+        currentConversationId = await createConversation({
+          models: selectedModels,
+        });
+        
+        // Redirigir a la nueva conversación (opcional, depende del flujo)
+        // router.push(`/c/${currentConversationId}`);
+      }
+
+      // Enviar mensaje
+      await sendMessage({
+        conversationId: currentConversationId,
+        content: prompt,
+        models: selectedModels,
+      });
+
+      setPrompt("");
+      
+      // Si creamos una nueva conversación, podríamos querer redirigir ahora
+      if (!conversationId && currentConversationId) {
+         router.push(`/c/${currentConversationId}`);
+      }
+
+    } catch (error) {
+      console.error("Error sending message:", error);
+      // TODO: Mostrar toast de error
+    } finally {
       setIsLoading(false);
-    }, 500);
+    }
   };
 
   const toggleMode = (mode: "image" | "video" | "deepThought") => {

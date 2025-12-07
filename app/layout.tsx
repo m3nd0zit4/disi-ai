@@ -3,9 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "./theme-provider";
 import { AIContextProvider } from "@/context/AIContext";
-import { SidebarProvider } from "@/components/ui/sidebar"
-import { AppSidebar } from "./_components/AppSidebar"
-import AppHeader from "./_components/AppHeader";
 import ConvexClientProvider from './ConvexClientProvider'
 import ClerkThemeProvider from "./_components/ClerkThemeProvider";
 
@@ -38,13 +35,7 @@ export default function RootLayout({
           <ClerkThemeProvider>
             <ConvexClientProvider>
               <AIContextProvider>
-                <SidebarProvider>
-                  <AppSidebar />
-                  <div className="w-full">
-                    <AppHeader />
-                    {children}
-                  </div>
-                </SidebarProvider>
+                {children}
               </AIContextProvider>
             </ConvexClientProvider>
           </ClerkThemeProvider>
