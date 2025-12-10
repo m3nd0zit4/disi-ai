@@ -4,13 +4,20 @@ import { aiRequestQueue } from "@/lib/redis";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // *Create authenticated Convex client with Clerk token
+    const authHeader = req.headers.get("authorization");
+    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+    
+    // Set the auth token from the request headers
+    if (authHeader) {
+      convex.setAuth(authHeader);
     }
 
     const body = await req.json();

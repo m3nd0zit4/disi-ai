@@ -52,6 +52,9 @@ export const updateUser = mutation({
     token: v.string(),
   },
   handler: async (ctx, args) => {
+    if (args.token !== process.env.CLERK_WEBHOOK_SECRET) {
+      throw new Error("Unauthorized");
+    }
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
