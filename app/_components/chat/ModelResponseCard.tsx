@@ -8,6 +8,7 @@ import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAIContext } from "@/context/AIContext";
+import { useTheme } from "next-themes";
 
 interface ModelResponseCardProps {
   response: ModelResponse;
@@ -22,6 +23,7 @@ export function ModelResponseCard({
 }: ModelResponseCardProps) {
   const { getModelInfo, changeSubModel } = useAIContext();
   const model = getModelInfo(response.modelId);
+  const { resolvedTheme } = useTheme();
 
   if (!model) return null;
 
@@ -45,7 +47,7 @@ export function ModelResponseCard({
         <div className="flex items-center gap-3 flex-1 min-w-0">
           {/* Model Avatar */}
           <MessageAvatar
-            src={model.icon}
+            src={resolvedTheme === "dark" ? model.iconLight : model.iconDark}
             alt={model.model}
             fallback={model.model[0]}
             className="w-8 h-8 flex-shrink-0"
