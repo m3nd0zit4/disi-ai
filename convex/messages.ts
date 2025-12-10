@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 
-// ===== ENVIAR MENSAJE =====
+// *Send message
 export const sendMessage = mutation({
   args: {
     conversationId: v.id("conversations"),
@@ -25,13 +25,13 @@ export const sendMessage = mutation({
 
     if (!user) throw new Error("User not found");
 
-    // Verificar ownership de la conversación
+    // Verify conversation ownership
     const conversation = await ctx.db.get(args.conversationId);
     if (!conversation || conversation.userId !== user._id) {
       throw new Error("Conversation not found");
     }
 
-    // Verificar límites del plan
+    // Verify plan limits
     const now = new Date();
     const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
@@ -43,17 +43,15 @@ export const sendMessage = mutation({
       .collect();
 
     const requestsThisMonth = usage.length;
-    const limit = user.plan === "pro" ? 10000 : 100;
+    const limit = user.plan === "pro" ? 10000 : 0; // FREE = 0 (debe usar sus propias keys)
 
-    if (requestsThisMonth >= limit) {
+    if (requestsThisMonth >= limit && user.plan === "pro") {
       throw new Error(
-        `Has alcanzado el límite de ${limit} mensajes este mes. ${
-          user.plan === "free" ? "Actualiza a PRO para obtener más." : ""
-        }`
+        `Has alcanzado el límite de ${limit} mensajes este mes.`
       );
     }
 
-    // Crear mensaje del usuario
+    // Create user message
     const messageId = await ctx.db.insert("messages", {
       conversationId: args.conversationId,
       userId: user._id,
@@ -62,7 +60,7 @@ export const sendMessage = mutation({
       createdAt: Date.now(),
     });
 
-    // Crear respuestas pendientes para cada modelo
+    // Create pending responses for each model
     const responseIds = await Promise.all(
       args.models.map((model) =>
         ctx.db.insert("modelResponses", {
@@ -78,14 +76,14 @@ export const sendMessage = mutation({
       )
     );
 
-    // Actualizar conversación
+    // Update conversation
     await ctx.db.patch(args.conversationId, {
       messageCount: conversation.messageCount + 1,
       updatedAt: Date.now(),
       lastMessageAt: Date.now(),
     });
 
-    // Generar título automático si es el primer mensaje
+    // Generate automatic title if it's the first message
     if (conversation.messageCount === 0) {
       await ctx.scheduler.runAfter(0, internal.messages.generateTitle, {
         conversationId: args.conversationId,
@@ -93,15 +91,9 @@ export const sendMessage = mutation({
       });
     }
 
-    // Programar la generación de respuestas
-    for (let i = 0; i < responseIds.length; i++) {
-      await ctx.scheduler.runAfter(0, internal.ai.generateResponse, {
-        responseId: responseIds[i],
-        modelId: args.models[i].modelId,
-        subModelId: args.models[i].subModelId,
-        userMessage: args.content,
-      });
-    }
+    // !NOTE: We NO longer schedule generateResponse here
+    // !That's done by the API Gateway (/api/ai/request) that enqueues in Redis
+    // !And the worker processes the jobs
 
     return {
       messageId,
@@ -110,14 +102,14 @@ export const sendMessage = mutation({
   },
 });
 
-// ===== GENERAR TÍTULO AUTOMÁTICO =====
+// *Generate automatic title
 export const generateTitle = internalMutation({
   args: {
     conversationId: v.id("conversations"),
     firstMessage: v.string(),
   },
   handler: async (ctx, args) => {
-    // Generar título basado en el primer mensaje (máximo 50 caracteres)
+    // Generate title based on the first message (max 50 characters)
     let title = args.firstMessage.substring(0, 50);
     if (args.firstMessage.length > 50) {
       title += "...";
@@ -133,7 +125,7 @@ export const generateTitle = internalMutation({
   },
 });
 
-// ===== WATCH RESPONSES (Real-time) =====
+// *Watch responses (Real-time)
 export const watchResponses = query({
   args: { messageId: v.id("messages") },
   handler: async (ctx, args) => {
@@ -156,7 +148,93 @@ export const watchResponses = query({
   },
 });
 
-// ===== ACTUALIZAR RESPUESTA (Llamado por worker) =====
+// *Update status only (Internal - for worker)
+export const updateResponseStatus = internalMutation({
+  args: {
+    responseId: v.id("modelResponses"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("error")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const response = await ctx.db.get(args.responseId);
+    if (!response) {
+      throw new Error("Response not found");
+    }
+
+    await ctx.db.patch(args.responseId, {
+      status: args.status,
+    });
+
+    return { success: true };
+  },
+});
+
+// *Update response (Internal - for worker)
+export const updateResponseInternal = internalMutation({
+  args: {
+    responseId: v.id("modelResponses"),
+    content: v.string(),
+    status: v.union(
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("error")
+    ),
+    error: v.optional(v.string()),
+    responseTime: v.optional(v.number()),
+    tokens: v.optional(v.number()),
+    cost: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const response = await ctx.db.get(args.responseId);
+    if (!response) {
+      throw new Error("Response not found");
+    }
+
+    await ctx.db.patch(args.responseId, {
+      content: args.content,
+      status: args.status,
+      error: args.error,
+      responseTime: args.responseTime,
+      tokens: args.tokens,
+      cost: args.cost,
+      completedAt: args.status === "completed" ? Date.now() : undefined,
+    });
+
+    // If completed, register usage
+    if (args.status === "completed" && args.tokens && args.cost) {
+      const now = new Date();
+      const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+      await ctx.db.insert("usageRecords", {
+        userId: response.userId,
+        conversationId: response.conversationId,
+        modelId: response.modelId,
+        subModelId: response.subModelId,
+        tokens: args.tokens,
+        cost: args.cost,
+        timestamp: Date.now(),
+        yearMonth,
+      });
+
+      // Update conversation totals
+      const conversation = await ctx.db.get(response.conversationId);
+      if (conversation) {
+        await ctx.db.patch(response.conversationId, {
+          totalTokens: (conversation.totalTokens || 0) + args.tokens,
+          totalCost: (conversation.totalCost || 0) + args.cost,
+        });
+      }
+    }
+
+    return { success: true };
+  },
+});
+
+// *Update response (Public - for frontend)
 export const updateResponse = mutation({
   args: {
     responseId: v.id("modelResponses"),
@@ -187,7 +265,7 @@ export const updateResponse = mutation({
       completedAt: args.status === "completed" ? Date.now() : undefined,
     });
 
-    // Si se completó, registrar uso
+    // If completed, register usage
     if (args.status === "completed" && args.tokens && args.cost) {
       const now = new Date();
       const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -203,7 +281,7 @@ export const updateResponse = mutation({
         yearMonth,
       });
 
-      // Actualizar totales de la conversación
+      // Update conversation totals
       const conversation = await ctx.db.get(response.conversationId);
       if (conversation) {
         await ctx.db.patch(response.conversationId, {
@@ -217,7 +295,7 @@ export const updateResponse = mutation({
   },
 });
 
-// ===== TOGGLE EXPANSION =====
+// *Toggle expansion
 export const toggleExpansion = mutation({
   args: { responseId: v.id("modelResponses") },
   handler: async (ctx, args) => {
@@ -244,7 +322,7 @@ export const toggleExpansion = mutation({
   },
 });
 
-// ===== FEEDBACK =====
+// *Submit feedback
 export const submitFeedback = mutation({
   args: {
     responseId: v.id("modelResponses"),

@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-// ===== CREAR USUARIO (desde Webhook) =====
+// *Create user (from Webhook) 
 export const createUser = mutation({
   args: {
     clerkId: v.string(),
@@ -14,7 +14,7 @@ export const createUser = mutation({
     if (args.token !== process.env.CLERK_WEBHOOK_SECRET) {
       throw new Error("Unauthorized");
     }
-    // Verificar si ya existe
+    // ?Check if user already exists
     const existing = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
@@ -25,7 +25,7 @@ export const createUser = mutation({
       return existing._id;
     }
 
-    // Crear nuevo usuario
+    // ?Create new user
     const userId = await ctx.db.insert("users", {
       clerkId: args.clerkId,
       email: args.email,
@@ -42,7 +42,7 @@ export const createUser = mutation({
   },
 });
 
-// ===== ACTUALIZAR USUARIO (desde Webhook) =====
+// *Update user (from Webhook) 
 export const updateUser = mutation({
   args: {
     clerkId: v.string(),
@@ -72,7 +72,7 @@ export const updateUser = mutation({
   },
 });
 
-// ===== ELIMINAR USUARIO (desde Webhook) =====
+// *Delete user (from Webhook) 
 export const deleteUser = mutation({
   args: {
     clerkId: v.string(),
@@ -92,7 +92,7 @@ export const deleteUser = mutation({
   },
 });
 
-// ===== OBTENER USUARIO ACTUAL =====
+// *Get current user 
 export const getCurrentUser = query({
   args: {},
   handler: async (ctx) => {
@@ -110,7 +110,7 @@ export const getCurrentUser = query({
       return null;
     }
 
-    // NO intentar actualizar en un query - usar mutation separada
+    //! NO intentar actualizar en un query - usar mutation separada
     return {
       _id: user._id,
       clerkId: user.clerkId,
@@ -125,7 +125,31 @@ export const getCurrentUser = query({
   },
 });
 
-// ===== ACTUALIZAR ÚLTIMO LOGIN (mutation separada) =====
+//* Get user from clerk ID (api Gateway)
+export const getUserByClerkId = query({
+  args: { clerkId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) { return null; }
+
+    return {
+      _id: user._id,
+      clerkId: user.clerkId,
+      email: user.email,
+      name: user.name,
+      imageUrl: user.imageUrl,
+      plan: user.plan,
+      apiKeySource: user.apiKeySource,
+    };
+  }
+})
+
+
+// *Update last login (mutation separated)
 export const updateLastLogin = mutation({
   args: {},
   handler: async (ctx) => {
@@ -149,7 +173,7 @@ export const updateLastLogin = mutation({
   },
 });
 
-// ===== ACTUALIZAR PREFERENCIAS =====
+// *Update API key source
 export const updateApiKeySource = mutation({
   args: {
     source: v.union(v.literal("user"), v.literal("system")),
@@ -192,7 +216,7 @@ export const updateApiKeySource = mutation({
   },
 });
 
-// ===== OBTENER ESTADÍSTICAS DEL USUARIO =====
+// *Get user stats
 export const getUserStats = query({
   args: {},
   handler: async (ctx) => {

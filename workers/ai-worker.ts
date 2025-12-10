@@ -58,16 +58,19 @@ const worker = new Worker<AIJobData, AIJobResult>(
       };
 
     } catch (error) {
-      console.error(`❌ Job ${job.id} failed:`, error);
+      console.error(` Job ${job.id} failed:`, error);
 
       // Update error status in Convex
-      
-      await convex.action(api.actions.updateResponseCompleted, {
-        responseId: responseId as Id<"modelResponses">, 
-        content: "",
-        status: "error",
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      try {
+        await convex.action(api.actions.updateResponseCompleted, {
+          responseId: responseId as Id<"modelResponses">, 
+          content: "",
+          status: "error",
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      } catch (updateError) {
+        console.error(` Failed to update error status for job ${job.id}:`, updateError);
+      }
 
       throw error; // BullMQ will handle the retry
     }
