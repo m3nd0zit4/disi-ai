@@ -15,7 +15,8 @@ export interface SubModel {
 
 export interface AIModel {
     model: string;
-    icon: string;
+    iconLight: string;
+    iconDark: string;
     premium: boolean;
     enabled: boolean;
     subModel: SubModel[];

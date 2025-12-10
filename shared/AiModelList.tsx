@@ -3,7 +3,8 @@ import { AIModel } from "../types/AiModel";
 const AI_MODELS: AIModel[] = [
     {
         model: "GPT",
-        icon: "/icons/gpt.svg",
+        iconLight: "/icons/gpt-claro.svg",
+        iconDark: "/icons/gpt-oscuro.svg",
         premium: false,
         enabled: true,
         subModel: [
@@ -83,7 +84,8 @@ const AI_MODELS: AIModel[] = [
     },
     {
         model: "Gemini",
-        icon: "/icons/gemini.svg",
+        iconLight: "/icons/gemini.svg",
+        iconDark: "/icons/gemini.svg",
         premium: false,
         enabled: true,
         subModel: [
@@ -163,7 +165,8 @@ const AI_MODELS: AIModel[] = [
     },
     {
         model: "Claude",
-        icon: "/icons/claude.svg",
+        iconLight: "/icons/claude.svg",
+        iconDark: "/icons/claude.svg",
         premium: false,
         enabled: true,
         subModel: [
@@ -219,7 +222,8 @@ const AI_MODELS: AIModel[] = [
     },
     {
         model: "Grok",
-        icon: "/icons/grok.svg",
+        iconLight: "/icons/grok-claro.svg",
+        iconDark: "/icons/grok-oscuro.svg",
         premium: true,
         enabled: true,
         subModel: [
@@ -275,7 +279,8 @@ const AI_MODELS: AIModel[] = [
     },
     {
         model: "DeepSeek",
-        icon: "/icons/deepseek.svg",
+        iconLight: "/icons/deepseek.svg",
+        iconDark: "/icons/deepseek.svg",
         premium: false,
         enabled: true,
         subModel: [

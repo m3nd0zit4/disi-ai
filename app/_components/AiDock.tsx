@@ -8,6 +8,7 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { Plus } from "lucide-react";
 import { useAIContext } from "@/context/AIContext";
+import { useTheme } from "next-themes";
 
 const BASE_WIDTH = 40;
 const DISTANCE = 140;
@@ -91,6 +92,7 @@ export default function AiDock() {
   const mouseX = useMotionValue(Infinity);
   const [items, setItems] = useState(AI_MODELS.slice(0, MAX_VISIBLE_ITEMS));
   const { isModelSelected, toggleModel } = useAIContext();
+  const { resolvedTheme } = useTheme();
 
   const hasMore = AI_MODELS.length > MAX_VISIBLE_ITEMS;
 
@@ -106,7 +108,7 @@ export default function AiDock() {
             key={model.model}
             item={model}
             mouseX={mouseX}
-            src={model.icon}
+            src={resolvedTheme === "dark" ? model.iconLight : model.iconDark}
             alt={model.model}
             isSelected={isModelSelected(model.model)}
             onClick={() => toggleModel(model.model)}
