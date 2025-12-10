@@ -42,6 +42,38 @@ export const createUser = mutation({
   },
 });
 
+// *Get or create user (fallback for webhook failures)
+export const getOrCreateUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    let user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      console.warn(`Auto-creating user ${identity.subject} from identity (webhook fallback)`);
+      const userId = await ctx.db.insert("users", {
+        clerkId: identity.subject,
+        email: identity.email || "",
+        name: identity.name || "Usuario",
+        imageUrl: identity.pictureUrl,
+        plan: "free",
+        apiKeySource: "system",
+        createdAt: Date.now(),
+        lastLoginAt: Date.now(),
+      });
+      user = await ctx.db.get(userId);
+      if (!user) throw new Error("Failed to create user");
+    }
+
+    return user;
+  },
+});
+
 // *Update user (from Webhook) 
 export const updateUser = mutation({
   args: {

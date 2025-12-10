@@ -4,6 +4,21 @@ import { getAIService } from "@/lib/aiServices";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+//
+import "dotenv/config";
+import { config } from "dotenv";
+import { resolve } from "path";
+
+// !Load environment variables from .env file
+config({ path: resolve(process.cwd(), ".env.local") });
+
+if(!process.env.NEXT_PUBLIC_CONVEX_URL) {
+  console.error("NEXT_PUBLIC_CONVEX_URL is not defined");
+}
+
+if(!process.env.REDIS_URL) {
+  console.error("REDIS_URL is not defined");
+}
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
