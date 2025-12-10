@@ -66,33 +66,58 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
     try {
       let currentConversationId = conversationId;
 
-      // Si no hay conversación, crear una nueva
+      // If there is no conversation, create a new one
       if (!currentConversationId) {
         currentConversationId = await createConversation({
           models: selectedModels,
         });
         
-        // Redirigir a la nueva conversación (opcional, depende del flujo)
-        // router.push(`/c/${currentConversationId}`);
+        console.log("Conversacion creada: ", currentConversationId);
       }
 
-      // Enviar mensaje
-      await sendMessage({
+      // Send message to convex (created message + response pending)
+      const { messageId, responseIds } = await sendMessage({
         conversationId: currentConversationId,
         content: prompt,
         models: selectedModels,
       });
 
-      setPrompt("");
+      console.log("Message ID: ", messageId);
+      console.log("Response IDs: ", responseIds);
       
-      // Si creamos una nueva conversación, podríamos querer redirigir ahora
-      if (!conversationId && currentConversationId) {
-         router.push(`/c/${currentConversationId}`);
+      // Find in Redis through the API Gateway
+      const response = await fetch("/api/ai/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: currentConversationId,
+          messageId,
+          responseIds,
+          models: selectedModels,
+          userMessage: prompt,
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to queue requests");
       }
+      
+      const data = await response.json();
+      console.log("Jobs Found: ", data.jobs);
+
+      // Clean input
+      setPrompt("");
+
+      if (!conversationId && currentConversationId) {
+        router.push(`/c/${currentConversationId}`);
+      }
+      
 
     } catch (error) {
       console.error("Error sending message:", error);
-      // TODO: Mostrar toast de error
+      
+      alert(error instanceof Error ? error.message : "The message could not be sent")
     } finally {
       setIsLoading(false);
     }

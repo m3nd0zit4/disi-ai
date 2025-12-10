@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-// ===== CREAR CONVERSACIÓN =====
+// *Create conversation
 export const createConversation = mutation({
   args: {
     title: v.optional(v.string()),
@@ -16,12 +16,27 @@ export const createConversation = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    const user = await ctx.db
+    // Get or auto-create user (handles webhook failures)
+    let user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .first();
 
-    if (!user) throw new Error("User not found");
+    if (!user) {
+      console.warn(`User ${identity.subject} not found, auto-creating from identity`);
+      const userId = await ctx.db.insert("users", {
+        clerkId: identity.subject,
+        email: identity.email || "",
+        name: identity.name || "Usuario",
+        imageUrl: identity.pictureUrl,
+        plan: "free",
+        apiKeySource: "system",
+        createdAt: Date.now(),
+        lastLoginAt: Date.now(),
+      });
+      user = await ctx.db.get(userId);
+      if (!user) throw new Error("Failed to create user");
+    }
 
     const conversationId = await ctx.db.insert("conversations", {
       userId: user._id,
@@ -36,7 +51,7 @@ export const createConversation = mutation({
   },
 });
 
-// ===== LISTAR CONVERSACIONES =====
+// *List conversations
 export const listConversations = query({
   args: {
     limit: v.optional(v.number()),
@@ -59,19 +74,19 @@ export const listConversations = query({
       .order("desc")
       .collect();
 
-    // Filtrar archivadas
+    // Filter archived
     if (args.archived !== undefined) {
       conversations = conversations.filter(
         (c) => (c.isArchived || false) === args.archived
       );
     }
 
-    // Limitar
+    // Limit conversations
     if (args.limit) {
       conversations = conversations.slice(0, args.limit);
     }
 
-    // Agregar último mensaje
+    // Add last message
     return Promise.all(
       conversations.map(async (conv) => {
         const lastMessage = await ctx.db
@@ -96,7 +111,7 @@ export const listConversations = query({
   },
 });
 
-// ===== OBTENER CONVERSACIÓN POR ID =====
+// *Get conversation by ID
 export const getConversation = query({
   args: { conversationId: v.id("conversations") },
   handler: async (ctx, args) => {
@@ -112,7 +127,7 @@ export const getConversation = query({
 
     const conversation = await ctx.db.get(args.conversationId);
 
-    // Verificar ownership
+    // Verify ownership
     if (!conversation || conversation.userId !== user._id) {
       return null;
     }
@@ -121,7 +136,7 @@ export const getConversation = query({
   },
 });
 
-// ===== OBTENER MENSAJES DE UNA CONVERSACIÓN =====
+// *Get messages from a conversation
 export const getMessages = query({
   args: {
     conversationId: v.id("conversations"),
@@ -138,13 +153,13 @@ export const getMessages = query({
 
     if (!user) return [];
 
-    // Verificar ownership de la conversación
+    // Verify ownership
     const conversation = await ctx.db.get(args.conversationId);
     if (!conversation || conversation.userId !== user._id) {
       return [];
     }
 
-    // Obtener mensajes
+    // Get messages
     let messages = await ctx.db
       .query("messages")
       .withIndex("by_conversation_and_created", (q) =>
@@ -157,7 +172,7 @@ export const getMessages = query({
       messages = messages.slice(-args.limit);
     }
 
-    // Para cada mensaje del usuario, obtener las respuestas de los modelos
+    // For each user message, get model responses
     return Promise.all(
       messages.map(async (message) => {
         if (message.role === "user") {
@@ -178,7 +193,7 @@ export const getMessages = query({
   },
 });
 
-// ===== ACTUALIZAR TÍTULO =====
+// *Update title
 export const updateTitle = mutation({
   args: {
     conversationId: v.id("conversations"),
@@ -209,7 +224,7 @@ export const updateTitle = mutation({
   },
 });
 
-// ===== PIN/UNPIN CONVERSACIÓN =====
+// *Pin/unpin conversation
 export const togglePin = mutation({
   args: { conversationId: v.id("conversations") },
   handler: async (ctx, args) => {
@@ -237,7 +252,7 @@ export const togglePin = mutation({
   },
 });
 
-// ===== ARCHIVAR CONVERSACIÓN =====
+// *Archive conversation
 export const archiveConversation = mutation({
   args: { conversationId: v.id("conversations") },
   handler: async (ctx, args) => {
@@ -265,7 +280,7 @@ export const archiveConversation = mutation({
   },
 });
 
-// ===== ELIMINAR CONVERSACIÓN =====
+// *Delete conversation
 export const deleteConversation = mutation({
   args: { conversationId: v.id("conversations") },
   handler: async (ctx, args) => {
@@ -284,7 +299,7 @@ export const deleteConversation = mutation({
       throw new Error("Conversation not found");
     }
 
-    // Eliminar todos los mensajes
+    // Delete all messages
     const messages = await ctx.db
       .query("messages")
       .withIndex("by_conversation", (q) =>
@@ -293,7 +308,7 @@ export const deleteConversation = mutation({
       .collect();
 
     for (const message of messages) {
-      // Eliminar respuestas del modelo
+      // Delete model responses
       const responses = await ctx.db
         .query("modelResponses")
         .withIndex("by_message", (q) => q.eq("messageId", message._id))
@@ -303,18 +318,18 @@ export const deleteConversation = mutation({
         await ctx.db.delete(response._id);
       }
 
-      // Eliminar mensaje
+      // Delete message
       await ctx.db.delete(message._id);
     }
 
-    // Eliminar conversación
+    // Delete conversation
     await ctx.db.delete(args.conversationId);
 
     return { success: true };
   },
 });
 
-// ===== BUSCAR CONVERSACIONES =====
+// *Search conversations
 export const searchConversations = query({
   args: { query: v.string() },
   handler: async (ctx, args) => {

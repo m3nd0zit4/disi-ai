@@ -106,21 +106,41 @@ export async function POST(req: Request) {
 }
 
 // *Helpers
+
+// TODO: Implement actual AWS Secrets Manager integration
 async function getUserApiKeyForModel(
   userId: string,
   modelId: string
 ): Promise<string | null> {
   const { getUserApiKey } = await import("@/lib/aws-secrets");
-  return getUserApiKey(userId, modelId);
+  // TODO: Implement AWS Secrets Manager integration
+  // For now, return null to use system keys
+  return getUserApiKey(userId, modelId); 
 }
 
 function getSystemApiKey(modelId: string): string {
-  const envVar = `${modelId.toUpperCase()}_API_KEY`;
-  const key = process.env[envVar];
+
+  const envVarMap: Record<string, string> = {
+    "GPT": "OPENAI_API_KEY",
+    "Claude": "ANTHROPIC_API_KEY",
+    "Gemini": "GOOGLE_AI_API_KEY",
+    "Grok": "XAI_API_KEY",
+    "DeepSeek": "DEEPSEEK_API_KEY",
+  };
+
+  const envVarName = envVarMap[modelId];
+  
+  if (!envVarName) {
+    throw new Error(
+      `Modelo desconocido: ${modelId}. Modelos soportados: ${Object.keys(envVarMap).join(", ")}`
+    );
+  }
+
+  const key = process.env[envVarName];
   
   if (!key) {
     throw new Error(
-      `Sistema no tiene API key configurada para ${modelId}. Por favor configura tu propia key.`
+      `Sistema no tiene API key configurada para ${modelId}. Variable esperada: ${envVarName}`
     );
   }
   

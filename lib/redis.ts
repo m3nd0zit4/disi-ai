@@ -1,3 +1,8 @@
+if (typeof window === "undefined" && !process.env.NEXT_RUNTIME) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require("dotenv").config({ path: require("path").resolve(process.cwd(), ".env.local") });
+}
+
 import { Redis } from "@upstash/redis";
 import { Queue, QueueEvents } from "bullmq";
 import IORedis from "ioredis";
