@@ -58,20 +58,24 @@ export async function POST(req: Request) {
             messages: [{ role: "user", content: userMessage }],
             temperature: 0.7,
             onFinish: async ({ text, usage }) => {
-                const responseTime = (Date.now() - startTime) / 1000;
-                const tokenCount = usage.totalTokens ?? 0;
-                
-                console.log(`Stream completed for ${modelId} - ${responseTime} seconds`);
+                try {
+                    const responseTime = (Date.now() - startTime) / 1000;
+                    const tokenCount = usage.totalTokens ?? 0;
+                    
+                    console.log(`Stream completed for ${modelId} - ${responseTime} seconds`);
 
-                // Storage in convex
-                await convex.action(api.actions.updateResponseCompleted, {
-                    responseId: responseId as Id<"modelResponses">,
-                    content: text,
-                    status: "completed",
-                    responseTime,
-                    tokens: tokenCount,
-                    cost: calculateCost(modelId, subModelId, tokenCount)
-                });
+                    // Storage in convex
+                    await convex.action(api.actions.updateResponseCompleted, {
+                        responseId: responseId as Id<"modelResponses">,
+                        content: text,
+                        status: "completed",
+                        responseTime,
+                        tokens: tokenCount,
+                        cost: calculateCost(modelId, subModelId, tokenCount)
+                    });
+                } catch (error) {
+                    console.error("Failed to update response completion:", error);
+                }
             },
         });
 
