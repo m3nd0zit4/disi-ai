@@ -40,69 +40,83 @@ export async function storeUserApiKey(
         updatedAt: new Date().toISOString(),
     })
 
-    try {
-        //? try actualize if exists
-        await client.send(
-            new PutSecretValueCommand({
-                SecretId: secretName,
-                SecretString: secretData,
-            })
-        );
-        return secretName;
-    } catch (error: unknown) {
-        //? create if not exists
-        if(error && typeof error === 'object' && 'name' in error && error.name === 'ResourceNotFoundException') {
-            try {
-                await client.send(
-                    new CreateSecretCommand({
-                        Name: secretName,
-                        SecretString: secretData,
-                        Description: `API key for ${provider} - user ${userId}`,
-                    })
-                );
-                console.log(`API key created for ${provider} - user ${userId}`);
-                return secretName;
-            } catch (createError: unknown) {
-                // Handle race condition: another request created the secret concurrently
-                if (createError instanceof ResourceExistsException) {
-                    // Retry the update now that the secret exists
+    let attempt = 0;
+    const maxAttempts = 3;
+
+    while (attempt < maxAttempts) {
+        try {
+            //? try actualize if exists
+            await client.send(
+                new PutSecretValueCommand({
+                    SecretId: secretName,
+                    SecretString: secretData,
+                })
+            );
+            return secretName;
+        } catch (error: unknown) {
+            //? create if not exists
+            if(error && typeof error === 'object' && 'name' in error && error.name === 'ResourceNotFoundException') {
+                try {
                     await client.send(
-                        new PutSecretValueCommand({
-                            SecretId: secretName,
+                        new CreateSecretCommand({
+                            Name: secretName,
                             SecretString: secretData,
+                            Description: `API key for ${provider} - user ${userId}`,
                         })
                     );
+                    console.log(`API key created for ${provider} - user ${userId}`);
                     return secretName;
+                } catch (createError: unknown) {
+                    // Handle race condition: another request created the secret concurrently
+                    if (createError instanceof ResourceExistsException) {
+                        // Retry the update now that the secret exists
+                        await client.send(
+                            new PutSecretValueCommand({
+                                SecretId: secretName,
+                                SecretString: secretData,
+                            })
+                        );
+                        return secretName;
+                    }
+                    throw createError;
                 }
-                throw createError;
+            } else if (error && typeof error === 'object' && 'name' in error && error.name === 'InvalidRequestException') {
+                // Check if it's marked for deletion
+                const errorMessage = (error as any).message || "";
+                if (errorMessage.includes("marked for deletion")) {
+                     try {
+                        console.log(`Restoring secret ${secretName}...`);
+                        await client.send(new RestoreSecretCommand({ SecretId: secretName }));
+                        
+                        // Retry the update after restore
+                        await client.send(
+                            new PutSecretValueCommand({
+                                SecretId: secretName,
+                                SecretString: secretData,
+                            })
+                        );
+                        return secretName;
+                     } catch (restoreError) {
+                         console.error("Error restoring secret:", restoreError);
+                         throw restoreError;
+                     }
+                }
+                throw error;
+            } else {
+                // For other errors, check if we should retry
+                attempt++;
+                if (attempt >= maxAttempts) {
+                    console.error(`Error storing API key after ${maxAttempts} attempts:`, error);
+                    throw error;
+                }
+                // Exponential backoff: 500ms, 1000ms, 2000ms
+                const delay = 500 * Math.pow(2, attempt - 1);
+                console.log(`Retrying storeUserApiKey in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
             }
-        } else if (error && typeof error === 'object' && 'name' in error && error.name === 'InvalidRequestException') {
-            // Check if it's marked for deletion
-            const errorMessage = (error as any).message || "";
-            if (errorMessage.includes("marked for deletion")) {
-                 try {
-                    console.log(`Restoring secret ${secretName}...`);
-                    await client.send(new RestoreSecretCommand({ SecretId: secretName }));
-                    
-                    // Retry the update after restore
-                    await client.send(
-                        new PutSecretValueCommand({
-                            SecretId: secretName,
-                            SecretString: secretData,
-                        })
-                    );
-                    return secretName;
-                 } catch (restoreError) {
-                     console.error("Error restoring secret:", restoreError);
-                     throw restoreError;
-                 }
-            }
-            throw error;
-        } else {
-            console.error(`Error storing API key`, error);
-            throw error;
         }
     }
+    throw new Error("Failed to store API key after max attempts");
 }
 
 

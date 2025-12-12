@@ -9,11 +9,18 @@ import { Id } from "@/convex/_generated/dataModel";
 
 export const runtime = "edge";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
 
 export async function POST(req: Request) {
     try {
-        const { userId } = await auth();
+        const { userId, getToken } = await auth();
+        
+        // Create authenticated Convex client
+        const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+        const token = await getToken({ template: "convex" });
+        if (token) {
+            convex.setAuth(token);
+        }
         if (!userId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
@@ -24,7 +31,6 @@ export async function POST(req: Request) {
             modelId,
             subModelId,
             userMessage,
-            apiKey,
         } = body;
 
         console.log(`Starting stream for ${modelId}/${subModelId}`);
@@ -38,15 +44,25 @@ export async function POST(req: Request) {
         const startTime = Date.now();
         let model: LanguageModel;
 
+        // *Get user API key (REQUIRED in free tier)
+        const apiKey = await getUserApiKeyForModel(userId, modelId);
+        
+        // *If PRO and no key, use the system key
+        const finalApiKey = apiKey || getSystemApiKey(modelId);
+
+        if (!finalApiKey || typeof finalApiKey !== 'string' || finalApiKey.trim() === '') {
+            return NextResponse.json({ error: "Invalid API Key" }, { status: 400 });
+        }
+
         // Configure provider based on modelId and apiKey
         if (modelId === "GPT") {
             const openai = createOpenAI({
-                apiKey: apiKey,
+                apiKey: finalApiKey,
             });
             model = openai(subModelId);
         } else if (modelId === "Claude") {
             const anthropic = createAnthropic({
-                apiKey: apiKey,
+                apiKey: finalApiKey,
             });
             model = anthropic(subModelId);
         } else {
@@ -102,4 +118,43 @@ function calculateCost(modelId: string, subModelId: string, tokens: number): num
     };
     
     return tokens * (pricing[modelId]?.[subModelId] ?? 0.001);
+}
+
+// *Helpers
+
+async function getUserApiKeyForModel(
+  userId: string,
+  modelId: string
+): Promise<string | null> {
+  const { getUserApiKey } = await import("@/lib/aws-secrets");
+  return getUserApiKey(userId, modelId); 
+}
+
+function getSystemApiKey(modelId: string): string {
+
+  const envVarMap: Record<string, string> = {
+    "GPT": "OPENAI_API_KEY",
+    "Claude": "ANTHROPIC_API_KEY",
+    "Gemini": "GOOGLE_AI_API_KEY",
+    "Grok": "XAI_API_KEY",
+    "DeepSeek": "DEEPSEEK_API_KEY",
+  };
+
+  const envVarName = envVarMap[modelId];
+  
+  if (!envVarName) {
+    throw new Error(
+      `Modelo desconocido: ${modelId}. Modelos soportados: ${Object.keys(envVarMap).join(", ")}`
+    );
+  }
+
+  const key = process.env[envVarName];
+  
+  if (!key) {
+    throw new Error(
+      `Sistema no tiene API key configurada para ${modelId}. Variable esperada: ${envVarName}`
+    );
+  }
+  
+  return key;
 }

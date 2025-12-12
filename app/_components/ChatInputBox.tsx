@@ -107,6 +107,7 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
       console.log("Jobs Found: ", data.jobs);
 
       // Clean input
+      const userMessage = prompt;
       setPrompt("");
 
       if (!conversationId && currentConversationId) {
@@ -121,7 +122,7 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
           responseId: responseIds[index],
           modelId: model.modelId,
           subModelId: model.subModelId,
-          userMessage: prompt,
+          userMessage,
         });
       })
       
@@ -144,22 +145,12 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
     userMessage: string;
   }) {
     try {
-      // Optain API key from convex
-      const apiKeyResponse = await fetch("/api/user/api-keys/retrieve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: params.modelId }),
-      });
-
-      const { apiKey } = await apiKeyResponse.json();
-
       // Start streaming
       const response = await fetch("/api/ai/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...params,
-          apiKey,
         }),
       });
 
