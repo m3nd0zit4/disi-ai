@@ -29,7 +29,7 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
   const { selectedModels, hasModelsSelected } = useAIContext();
   const router = useRouter();
 
-  // Pasar los submodelos completos (modelId + subModelId) al hook
+  // Pass the selected models to the common tools hook
   const commonCapabilities = useCommonTools(selectedModels);
 
   const [prompt, setPrompt] = useState("");
@@ -112,6 +112,18 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
       if (!conversationId && currentConversationId) {
         router.push(`/c/${currentConversationId}`);
       }
+
+      //Start streaming
+      selectedModels.forEach((model, index) => {
+        startStreaming({
+          conversationId: currentConversationId,
+          messageId,
+          responseId: responseIds[index],
+          modelId: model.modelId,
+          subModelId: model.subModelId,
+          userMessage: prompt,
+        });
+      })
       
 
     } catch (error) {
@@ -122,6 +134,47 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
       setIsLoading(false);
     }
   };
+
+  async function startStreaming(params: {
+    conversationId: Id<"conversations">;
+    messageId: Id<"messages">;
+    responseId: Id<"modelResponses">;
+    modelId: string;
+    subModelId: string;
+    userMessage: string;
+  }) {
+    try {
+      // Optain API key from convex
+      const apiKeyResponse = await fetch("/api/user/api-keys/retrieve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: params.modelId }),
+      });
+
+      const { apiKey } = await apiKeyResponse.json();
+
+      // Start streaming
+      const response = await fetch("/api/ai/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...params,
+          apiKey,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Streaming failed: ${response.statusText}`);
+      }
+
+      // The streaming is automatically handled by Vercel AI SDK
+      // Convex will be updated through the onCompletion callback
+      console.log(` Streaming Initiated for ${params.modelId}`);
+
+    } catch (error) {
+      console.error(` Error streaming ${params.modelId}:`, error);
+    }
+  }
 
   const toggleMode = (mode: "image" | "video" | "deepThought") => {
     setActiveMode((prev) => (prev === mode ? null : mode));

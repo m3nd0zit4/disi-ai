@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAIContext } from "@/context/AIContext";
 import { useTheme } from "next-themes";
+import { StreamingText } from "./StreamingText";
 
 interface ModelResponseCardProps {
   response: ModelResponse;
@@ -136,10 +137,16 @@ export function ModelResponseCard({
       {/* Contenido Expandible (solo en modo respuesta) */}
       {showContent && response.isExpanded && !response.isLoading && (
         <div className="px-4 pb-4 space-y-3 border-t">
-          {/* Respuesta usando Markdown */}
-          <MessageContent markdown className="pt-4 prose-sm max-w-none">
-            {response.content || "*Sin respuesta*"}
-          </MessageContent>
+          {/* Respuesta usando Markdown o StreamingText */}
+          {response.status === "processing" ? (
+             <div className="pt-4">
+                <StreamingText content={response.content} isStreaming={true} />
+             </div>
+          ) : (
+            <MessageContent markdown className="pt-4 prose-sm max-w-none">
+                {response.content || "*Sin respuesta*"}
+            </MessageContent>
+          )}
 
           {/* Acciones */}
           {response.content && (
@@ -169,7 +176,7 @@ export function ModelResponseCard({
       )}
 
       {/* Loading State (solo en modo respuesta) */}
-      {showContent && response.isExpanded && response.isLoading && (
+      {showContent && response.isExpanded && response.isLoading && response.status !== "processing" && (
         <div className="px-4 pb-4 pt-2 border-t">
           <div className="flex items-center justify-center py-8 text-muted-foreground">
             <Loader2 className="w-6 h-6 animate-spin mr-2" />

@@ -5,12 +5,22 @@ import {
     PutSecretValueCommand,
     CreateSecretCommand,
     DeleteSecretCommand,
+    RestoreSecretCommand,
     ResourceExistsException
 } from "@aws-sdk/client-secrets-manager";
 
-const client = new SecretsManagerClient({
-    region: process.env.AWS_REGION || "us-east-1"
-});
+let _client: SecretsManagerClient | null = null;
+
+function getSecretsManagerClient() {
+  if (!_client) {
+    _client = new SecretsManagerClient({
+      region: process.env.AWS_REGION || "us-east-1",
+    });
+  }
+  return _client;
+}
+
+const client = getSecretsManagerClient();
 
 
 // * Save the API key for a user in AWS Secrets Manager
@@ -66,6 +76,28 @@ export async function storeUserApiKey(
                 }
                 throw createError;
             }
+        } else if (error && typeof error === 'object' && 'name' in error && error.name === 'InvalidRequestException') {
+            // Check if it's marked for deletion
+            const errorMessage = (error as any).message || "";
+            if (errorMessage.includes("marked for deletion")) {
+                 try {
+                    console.log(`Restoring secret ${secretName}...`);
+                    await client.send(new RestoreSecretCommand({ SecretId: secretName }));
+                    
+                    // Retry the update after restore
+                    await client.send(
+                        new PutSecretValueCommand({
+                            SecretId: secretName,
+                            SecretString: secretData,
+                        })
+                    );
+                    return secretName;
+                 } catch (restoreError) {
+                     console.error("Error restoring secret:", restoreError);
+                     throw restoreError;
+                 }
+            }
+            throw error;
         } else {
             console.error(`Error storing API key`, error);
             throw error;
@@ -94,9 +126,19 @@ export async function getUserApiKey(
     const secret = JSON.parse(response.SecretString);
     return secret.apiKey || null;
   } catch (error: unknown) {
-    if (error && typeof error === 'object' && 'name' in error && error.name === 'ResourceNotFoundException') {
-      // Secret not found - this is normal
-      return null;
+    if (error && typeof error === 'object' && 'name' in error) {
+        if (error.name === 'ResourceNotFoundException') {
+            // Secret not found - this is normal
+            return null;
+        }
+        if (error.name === 'InvalidRequestException') {
+             // Check if it's marked for deletion
+             const errorMessage = (error as any).message || "";
+             if (errorMessage.includes("marked for deletion")) {
+                 // Treat as not found
+                 return null;
+             }
+        }
     }
     console.error(`Error fetching API key:`, error);
     return null;

@@ -13,6 +13,8 @@ export interface ModelResponse {
     error?: string;
     responseTime: number; // in seconds
     isExpanded: boolean;
+    _id?: string;
+    status?: "processing" | "completed" | "failed";
 }
 
 export interface ConversationTurn {

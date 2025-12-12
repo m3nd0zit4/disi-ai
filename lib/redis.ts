@@ -14,8 +14,13 @@ export const upstashRedis = new Redis({
 }); 
 
 //*IOredis for BullMQ
-export const connection = new IORedis(process.env.REDIS_URL!, {
-    maxRetriesPerRequest: null, 
+const redisUrl = process.env.REDIS_URL || "";
+const isSecure = redisUrl.startsWith("rediss://");
+
+export const connection = new IORedis(redisUrl, {
+    maxRetriesPerRequest: null,
+    family: 0, 
+    tls: isSecure ? { rejectUnauthorized: false } : undefined,
 });
 
 // *Jobs Definitions

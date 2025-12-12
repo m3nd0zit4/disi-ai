@@ -61,7 +61,7 @@ export async function POST(req: Request) {
     }
 
     // Validate API key
-    console.log(`🔍 Validating API key for ${provider}...`);
+    console.log(` Validating API key for ${provider}...`);
     const validation = await validateApiKey(provider, apiKey);
 
     if (!validation.valid) {
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log(`✅ API key validated for ${provider}`);
+    console.log(` API key validated for ${provider}`);
 
     // Save in AWS Secrets Manager
     const secretName = await storeUserApiKey(userId, provider, apiKey);
