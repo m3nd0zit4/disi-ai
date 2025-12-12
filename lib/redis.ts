@@ -20,7 +20,11 @@ const isSecure = redisUrl.startsWith("rediss://");
 export const connection = new IORedis(redisUrl, {
     maxRetriesPerRequest: null,
     family: 0, 
-    tls: isSecure ? { rejectUnauthorized: false } : undefined,
+    tls: isSecure 
+        ? { 
+            rejectUnauthorized: process.env.NODE_ENV !== "development" 
+          } 
+        : undefined,
 });
 
 // *Jobs Definitions
