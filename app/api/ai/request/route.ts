@@ -4,7 +4,22 @@ import { aiRequestQueue } from "@/lib/redis";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+/**
+ * Creates an authenticated ConvexHttpClient with the user's auth token
+ */
+async function getAuthenticatedConvexClient(): Promise<ConvexHttpClient> {
+  const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+  
+  // Get the auth session and token from Clerk
+  const { getToken } = await auth();
+  const token = await getToken({ template: "convex" });
+  
+  if (token) {
+    convex.setAuth(token);
+  }
+  
+  return convex;
+}
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +32,7 @@ export async function POST(req: Request) {
     const { conversationId, messageId, models, userMessage } = body;
 
     // *Get user from Convex
+    const convex = await getAuthenticatedConvexClient();
     const user = await convex.query(api.users.getCurrentUser);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -50,8 +66,12 @@ export async function POST(req: Request) {
     // *For each model, enqueue a job
     const jobs = await Promise.all(
       models.map(async (model: { modelId: string; subModelId: string }) => {
+        console.log(`[Request] Processing model ${model.modelId}...`);
+        
         // *Get user API key (REQUIRED in free tier)
+        console.log(`[Request] Fetching API key for ${model.modelId}...`);
         const apiKey = await getUserApiKeyForModel(userId, model.modelId);
+        console.log(`[Request] API key fetched for ${model.modelId} (found: ${!!apiKey})`);
         
         if (!apiKey && user.plan === "free") {
           throw new Error(
@@ -63,6 +83,7 @@ export async function POST(req: Request) {
         const finalApiKey = apiKey || getSystemApiKey(model.modelId);
 
         // *Create a job in the queue
+        console.log(`[Request] Adding job to queue for ${model.modelId}...`);
         const job = await aiRequestQueue.add(
           `${model.modelId}-${model.subModelId}`,
           {
@@ -81,6 +102,7 @@ export async function POST(req: Request) {
             priority: user.plan === "pro" ? 1 : 2, // !PRO has priority
           }
         );
+        console.log(`[Request] Job added for ${model.modelId}, ID: ${job.id}`);
 
         return {
           jobId: job.id,

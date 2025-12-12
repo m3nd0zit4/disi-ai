@@ -2,13 +2,14 @@ import OpenAI from "openai";
 import { BaseAIService, AIRequest, AIResponse } from "./base";
 
 export class OpenAIService extends BaseAIService {
-  private client: OpenAI;
+  public client: OpenAI;
 
   constructor(apiKey: string) {
     super({ apiKey, baseURL: "https://api.openai.com/v1" });
     this.client = new OpenAI({ apiKey });
   }
 
+  //* Generate a response
   async generateResponse(request: AIRequest): Promise<AIResponse> {
     const startTime = Date.now();
     
@@ -17,6 +18,7 @@ export class OpenAIService extends BaseAIService {
       messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
       temperature: request.temperature ?? 0.7,
       max_tokens: request.maxTokens,
+      stream: false,
     });
 
     const responseTime = (Date.now() - startTime) / 1000;
@@ -30,6 +32,19 @@ export class OpenAIService extends BaseAIService {
     };
   }
 
+  //* Generate a stream of responses
+  async generateStreamResponse(request: AIRequest) {
+    return this.client.chat.completions.create({
+      model: request.model,
+      messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
+      temperature: request.temperature ?? 0.7,
+      max_tokens: request.maxTokens,
+      stream: true,
+    })
+  }
+
+  //* Calculate the cost of a request
+  //TODO: Hardcoded prices
   private calculateCost(model: string, tokens: number): number {
     // Pricing por modelo (actualizar según precios reales)
     const pricing: Record<string, { input: number; output: number }> = {
@@ -41,6 +56,7 @@ export class OpenAIService extends BaseAIService {
     return tokens * modelPricing.input; // Simplificado
   }
 
+  //* Validate the API key
   async validateApiKey(): Promise<boolean> {
     try {
       await this.client.models.list();
