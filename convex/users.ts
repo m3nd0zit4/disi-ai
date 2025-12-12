@@ -306,3 +306,111 @@ export const getUserStats = query({
     };
   },
 });
+
+// *Get user API key
+export const getUserApiKeys = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) { return []; }
+
+    const keys = await ctx.db
+      .query("userApiKeys")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+
+    return keys.map(k => ({
+      modelId: k.modelId,
+      hasKey: k.hasKey,
+      isValid: k.isValid,
+      lastValidated: k.lastValidated,
+      createdAt: k.createdAt,
+    }))
+  }
+})
+
+// *Save API key (called from API route)
+export const saveApiKey = mutation({
+  args: {
+    clerkId: v.string(),
+    provider: v.string(),
+    secretName: v.string(),
+    isValid: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) { 
+      throw new Error("User not found");
+    }
+
+    // Check if already exists
+    const existing = await ctx.db
+      .query("userApiKeys")
+      .withIndex("by_user_and_model", (q) => q.eq("userId", user._id).eq("modelId", args.provider))
+      .first();
+
+    if (existing) {
+      //Update
+      await ctx.db.patch(existing._id, {
+        awsSecretName: args.secretName,
+        isValid: args.isValid,
+        hasKey: true,
+        lastValidated: Date.now(),
+        updatedAt: Date.now(),
+      })
+    } else {
+      //Create
+      await ctx.db.insert("userApiKeys", {
+        userId: user._id,
+        modelId: args.provider,
+        hasKey: true,
+        awsSecretName: args.secretName,
+        isValid: args.isValid,
+        lastValidated: Date.now(),
+        createdAt: Date.now(),
+      });
+    }
+
+    return { success: true };
+  }
+})
+
+//* Delete API key (called from API route)
+export const deleteApiKey = mutation({
+  args: {
+    clerkId: v.string(),
+    provider: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) { 
+      throw new Error("User not found");
+    }
+
+    const existing = await ctx.db
+      .query("userApiKeys")
+      .withIndex("by_user_and_model", (q) => q.eq("userId", user._id).eq("modelId", args.provider))
+      .first();
+
+    if (existing) {
+      await ctx.db.delete(existing._id);
+    }
+
+    return { success: true };
+  }
+})

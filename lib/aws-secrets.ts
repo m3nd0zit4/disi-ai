@@ -41,9 +41,9 @@ export async function storeUserApiKey(
             })
         );
         return `API key updated for ${provider} - user ${userId}`;
-    } catch (error: any) {
+    } catch (error: unknown) {
         //? create if not exists
-        if(error.name === 'ResourceNotFoundException') {
+        if(error && typeof error === 'object' && 'name' in error && error.name === 'ResourceNotFoundException') {
             await client.send(
                 new CreateSecretCommand({
                     Name: secretName,
@@ -81,8 +81,8 @@ export async function getUserApiKey(
 
     const secret = JSON.parse(response.SecretString);
     return secret.apiKey || null;
-  } catch (error: any) {
-    if (error.name === 'ResourceNotFoundException') {
+  } catch (error: unknown) {
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'ResourceNotFoundException') {
       // Secret not found - this is normal
       return null;
     }
@@ -109,8 +109,8 @@ export async function deleteUserApiKey(
     );
     console.log(`API key deleted for ${provider} - user ${userId}`);
     return true;
-  } catch (error: any) {
-    if (error.name === 'ResourceNotFoundException') {
+  } catch (error: unknown) {
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'ResourceNotFoundException') {
       return true;
     }
     console.error(`Error deleting API key:`, error);
