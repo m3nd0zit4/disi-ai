@@ -1,17 +1,15 @@
+import "server-only";
 import {
     SecretsManagerClient,
     GetSecretValueCommand,
     PutSecretValueCommand,
     CreateSecretCommand,
-    DeleteSecretCommand
+    DeleteSecretCommand,
+    ResourceExistsException
 } from "@aws-sdk/client-secrets-manager";
 
 const client = new SecretsManagerClient({
-    region: process.env.AWS_REGION || "us-east-1",
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-    }
+    region: process.env.AWS_REGION || "us-east-1"
 });
 
 
@@ -40,25 +38,39 @@ export async function storeUserApiKey(
                 SecretString: secretData,
             })
         );
-        return `API key updated for ${provider} - user ${userId}`;
+        return secretName;
     } catch (error: unknown) {
         //? create if not exists
         if(error && typeof error === 'object' && 'name' in error && error.name === 'ResourceNotFoundException') {
-            await client.send(
-                new CreateSecretCommand({
-                    Name: secretName,
-                    SecretString: secretData,
-                    Description: `API key for ${provider} - user ${userId}`,
-                })
-            )
-            console.log(`API key created for ${provider} - user ${userId}`);
+            try {
+                await client.send(
+                    new CreateSecretCommand({
+                        Name: secretName,
+                        SecretString: secretData,
+                        Description: `API key for ${provider} - user ${userId}`,
+                    })
+                );
+                console.log(`API key created for ${provider} - user ${userId}`);
+                return secretName;
+            } catch (createError: unknown) {
+                // Handle race condition: another request created the secret concurrently
+                if (createError instanceof ResourceExistsException) {
+                    // Retry the update now that the secret exists
+                    await client.send(
+                        new PutSecretValueCommand({
+                            SecretId: secretName,
+                            SecretString: secretData,
+                        })
+                    );
+                    return secretName;
+                }
+                throw createError;
+            }
         } else {
             console.error(`Error storing API key`, error);
             throw error;
         }
     }
-    
-    return secretName;
 }
 
 
@@ -103,8 +115,8 @@ export async function deleteUserApiKey(
   try {
     await client.send(
       new DeleteSecretCommand({ 
-        SecretId: secretName,
-        ForceDeleteWithoutRecovery: true // Eliminar inmediatamente sin periodo de recuperación
+        SecretId: secretName
+        // Uses default recovery window (7-30 days) for safety
       })
     );
     console.log(`API key deleted for ${provider} - user ${userId}`);

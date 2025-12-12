@@ -4,9 +4,24 @@ import { storeUserApiKey, deleteUserApiKey, validateApiKey } from "@/lib/aws-sec
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+/**
+ * Creates an authenticated ConvexHttpClient with the user's auth token
+ */
+async function getAuthenticatedConvexClient(): Promise<ConvexHttpClient> {
+  const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+  
+  // Get the auth session and token from Clerk
+  const { getToken } = await auth();
+  const token = await getToken({ template: "convex" });
+  
+  if (token) {
+    convex.setAuth(token);
+  }
+  
+  return convex;
+}
 
-// GET - Optain user API keys
+// GET - Obtain user API keys
 export async function GET() {
   try {
     const { userId } = await auth();
@@ -14,6 +29,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const convex = await getAuthenticatedConvexClient();
     const keys = await convex.query(api.users.getUserApiKeys);
 
     return NextResponse.json({ keys });
@@ -63,7 +79,8 @@ export async function POST(req: Request) {
     // Save in AWS Secrets Manager
     const secretName = await storeUserApiKey(userId, provider, apiKey);
 
-    // Register in Convex
+    // Register in Convex with authenticated client
+    const convex = await getAuthenticatedConvexClient();
     await convex.mutation(api.users.saveApiKey, {
       clerkId: userId,
       provider,
@@ -110,7 +127,8 @@ export async function DELETE(req: Request) {
     // Delete from AWS
     await deleteUserApiKey(userId, provider);
 
-    // Delete from Convex
+    // Delete from Convex with authenticated client
+    const convex = await getAuthenticatedConvexClient();
     await convex.mutation(api.users.deleteApiKey, {
       clerkId: userId,
       provider,
