@@ -3,13 +3,12 @@ import { NextResponse } from "next/server";
 import { streamText, LanguageModel } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 
 export const runtime = "edge";
-
-
 
 export async function POST(req: Request) {
     try {
@@ -54,19 +53,52 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Invalid API Key" }, { status: 400 });
         }
 
-        // Configure provider based on modelId and apiKey
-        if (modelId === "GPT") {
-            const openai = createOpenAI({
-                apiKey: finalApiKey,
-            });
-            model = openai(subModelId);
-        } else if (modelId === "Claude") {
-            const anthropic = createAnthropic({
-                apiKey: finalApiKey,
-            });
-            model = anthropic(subModelId);
-        } else {
-            throw new Error(`Streaming not supported for ${modelId}`);
+        // Configure provider based on modelId
+        switch (modelId) {
+            case "GPT": {
+                const openai = createOpenAI({
+                    apiKey: finalApiKey,
+                });
+                model = openai(subModelId);
+                break;
+            }
+            
+            case "Claude": {
+                const anthropic = createAnthropic({
+                    apiKey: finalApiKey,
+                });
+                model = anthropic(subModelId);
+                break;
+            }
+            
+            case "Gemini": {
+                const google = createGoogleGenerativeAI({
+                    apiKey: finalApiKey,
+                });
+                model = google(subModelId);
+                break;
+            }
+            
+            case "Grok": {
+                const xai = createOpenAI({
+                    apiKey: finalApiKey,
+                    baseURL: "https://api.x.ai/v1",
+                });
+                model = xai(subModelId);
+                break;
+            }
+            
+            case "DeepSeek": {
+                const deepseek = createOpenAI({
+                    apiKey: finalApiKey,
+                    baseURL: "https://api.deepseek.com/v1",
+                });
+                model = deepseek(subModelId);
+                break;
+            }
+            
+            default:
+                throw new Error(`Streaming not supported for ${modelId}`);
         }
 
         const result = streamText({
@@ -98,7 +130,7 @@ export async function POST(req: Request) {
         return result.toTextStreamResponse();
 
     } catch (error) {
-        console.error("Streaming error: ", error);
+        console.error("Streaming error:", error);
         return NextResponse.json(
             { error: error instanceof Error ? error.message : "Streaming failed" },
             { status: 500 }
@@ -107,17 +139,34 @@ export async function POST(req: Request) {
 }
 
 // Temporal helper for calculate cost 
-// TODO: Hardcoded prices in lib/pricing.ts
-
+// TODO: Move to lib/pricing.ts
 function calculateCost(modelId: string, subModelId: string, tokens: number): number {
     const pricing: Record<string, Record<string, number>> = {
         "GPT": {
-            "gpt-4o": 0.03 / 1000,
-            "gpt-4o-mini": 0.001 / 1000,
+            "gpt-4o": 0.005 / 1000, // $5 per 1M input tokens
+            "gpt-4o-mini": 0.00015 / 1000, // $0.15 per 1M input tokens
+            "gpt-4-turbo": 0.01 / 1000,
+            "gpt-3.5-turbo": 0.0005 / 1000,
         },
         "Claude": {
-            "claude-3-sonnet-20240229": 0.003 / 1000,
+            "claude-opus-4-5-20251101": 0.015 / 1000,
+            "claude-sonnet-4-5-20250929": 0.003 / 1000,
+            "claude-haiku-4-5-20251001": 0.0008 / 1000,
             "claude-3-opus-20240229": 0.015 / 1000,
+            "claude-3-sonnet-20240229": 0.003 / 1000,
+        },
+        "Gemini": {
+            "gemini-2.0-flash-exp": 0, // Free tier
+            "gemini-1.5-pro": 0.00125 / 1000,
+            "gemini-1.5-flash": 0.000075 / 1000,
+        },
+        "Grok": {
+            "grok-beta": 0.005 / 1000,
+            "grok-2-latest": 0.005 / 1000,
+        },
+        "DeepSeek": {
+            "deepseek-chat": 0.00014 / 1000, // $0.14 per 1M tokens
+            "deepseek-coder": 0.00014 / 1000,
         }
     };
     
@@ -125,40 +174,38 @@ function calculateCost(modelId: string, subModelId: string, tokens: number): num
 }
 
 // *Helpers
-
 async function getUserApiKeyForModel(
-  userId: string,
-  modelId: string
+    userId: string,
+    modelId: string
 ): Promise<string | null> {
-  const { getUserApiKey } = await import("@/lib/aws-secrets");
-  return getUserApiKey(userId, modelId); 
+    const { getUserApiKey } = await import("@/lib/aws-secrets");
+    return getUserApiKey(userId, modelId); 
 }
 
 function getSystemApiKey(modelId: string): string {
+    const envVarMap: Record<string, string> = {
+        "GPT": "OPENAI_API_KEY",
+        "Claude": "ANTHROPIC_API_KEY",
+        "Gemini": "GOOGLE_AI_API_KEY",
+        "Grok": "XAI_API_KEY",
+        "DeepSeek": "DEEPSEEK_API_KEY",
+    };
 
-  const envVarMap: Record<string, string> = {
-    "GPT": "OPENAI_API_KEY",
-    "Claude": "ANTHROPIC_API_KEY",
-    "Gemini": "GOOGLE_AI_API_KEY",
-    "Grok": "XAI_API_KEY",
-    "DeepSeek": "DEEPSEEK_API_KEY",
-  };
+    const envVarName = envVarMap[modelId];
+    
+    if (!envVarName) {
+        throw new Error(
+            `Modelo desconocido: ${modelId}. Modelos soportados: ${Object.keys(envVarMap).join(", ")}`
+        );
+    }
 
-  const envVarName = envVarMap[modelId];
-  
-  if (!envVarName) {
-    throw new Error(
-      `Modelo desconocido: ${modelId}. Modelos soportados: ${Object.keys(envVarMap).join(", ")}`
-    );
-  }
-
-  const key = process.env[envVarName];
-  
-  if (!key) {
-    throw new Error(
-      `Sistema no tiene API key configurada para ${modelId}. Variable esperada: ${envVarName}`
-    );
-  }
-  
-  return key;
+    const key = process.env[envVarName];
+    
+    if (!key) {
+        throw new Error(
+            `Sistema no tiene API key configurada para ${modelId}. Variable esperada: ${envVarName}`
+        );
+    }
+    
+    return key;
 }
