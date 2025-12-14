@@ -44,7 +44,7 @@ export class AnthropicService extends BaseAIService {
   }
 
   //* Generate a stream of responses
-  async generateStreamResponse(request: AIRequest) {
+  async generateStreamResponse(request: AIRequest): Promise<ReturnType<Anthropic['messages']['stream']>> {
     const messages = request.messages
       .filter(m => m.role !== "system")
       .map(m => ({

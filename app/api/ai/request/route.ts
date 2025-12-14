@@ -46,12 +46,12 @@ export async function POST(req: Request) {
 
     const limit = user.plan === "pro" ? 10000 : 0; //? FREE = 0 requests
     
-    if (stats.usage.requests >= limit) {
+    // Only enforce limit for PRO users (who use system keys)
+    // Free users are gated by the "must have own key" check later
+    if (user.plan === "pro" && stats.usage.requests >= limit) {
       return NextResponse.json(
         { 
-          error: user.plan === "free" 
-            ? "Free tier does not include messages. Configure your API keys in Settings." 
-            : "You have reached your monthly limit"
+          error: "You have reached your monthly limit"
         },
         { status: 403 }
       );
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
 
     // *For each model, enqueue a job
     const jobs = await Promise.all(
-      models.map(async (model: { modelId: string; subModelId: string }) => {
+      models.map(async (model: { modelId: string; subModelId: string }, index: number) => {
         console.log(`[Request] Processing model ${model.modelId}...`);
         
         // *Get user API key (REQUIRED in free tier)
@@ -87,7 +87,7 @@ export async function POST(req: Request) {
         const job = await aiRequestQueue.add(
           `${model.modelId}-${model.subModelId}`,
           {
-            responseId: body.responseIds[models.indexOf(model)],
+            responseId: body.responseIds[index],
             conversationId,
             userId: userRecord._id,
             messageId,
@@ -107,7 +107,7 @@ export async function POST(req: Request) {
         return {
           jobId: job.id,
           modelId: model.modelId,
-          responseId: body.responseIds[models.indexOf(model)],
+          responseId: body.responseIds[index],
         };
       })
     );
