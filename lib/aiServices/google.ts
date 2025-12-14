@@ -15,20 +15,35 @@ export class GoogleService extends BaseAIService {
 
         const model = this.client.getGenerativeModel({ model: request.model });
 
+        // Find the last user message
+        const lastUserMessageIndex = request.messages.findLastIndex(msg => msg.role === "user");
+        
+        if (lastUserMessageIndex === -1) {
+            throw new Error("No user message found in the request");
+        }
+
+        const lastUserMessage = request.messages[lastUserMessageIndex];
+        
+        // Extract system message if present
+        const systemMessage = request.messages.find(msg => msg.role === "system");
+
+        // Format history: exclude system message and messages after the last user message
+        const historyMessages = request.messages.slice(0, lastUserMessageIndex).filter(msg => msg.role !== "system");
+
         // Format the prompt for gemini
         const chat = model.startChat({
-            history: request.messages.slice(0, -1).map(msg => ({
+            history: historyMessages.map(msg => ({
                 role: msg.role === "assistant" ? "model" : "user",
                 parts: [{ text: msg.content }],
             })),
             generationConfig: {
                 temperature: request.temperature ?? 0.7,
                 maxOutputTokens: request.maxTokens ?? 2048,
-            }
+            },
+            systemInstruction: systemMessage ? { role: "system", parts: [{ text: systemMessage.content }] } : undefined,
         });
 
-        const lastMessage = request.messages[request.messages.length - 1];
-        const result = await chat.sendMessage(lastMessage.content);
+        const result = await chat.sendMessage(lastUserMessage.content);
         const response = result.response;
 
         const responseTime = (Date.now() - startTime) / 1000;
@@ -60,7 +75,7 @@ export class GoogleService extends BaseAIService {
     async validateApiKey(): Promise<boolean> {
         try {
             const model = this.client.getGenerativeModel({ model: "gemini-1.5-flash" });
-            await model.generateContent("test");
+            await model.countTokens("test");
             return true;
         } catch {
             return false;

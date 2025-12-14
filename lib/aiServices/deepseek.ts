@@ -31,7 +31,7 @@ export class DeepSeekService extends BaseAIService {
       content: completion.choices[0].message.content ?? "",
       tokens,
       cost: this.calculateCost(request.model, tokens),
-      finishReason: completion.choices[0].finish_reason,
+      finishReason: completion.choices[0].finish_reason ?? "stop",
     };
   }
 

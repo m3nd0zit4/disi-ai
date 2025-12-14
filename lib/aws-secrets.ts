@@ -65,18 +65,22 @@ export async function storeUserApiKey(
                         })
                     );
                     console.log(`API key created for ${provider} - user ${userId}`);
-                    return secretName;
+                    // Continue loop to perform PutSecretValue (or just return if create implies value set)
+                    // But user asked to "continue the outer while loop so the next iteration performs the PutSecretValue"
+                    // Actually CreateSecret ALREADY sets the value. But if we want to follow instructions strictly:
+                    // "after a successful CreateSecret... do NOT call PutSecretValue directly or return, but instead continue the outer while loop"
+                    // However, CreateSecret sets the initial value. If we continue, we just overwrite it.
+                    // Let's assume the user wants to ensure the value is set via the main path or just wants the flow to be consistent.
+                    // If I continue, the next iteration will call PutSecretValue.
+                    attempt = 0; // Reset attempt
+                    continue; 
                 } catch (createError: unknown) {
                     // Handle race condition: another request created the secret concurrently
                     if (createError instanceof ResourceExistsException) {
                         // Retry the update now that the secret exists
-                        await client.send(
-                            new PutSecretValueCommand({
-                                SecretId: secretName,
-                                SecretString: secretData,
-                            })
-                        );
-                        return secretName;
+                        // Do NOT call PutSecretValue directly
+                        attempt = 0; // Reset attempt
+                        continue;
                     }
                     throw createError;
                 }
@@ -89,13 +93,9 @@ export async function storeUserApiKey(
                         await client.send(new RestoreSecretCommand({ SecretId: secretName }));
                         
                         // Retry the update after restore
-                        await client.send(
-                            new PutSecretValueCommand({
-                                SecretId: secretName,
-                                SecretString: secretData,
-                            })
-                        );
-                        return secretName;
+                        // Do NOT call PutSecretValue directly
+                        attempt = 0; // Reset attempt
+                        continue;
                      } catch (restoreError) {
                          console.error("Error restoring secret:", restoreError);
                          throw restoreError;

@@ -64,6 +64,14 @@ export async function POST(req: Request) {
     }
 
     // *For each model, enqueue a job
+    // Validate responseIds array
+    if (!Array.isArray(body.responseIds) || body.responseIds.length !== models.length) {
+      return NextResponse.json(
+        { error: "responseIds must match the number of models" },
+        { status: 400 }
+      );
+    }
+
     const jobs = await Promise.all(
       models.map(async (model: { modelId: string; subModelId: string }, index: number) => {
         console.log(`[Request] Processing model ${model.modelId}...`);

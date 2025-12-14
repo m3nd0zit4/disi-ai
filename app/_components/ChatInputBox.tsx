@@ -36,7 +36,9 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
   const [isLoading, setIsLoading] = useState(false);
 
   const [isSearchActive, setIsSearchActive] = useState(false);
-  const [activeMode, setActiveMode] = useState<"image" | "video" | "deepThought" | null>(null);
+  const [activeMode, setActiveMode] = useState<
+    "image" | "video" | "deepThought" | null
+  >(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
 
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -47,7 +49,10 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
+      if (
+        addMenuRef.current &&
+        !addMenuRef.current.contains(event.target as Node)
+      ) {
         setShowAddMenu(false);
       }
     };
@@ -62,7 +67,8 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
     if (!prompt.trim() || !hasModelsSelected) return;
 
     setIsLoading(true);
-    
+    const userMessage = prompt;
+
     try {
       let currentConversationId = conversationId;
 
@@ -71,20 +77,20 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
         currentConversationId = await createConversation({
           models: selectedModels,
         });
-        
+
         console.log("Conversacion creada: ", currentConversationId);
       }
 
       // Send message to convex (created message + response pending)
       const { messageId, responseIds } = await sendMessage({
         conversationId: currentConversationId,
-        content: prompt,
+        content: userMessage,
         models: selectedModels,
       });
 
       console.log("Message ID: ", messageId);
       console.log("Response IDs: ", responseIds);
-      
+
       // Find in Redis through the API Gateway
       const response = await fetch("/api/ai/request", {
         method: "POST",
@@ -94,20 +100,19 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
           messageId,
           responseIds,
           models: selectedModels,
-          userMessage: prompt,
-        })
-      })
+          userMessage,
+        }),
+      });
 
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || "Failed to queue requests");
       }
-      
+
       const data = await response.json();
       console.log("Jobs Found: ", data.jobs);
 
       // Clean input
-      const userMessage = prompt;
       setPrompt("");
 
       if (!conversationId && currentConversationId) {
@@ -124,13 +129,13 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
           subModelId: model.subModelId,
           userMessage,
         });
-      })
-      
-
+      });
     } catch (error) {
       console.error("Error sending message:", error);
-      
-      alert(error instanceof Error ? error.message : "The message could not be sent")
+
+      alert(
+        error instanceof Error ? error.message : "The message could not be sent"
+      );
     } finally {
       setIsLoading(false);
     }
@@ -161,7 +166,6 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
       // The streaming is automatically handled by Vercel AI SDK
       // Convex will be updated through the onCompletion callback
       console.log(` Streaming Initiated for ${params.modelId}`);
-
     } catch (error) {
       console.error(` Error streaming ${params.modelId}:`, error);
     }
@@ -201,7 +205,8 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
                     size="icon"
                     className={cn(
                       "size-9 rounded-full transition-all duration-200",
-                      showAddMenu && "bg-primary text-primary-foreground rotate-45"
+                      showAddMenu &&
+                        "bg-primary text-primary-foreground rotate-45"
                     )}
                     onClick={() => setShowAddMenu(!showAddMenu)}
                     disabled={!hasModelsSelected}
@@ -214,7 +219,10 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
                   <div className="absolute bottom-12 left-0 z-50 min-w-[200px] overflow-hidden rounded-xl border bg-popover p-1 shadow-md animate-in fade-in zoom-in-95 duration-200 slide-in-from-bottom-2">
                     <div className="grid gap-0.5">
                       <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-muted transition-colors text-left">
-                        <FolderOpen size={16} className="text-muted-foreground" />
+                        <FolderOpen
+                          size={16}
+                          className="text-muted-foreground"
+                        />
                         <span>Upload Local</span>
                       </button>
                       <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-muted transition-colors text-left">
@@ -231,25 +239,42 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
               </div>
 
               {commonCapabilities?.search && (
-                <SearchButton isActive={isSearchActive} onClick={() => setIsSearchActive(!isSearchActive)} />
+                <SearchButton
+                  isActive={isSearchActive}
+                  onClick={() => setIsSearchActive(!isSearchActive)}
+                />
               )}
 
               {commonCapabilities?.deepthought && (
-                <DeepThoughtButton isActive={activeMode === "deepThought"} onClick={() => toggleMode("deepThought")} />
+                <DeepThoughtButton
+                  isActive={activeMode === "deepThought"}
+                  onClick={() => toggleMode("deepThought")}
+                />
               )}
 
               {commonCapabilities?.image && (
-                <ImageButton isActive={activeMode === "image"} onClick={() => toggleMode("image")} />
+                <ImageButton
+                  isActive={activeMode === "image"}
+                  onClick={() => toggleMode("image")}
+                />
               )}
 
               {commonCapabilities?.video && (
-                <VideoButton isActive={activeMode === "video"} onClick={() => toggleMode("video")} />
+                <VideoButton
+                  isActive={activeMode === "video"}
+                  onClick={() => toggleMode("video")}
+                />
               )}
             </div>
 
             <div className="flex items-center gap-2">
               <PromptInputAction tooltip="Voice input">
-                <Button variant="outline" size="icon" className="size-9 rounded-full" disabled={!hasModelsSelected}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-9 rounded-full"
+                  disabled={!hasModelsSelected}
+                >
                   <Mic size={18} />
                 </Button>
               </PromptInputAction>
@@ -260,7 +285,11 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
                 onClick={handleSubmit}
                 className="size-9 rounded-full"
               >
-                {!isLoading ? <ArrowUp size={18} /> : <span className="size-3 rounded-xs bg-white" />}
+                {!isLoading ? (
+                  <ArrowUp size={18} />
+                ) : (
+                  <span className="size-3 rounded-xs bg-white" />
+                )}
               </Button>
             </div>
           </PromptInputActions>
