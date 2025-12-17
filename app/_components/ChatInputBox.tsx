@@ -10,12 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowUp, Mic, Plus, Github, Figma, FolderOpen } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { SearchButton } from "./actions/SearchButton";
-import { DeepThoughtButton } from "./actions/DeepThoughtButton";
-import { ImageButton } from "./actions/ImageButton";
-import { VideoButton } from "./actions/VideoButton";
 import { useAIContext } from "@/context/AIContext";
-import { useCommonTools } from "@/hooks/useCommonTools";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -29,14 +24,8 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
   const { selectedModels, hasModelsSelected } = useAIContext();
   const router = useRouter();
 
-  // Pass the selected models to the common tools hook
-  const commonCapabilities = useCommonTools(selectedModels);
-
   const [prompt, setPrompt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-
-  const [isSearchActive, setIsSearchActive] = useState(false);
-  const [activeMode, setActiveMode] = useState<"image" | "video" | "deepThought" | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
 
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -117,11 +106,11 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
       //Start streaming
       selectedModels.forEach((model, index) => {
         startStreaming({
-          conversationId: currentConversationId,
+          conversationId: currentConversationId!,
           messageId,
           responseId: responseIds[index],
           modelId: model.modelId,
-          subModelId: model.subModelId,
+          provider: model.provider,
           userMessage,
         });
       })
@@ -141,7 +130,7 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
     messageId: Id<"messages">;
     responseId: Id<"modelResponses">;
     modelId: string;
-    subModelId: string;
+    provider: string;
     userMessage: string;
   }) {
     try {
@@ -166,10 +155,6 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
       console.error(` Error streaming ${params.modelId}:`, error);
     }
   }
-
-  const toggleMode = (mode: "image" | "video" | "deepThought") => {
-    setActiveMode((prev) => (prev === mode ? null : mode));
-  };
 
   return (
     <div className="absolute inset-x-0 bottom-0 mx-auto max-w-3xl px-3 pb-3 md:px-5 md:pb-5">
@@ -229,22 +214,6 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
                   </div>
                 )}
               </div>
-
-              {commonCapabilities?.search && (
-                <SearchButton isActive={isSearchActive} onClick={() => setIsSearchActive(!isSearchActive)} />
-              )}
-
-              {commonCapabilities?.deepthought && (
-                <DeepThoughtButton isActive={activeMode === "deepThought"} onClick={() => toggleMode("deepThought")} />
-              )}
-
-              {commonCapabilities?.image && (
-                <ImageButton isActive={activeMode === "image"} onClick={() => toggleMode("image")} />
-              )}
-
-              {commonCapabilities?.video && (
-                <VideoButton isActive={activeMode === "video"} onClick={() => toggleMode("video")} />
-              )}
             </div>
 
             <div className="flex items-center gap-2">

@@ -6,9 +6,11 @@ export interface ChatMessage {
 }
 
 export interface ModelResponse {
-    modelId: string; // "GPT", "CLAUDE", etc
-    subModelId: string; // "gpt-3.5-turbo", "claude-3.5-sonnet", etc-
+    modelId: string; // ID of the SpecializedModel (e.g. "gpt-4o")
+    provider: string;
+    category: string; // "reasoning", "image", "video"
     content: string;
+    mediaUrl?: string;
     isLoading: boolean;
     error?: string;
     responseTime: number; // in seconds

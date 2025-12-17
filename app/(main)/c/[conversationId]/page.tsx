@@ -18,17 +18,21 @@ export default function ConversationPage() {
   });
 
   const conversationsEndRef = useRef<HTMLDivElement>(null);
+  
 
   // Transformar datos de Convex al formato de UI
   const conversationTurns: ConversationTurnType[] = (messages || []).map((msg) => {
     const modelResponses: ModelResponse[] = msg.modelResponses?.map((resp) => ({
       modelId: resp.modelId,
-      subModelId: resp.subModelId,
+      provider: resp.provider,
+      category: resp.category,
       content: resp.content,
+      mediaUrl: resp.mediaUrl,
       isLoading: resp.status === "pending" || resp.status === "processing",
       isExpanded: resp.isExpanded ?? true,
       responseTime: resp.responseTime || 0,
       error: resp.error,
+      status: resp.status,
     })) || [];
 
     return {
