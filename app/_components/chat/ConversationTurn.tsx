@@ -9,8 +9,9 @@ interface ConversationTurnProps {
     turn: ConversationTurnType;
 }
 
+
 export function ConversationTurn({ turn }: ConversationTurnProps) {
-    const { responses, toggleExpansion, changeSubModel } = useModelResponses(turn.modelResponse);
+    const { responses, toggleExpansion } = useModelResponses(turn.modelResponse);
 
     return (
         <div className="space-y-4">
@@ -32,7 +33,6 @@ export function ConversationTurn({ turn }: ConversationTurnProps) {
                         key={response.modelId}
                         response={response}
                         onToggleExpansion={() => toggleExpansion(response.modelId)}
-                        onChangeSubModel={(subModelId) => changeSubModel(response.modelId, subModelId)}
                     />
                 ))}
             </div>

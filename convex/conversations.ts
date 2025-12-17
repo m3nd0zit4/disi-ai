@@ -8,7 +8,9 @@ export const createConversation = mutation({
     models: v.array(
       v.object({
         modelId: v.string(),
-        subModelId: v.string(),
+        provider: v.string(),
+        category: v.string(),
+        providerModelId: v.string(),
       })
     ),
   },

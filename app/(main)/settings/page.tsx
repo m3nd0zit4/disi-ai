@@ -13,7 +13,7 @@ import { Eye, EyeOff, CheckCircle, XCircle, Loader2, Trash2 } from "lucide-react
 import Image from "next/image";
 
 const PROVIDERS = [
-  { id: "GPT", name: "OpenAI", icon: "/icons/gpt.svg", docsUrl: "https://platform.openai.com/api-keys" },
+  { id: "GPT", name: "OpenAI", icon: "/icons/gpt-claro.svg", docsUrl: "https://platform.openai.com/api-keys" },
   { id: "Claude", name: "Anthropic", icon: "/icons/claude.svg", docsUrl: "https://console.anthropic.com/settings/keys" },
   { id: "Gemini", name: "Google AI", icon: "/icons/gemini.svg", docsUrl: "https://aistudio.google.com/app/apikey" },
   { id: "Grok", name: "xAI", icon: "/icons/grok-claro.svg", docsUrl: "https://console.x.ai" },

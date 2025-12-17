@@ -1,303 +1,545 @@
-import { AIModel } from "../types/AiModel";
+import { SpecializedModel } from "@/types/AiModel";
 
-const AI_MODELS: AIModel[] = [
+export const SPECIALIZED_MODELS: SpecializedModel[] = [
+    // 1. OpenAI
     {
-        model: "GPT",
-        iconLight: "/icons/gpt-claro.svg",
-        iconDark: "/icons/gpt-oscuro.svg",
-        premium: false,
-        enabled: true,
-        subModel: [
-            { 
-                name: "GPT 5.1", 
-                premium: false, 
-                enabled: true, 
-                id: "gpt-5.1-2025-11-13",
-                capabilities: {
-                    search: true,
-                    deepthought: false,
-                    image: true,
-                    video: false,
-                }
-            },
-            { 
-                name: "GPT 5 mini", 
-                premium: false, 
-                enabled: true, 
-                id: "gpt-5-mini-2025-08-07",
-                capabilities: {
-                    search: true,
-                    deepthought: false,
-                    image: false,
-                    video: false,
-                }
-            },
-            { 
-                name: "GPT 5 nano", 
-                premium: false, 
-                enabled: true, 
-                id: "gpt-5-nano-2025-08-07",
-                capabilities: {
-                    search: true,
-                    deepthought: false,
-                    image: true,
-                    video: false,
-                }
-            },
-            { 
-                name: "GPT 5 pro", 
-                premium: true, 
-                enabled: true, 
-                id: "gpt-5-pro-2025-10-06",
-                capabilities: {
-                    search: true,
-                    deepthought: false,
-                    image: true,
-                    video: false,
-                }
-            },
-            { 
-                name: "GPT 5", 
-                premium: true, 
-                enabled: true, 
-                id: "gpt-5-2025-08-07",
-                capabilities: {
-                    search: true,
-                    deepthought: false,
-                    image: true,
-                    video: false,
-                }
-            },
-            { 
-                name: "GPT 4.1", 
-                premium: false, 
-                enabled: true, 
-                id: "gpt-4.1-2025-04-14",
-                capabilities: {
-                    search: true,
-                    deepthought: false,
-                    image: true,
-                    video: false,
-                }
-            },
-        ],
-    },
-    {
-        model: "Gemini",
-        iconLight: "/icons/gemini.svg",
-        iconDark: "/icons/gemini.svg",
-        premium: false,
-        enabled: true,
-        subModel: [
-            { 
-                name: "Gemini 3 Pro Preview", 
-                premium: false, 
-                enabled: true, 
-                id: "gemini-3-pro-preview",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: false,
-                    video: false,
-                }
-            },
-            { 
-                name: "Gemini 3 Pro Image Preview", 
-                premium: false, 
-                enabled: true, 
-                id: "gemini-3-pro-image-preview",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: true,
-                    video: false,
-                }
-            },
-            { 
-                name: "Gemini 2.5 Flash", 
-                premium: true, 
-                enabled: true, 
-                id: "gemini-2.5-flash",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: false,
-                    video: false,
-                }
-            },
-            {
-                name: "Gemini 2.5 Flash Image",
-                premium: true, 
-                enabled: true, 
-                id: "gemini-2.5-flash-image",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: true,
-                    video: false,
-                }
-            },
-            {
-                name: "Gemini 2.5 Flash-Lite",
-                premium: true, 
-                enabled: true, 
-                id: "gemini-2.5-flash-lite",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: false,
-                    video: false,
-                }
-            },
-            {
-                name: "Gemini 2.5 Pro",
-                premium: true, 
-                enabled: true, 
-                id: "gemini-2.5-pro",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: false,
-                    video: false,
-                }
-            }
-        ],
-    },
-    {
-        model: "Claude",
-        iconLight: "/icons/claude.svg",
-        iconDark: "/icons/claude.svg",
-        premium: false,
-        enabled: true,
-        subModel: [
-            { 
-                name: "Claude Sonnet 4.5", 
-                premium: false, 
-                enabled: true, 
-                id: "claude-sonnet-4-5-20250929",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: false,
-                    video: false,
-                }
-            },
-            { 
-                name: "Claude Haiku 4.5", 
-                premium: false, 
-                enabled: true, 
-                id: "claude-haiku-4-5-20251001",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: false,
-                    video: false,
-                }
-            },
-            { 
-                name: "Claude Opus 4.5", 
-                premium: true, 
-                enabled: true, 
-                id: "claude-opus-4-5-20251101",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: false,
-                    video: false,
-                }
-            },
-            {
-                name: "Claude Opus 4.1 (Legacy)",
-                premium: true,
-                enabled: true,
-                id: "claude-opus-4-1-20250805",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: false,
-                    video: false,
-                }
-            }
-        ],
-    },
-    {
-        model: "Grok",
-        iconLight: "/icons/grok-claro.svg",
-        iconDark: "/icons/grok-oscuro.svg",
+        id: "gpt-5.2",
+        category: "reasoning",
+        provider: "GPT",
+        providerModelId: "gpt-5.2",
+        name: "GPT-5.2",
+        description: "The best model for coding and agentic tasks across industries",
         premium: true,
         enabled: true,
-        subModel: [
-            { 
-                name: "Grok 4.1 Fast Reasoning", 
-                premium: false, 
-                enabled: true, 
-                id: "grok-4-1-fast-reasoning",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: true,
-                    video: true,
-                }
-            },
-            { 
-                name: "Grok 4.1 Fast Non-Reasoning", 
-                premium: true, 
-                enabled: true, 
-                id: "grok-4-1-fast-non-reasoning",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: true,
-                    video: true,
-                }
-            },
-            {
-                name: "Grok 4 Fast Reasoning",
-                premium: true,
-                enabled: true,
-                id: "grok-4-fast-reasoning",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: true,
-                    video: true,
-                }
-            },
-            {
-                name: "Grok 4 Fast Non-Reasoning",
-                premium: true,
-                enabled: true,
-                id: "grok-4-fast-non-reasoning",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: true,
-                    video: true,
-                }
-            }
-        ],
+        icon: {
+            light: "/icons/gpt-claro.svg",
+            dark: "/icons/gpt-oscuro.svg",
+        },
     },
     {
-        model: "DeepSeek",
-        iconLight: "/icons/deepseek.svg",
-        iconDark: "/icons/deepseek.svg",
+        id: "gpt-5.2-pro",
+        category: "reasoning",
+        provider: "GPT",
+        providerModelId: "gpt-5.2-pro",
+        name: "GPT-5.2 Pro",
+        description: "Version of GPT-5.2 that produces smarter and more precise responses.",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gpt-claro.svg",
+            dark: "/icons/gpt-oscuro.svg",
+        },
+    },
+    {
+        id: "gpt-5",
+        category: "reasoning",
+        provider: "GPT",
+        providerModelId: "gpt-5",
+        name: "GPT-5",
+        description: "Previous intelligent reasoning model for coding and agentic tasks with configurable reasoning effort",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gpt-claro.svg",
+            dark: "/icons/gpt-oscuro.svg",
+        },
+    },
+    {
+        id: "gpt-5-mini",
+        category: "reasoning",
+        provider: "GPT",
+        providerModelId: "gpt-5-mini",
+        name: "GPT-5 mini",
+        description: "A faster, cost-efficient version of GPT-5 for well-defined tasks",
         premium: false,
         enabled: true,
-        subModel: [
-            { 
-                name: "DeepSeek V3.2", 
-                premium: false, 
-                enabled: true, 
-                id: "deepseek-reasoner",
-                capabilities: {
-                    search: true,
-                    deepthought: true,
-                    image: false,
-                    video: false,
-                }
-            },
-        ],
-    }
+        icon: {
+            light: "/icons/gpt-claro.svg",
+            dark: "/icons/gpt-oscuro.svg",
+        },
+    },
+    {
+        id: "gpt-5-nano",
+        category: "reasoning",
+        provider: "GPT",
+        providerModelId: "gpt-5-nano",
+        name: "GPT-5 nano",
+        description: "Fastest, most cost-efficient version of GPT-5",
+        premium: false,
+        enabled: true,
+        icon: {
+            light: "/icons/gpt-claro.svg",
+            dark: "/icons/gpt-oscuro.svg",
+        },
+    },
+    {
+        id: "gpt-4.1",
+        category: "reasoning",
+        provider: "GPT",
+        providerModelId: "gpt-4.1",
+        name: "GPT-4.1",
+        description: "Smartest non-reasoning model",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gpt-claro.svg",
+            dark: "/icons/gpt-oscuro.svg",
+        },
+    },
+    {
+        id: "gpt-image-1",
+        category: "image",
+        provider: "GPT",
+        providerModelId: "gpt-image-1",
+        name: "GPT Image 1",
+        description: "State-of-the-art image generation model",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gpt-claro.svg",
+            dark: "/icons/gpt-oscuro.svg",
+        },
+        metadata: {
+            qualityResolutions: ["Low", "Medium", "High"],
+            aspectRatios: ["1024x1024", "1024x1536", "1536x1024"],
+            supportedFormats: ["png"]
+        }
+    },
+    {
+        id: "gpt-image-1-mini",
+        category: "image",
+        provider: "GPT",
+        providerModelId: "gpt-image-1-mini",
+        name: "GPT Image 1 Mini",
+        description: "Fastest image generation model",
+        premium: false,
+        enabled: true,
+        icon: {
+            light: "/icons/gpt-claro.svg",
+            dark: "/icons/gpt-oscuro.svg",  
+        },
+        metadata: {
+            qualityResolutions: ["Low", "Medium", "High"],
+            aspectRatios: ["1024x1024", "1024x1536", "1536x1024"],
+            supportedFormats: ["png"]
+        }
+    },
+    {
+        id: "dalle-3",
+        category: "image",
+        provider: "GPT",
+        providerModelId: "dall-e-3",
+        name: "DALL-E 3 (deprecated)",
+        description: "High quality image generation",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gpt-claro.svg",
+            dark: "/icons/gpt-oscuro.svg",
+        },
+        metadata: {
+            qualityResolutions: ["Standard"],
+            aspectRatios: ["1024x1024", "1024x1536", "1536x1024"],
+            supportedFormats: ["png"]
+        }
+    },
+    {
+        id: "sora-2",
+        category: "video",
+        provider: "GPT",
+        providerModelId: "sora-2.0",
+        name: "Sora 2",
+        description: "Realistic video generation",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gpt-claro.svg",
+            dark: "/icons/gpt-oscuro.svg",
+        },
+        metadata: {
+            aspectRatios: ["720x1280", "1280x720"],
+            maxDuration: 60
+        }
+    },
+    {
+        id: "sora-2-pro",
+        category: "video",
+        provider: "GPT",
+        providerModelId: "sora-2.0-pro",
+        name: "Sora 2 Pro",
+        description: "Realistic video generation",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gpt-claro.svg",
+            dark: "/icons/gpt-oscuro.svg",
+        },
+        metadata: {
+            aspectRatios: ["720x1280", "1280x720", "1024x1792", "1792x1024"],
+            maxDuration: 60
+        }
+    },
+
+    // 2. Google Gemini
+    {
+        id: "gemini-3-pro-preview",
+        category: "reasoning", // Multimodal orchestrator
+        provider: "Gemini",
+        providerModelId: "gemini-3-pro-preview",
+        name: "Gemini 3 Pro Preview",
+        description: "The best model in the world for multimodal understanding, and the most powerful agentic and vibe-coding model yet. For Google",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+    },
+    {
+        id: "gemini-2.5-pro",
+        category: "reasoning",
+        provider: "Gemini",
+        providerModelId: "gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
+        description: "multipurpose model, which excels at coding and complex reasoning tasks.",
+        premium: false,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+    },
+    {
+        id: "gemini-2.5-flash",
+        category: "reasoning",
+        provider: "Gemini",
+        providerModelId: "gemini-2.5-flash",
+        name: "Gemini 2.5 Flash",
+        description: "first hybrid reasoning model which supports a 1M token context window and has thinking budgets.",
+        premium: false,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+    },
+    {
+        id: "gemini-2.5-flash-preview-09-2025",
+        category: "reasoning",
+        provider: "Gemini",
+        providerModelId: "gemini-2.5-flash-preview-09-2025",
+        name: "Gemini 2.5 Flash Preview",
+        description: "first hybrid reasoning model which supports a 1M token context window and has thinking budgets.",
+        premium: false,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+    },
+    {
+        id: "gemini-2.5-flash-lite",
+        category: "reasoning",
+        provider: "Gemini",
+        providerModelId: "gemini-2.5-flash-lite",
+        name: "Gemini 2.5 Flash Lite",
+        description: "first hybrid reasoning model which supports a 1M token context window and has thinking budgets.",
+        premium: false,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+    },
+    {
+        id: "gemini-2.5-flash-lite-preview-09-2025",
+        category: "reasoning",
+        provider: "Gemini",
+        providerModelId: "gemini-2.5-flash-lite-preview-09-2025",
+        name: "Gemini 2.5 Flash Lite Preview",
+        description: "Hybrid reasoning model which supports a 1M token context window and has thinking budgets.",
+        premium: false,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+    },
+    {
+        id: "gemini-3-pro-image-preview",
+        category: "image",
+        provider: "Gemini",
+        providerModelId: "gemini-3-pro-image-preview",
+        name: "NanoBanana Pro",
+        description: "The best state-of-the-art image generation model.",
+        premium: false,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+    },
+    {
+        id: "gemini-2.5-flash-image",
+        category: "image",
+        provider: "Gemini",
+        providerModelId: "gemini-2.5-flash-image",
+        name: "NanoBanana",
+        description: "state-of-the-art image generation model.",
+        premium: false,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+    },
+    {
+        id: "veo-2.0-generate-001",
+        category: "video",
+        provider: "Gemini",
+        providerModelId: "veo-2.0-generate-001",
+        name: "Veo 2",
+        description: "state-of-the-art video generation model. By Google Gemini.",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+        metadata: {
+            qualityResolutions: ["720p"],
+            aspectRatios: ["16:9", "9:16"],
+            maxDuration: 8,
+            supportedFormats: ["mp4", "webm"],
+        },
+    },
+    {
+        id: "veo-3.0-generate-001",
+        category: "video",
+        provider: "Gemini",
+        providerModelId: "veo-3.0-generate-001",
+        name: "Veo 3",
+        description: "state-of-the-art video generation model. By Google Gemini.",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+        metadata: {
+            qualityResolutions: ["720p", "1080p"],
+            aspectRatios: ["16:9", "9:16"],
+            maxDuration: 8,
+            supportedFormats: ["mp4", "webm"],
+        },
+    },
+    {
+        id: "veo-3.0-fast-generate-001",
+        category: "video",
+        provider: "Gemini",
+        providerModelId: "veo-3.0-fast-generate-001",
+        name: "Veo 3.0 Fast",
+        description: "state-of-the-art video generation model. By Google Gemini.",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+        metadata: {
+            qualityResolutions: ["720p", "1080p"],
+            aspectRatios: ["16:9", "9:16"],
+            maxDuration: 8,
+            supportedFormats: ["mp4", "webm"],
+        },
+    },
+    {
+        id: "veo-3.1-generate-preview",
+        category: "video",
+        provider: "Gemini",
+        providerModelId: "veo-3.1-generate-preview",
+        name: "Veo 3.1",
+        description: "state-of-the-art video generation model. By Google Gemini.",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+        metadata: {
+            qualityResolutions: ["720p", "1080p"],
+            aspectRatios: ["16:9", "9:16"],
+            maxDuration: 8,
+            supportedFormats: ["mp4", "webm"],
+        },
+    },
+    {
+        id: "veo-3.1-fast-generate-preview",
+        category: "video",
+        provider: "Gemini",
+        providerModelId: "veo-3.1-fast-generate-preview",
+        name: "Veo 3.1 Fast",
+        description: "state-of-the-art video generation model. By Google Gemini",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/gemini.svg",
+            dark: "/icons/gemini.svg",
+        },
+        metadata: {
+            qualityResolutions: ["720p", "1080p"],
+            aspectRatios: ["16:9", "9:16"],
+            maxDuration: 8,
+            supportedFormats: ["mp4", "webm"],
+        },
+    },
+
+    // 3. Anthropic Claude
+    {
+        id: "claude-sonnet-4-5",
+        category: "reasoning",
+        provider: "Claude",
+        providerModelId: "claude-sonnet-4-5",
+        name: "Claude Sonnet 4.5",
+        description: "Smart model for complex agents and coding",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/claude.svg",
+            dark: "/icons/claude.svg",
+        },
+    },
+    {
+        id: "claude-haiku-4-5",
+        category: "reasoning",
+        provider: "Claude",
+        providerModelId: "claude-haiku-4-5",
+        name: "Claude Haiku 4.5",
+        description: "Fastest model with near-frontier intelligence",
+        premium: false,
+        enabled: true,
+        icon: {
+            light: "/icons/claude.svg",
+            dark: "/icons/claude.svg",
+        },
+    },
+    {
+        id: "claude-opus-4-5",
+        category: "reasoning",
+        provider: "Claude",
+        providerModelId: "claude-opus-4-5",
+        name: "Claude Opus 4.5",
+        description: "",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/claude.svg",
+            dark: "/icons/claude.svg",
+        },
+    },
+
+    // 4. xAI Grok
+    {
+        id: "grok-4-1-fast-reasoning-latest",
+        category: "reasoning",
+        provider: "Grok",
+        providerModelId: "grok-4-1-fast-reasoning-latest",
+        name: "Grok 4.1 Fast Reasoning",
+        description: "A frontier multimodal model optimized specifically for high-performance agentic tool calling.",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/grok-claro.svg",
+            dark: "/icons/grok-oscuro.svg",
+        },
+    },
+    {
+        id: "grok-4-1-fast-non-reasoning-latest",
+        category: "reasoning",
+        provider: "Grok",
+        providerModelId: "grok-4-1-fast-non-reasoning-latest",
+        name: "Grok 4.1 Fast Non-Reasoning",
+        description: "A frontier multimodal model optimized specifically for high-performance agentic tool calling.",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/grok-claro.svg",
+            dark: "/icons/grok-oscuro.svg",
+        },
+    },
+    {
+        id: "grok-4-fast-reasoning-latest",
+        category: "reasoning",
+        provider: "Grok",
+        providerModelId: "grok-4-fast-reasoning-latest",
+        name: "Grok 4 Fast Reasoning",
+        description: "A frontier multimodal model optimized specifically for high-performance agentic tool calling.",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/grok-claro.svg",
+            dark: "/icons/grok-oscuro.svg",
+        },
+    },
+    {
+        id: "grok-4-fast-non-reasoning-latest",
+        category: "reasoning",
+        provider: "Grok",
+        providerModelId: "grok-4-fast-non-reasoning-latest",
+        name: "Grok 4 Fast Non-Reasoning",
+        description: "A frontier multimodal model optimized specifically for high-performance agentic tool calling.",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/grok-claro.svg",
+            dark: "/icons/grok-oscuro.svg",
+        },
+    },
+    {
+        id: "grok-2-image-latest",
+        category: "image",
+        provider: "Grok",
+        providerModelId: "grok-2-image-latest",
+        name: "Grok 2 Image",
+        description: "A frontier multimodal model optimized specifically for high-performance agentic tool calling.",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/grok-claro.svg",
+            dark: "/icons/grok-oscuro.svg",
+        },
+    },
+
+    // 5. DeepSeek
+    {
+        id: "deepseek-v3",
+        category: "reasoning",
+        provider: "DeepSeek",
+        providerModelId: "deepseek-chat",
+        name: "DeepSeek V3",
+        description: "Efficient reasoning model",
+        premium: false,
+        enabled: true,
+        icon: {
+            light: "/icons/deepseek.svg",
+            dark: "/icons/deepseek.svg",
+        },
+    },
+    {
+        id: "deepseek-r1",
+        category: "reasoning",
+        provider: "DeepSeek",
+        providerModelId: "deepseek-reasoner",
+        name: "DeepSeek R1",
+        description: "Advanced reasoning capabilities",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/deepseek.svg",
+            dark: "/icons/deepseek.svg",
+        },
+    },
+
 ];
 
-export default AI_MODELS;
+export default SPECIALIZED_MODELS;

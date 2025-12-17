@@ -58,7 +58,9 @@ export default defineSchema({
     models: v.array(
       v.object({
         modelId: v.string(),
-        subModelId: v.string(),
+        provider: v.string(),
+        category: v.string(),
+        providerModelId: v.string(),
       })
     ),
     
@@ -119,10 +121,13 @@ export default defineSchema({
     
     // Modelo
     modelId: v.string(),
-    subModelId: v.string(),
+    provider: v.string(),
+    category: v.string(),
+    providerModelId: v.string(),
     
     // Contenido
     content: v.string(),
+    mediaUrl: v.optional(v.string()),
     
     // Estado
     status: v.union(
@@ -155,7 +160,9 @@ export default defineSchema({
     userId: v.id("users"),
     conversationId: v.optional(v.id("conversations")),
     modelId: v.string(),
-    subModelId: v.string(),
+    provider: v.string(),
+    category: v.string(),
+    providerModelId: v.string(),
     
     // Métricas
     tokens: v.number(),

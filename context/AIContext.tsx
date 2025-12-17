@@ -1,19 +1,16 @@
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import AI_MODELS from '@/shared/AiModelList';
-
-interface SelectedModel {
-  modelId: string;
-  subModelId: string;
-}
+import { SPECIALIZED_MODELS } from '@/shared/AiModelList';
+import { SelectedModel, SpecializedModel, Provider } from '@/types/AiModel';
 
 interface AIContextType {
   selectedModels: SelectedModel[];
-  toggleModel: (modelId: string) => void;
-  changeSubModel: (modelId: string, subModelId: string) => void;
+  toggleModel: (model: SpecializedModel) => void;
+  removeModelInstance: (index: number) => void; 
   isModelSelected: (modelId: string) => boolean;
-  getModelInfo: (modelId: string) => typeof AI_MODELS[0] | undefined;
+  getModelsByProvider: (provider: Provider) => SpecializedModel[];
+  getSelectedModelsByProvider: (provider: Provider) => SelectedModel[];
   hasModelsSelected: boolean;
 }
 
@@ -22,45 +19,58 @@ const AIContext = createContext<AIContextType | undefined>(undefined);
 export function AIContextProvider({ children }: { children: ReactNode }) {
   const [selectedModels, setSelectedModels] = useState<SelectedModel[]>([]);
 
-  const getDefaultSubModel = (modelId: string) => {
-    const model = AI_MODELS.find(m => m.model === modelId);
-    return model?.subModel[0]?.id || '';
-  };
-
-  const toggleModel = (modelId: string) => {
+  const toggleModel = (model: SpecializedModel) => {
     setSelectedModels(prev => {
-      const exists = prev.find(m => m.modelId === modelId);
-      
-      if (exists) {
-        // Remover modelo
-        return prev.filter(m => m.modelId !== modelId);
-      } else {
-        // Agregar modelo con sub-modelo por defecto
+      // For reasoning models, always add (allow multiple instances)
+      if (model.category === 'reasoning') {
         return [
           ...prev,
           {
-            modelId,
-            subModelId: getDefaultSubModel(modelId),
+            category: model.category,
+            modelId: model.id,
+            provider: model.provider,
+            providerModelId: model.providerModelId,
+          },
+        ];
+      }
+      
+      // For specialized models (image/video), normal toggle behavior
+      const exists = prev.find(m => m.modelId === model.id);
+      
+      if (exists) {
+        // Remove model (only the first instance)
+        const index = prev.findIndex(m => m.modelId === model.id);
+        return prev.filter((_, i) => i !== index);
+      } else {
+        // Add model
+        return [
+          ...prev,
+          {
+            category: model.category,
+            modelId: model.id,
+            provider: model.provider,
+            providerModelId: model.providerModelId,
           },
         ];
       }
     });
   };
 
-  const changeSubModel = (modelId: string, subModelId: string) => {
-    setSelectedModels(prev =>
-      prev.map(m =>
-        m.modelId === modelId ? { ...m, subModelId } : m
-      )
-    );
+  // Remove a specific instance by index
+  const removeModelInstance = (index: number) => {
+    setSelectedModels(prev => prev.filter((_, i) => i !== index));
   };
 
   const isModelSelected = (modelId: string) => {
     return selectedModels.some(m => m.modelId === modelId);
   };
 
-  const getModelInfo = (modelId: string) => {
-    return AI_MODELS.find(m => m.model === modelId);
+  const getModelsByProvider = (provider: Provider) => {
+    return SPECIALIZED_MODELS.filter(m => m.provider === provider);
+  };
+
+  const getSelectedModelsByProvider = (provider: Provider) => {
+    return selectedModels.filter(m => m.provider === provider);
   };
 
   const hasModelsSelected = selectedModels.length > 0;
@@ -70,9 +80,10 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
       value={{
         selectedModels,
         toggleModel,
-        changeSubModel,
+        removeModelInstance,
         isModelSelected,
-        getModelInfo,
+        getModelsByProvider,
+        getSelectedModelsByProvider,
         hasModelsSelected,
       }}
     >

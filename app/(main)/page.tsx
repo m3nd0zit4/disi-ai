@@ -8,6 +8,10 @@ import { Sparkles } from 'lucide-react';
 const Page = () => {
   const { selectedModels, hasModelsSelected } = useAIContext();
 
+  // Only show reasoning models in the main list
+  // Tools (Image/Video) are accessed via the reasoning model cards
+  const reasoningModels = selectedModels.filter(m => m.category === 'reasoning');
+
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)]">
       <div className="flex-1 overflow-y-auto px-4">
@@ -30,17 +34,18 @@ const Page = () => {
                 <h3 className="text-lg font-semibold">Modelos listos para responder</h3>
               </div>
               <p className="text-sm text-muted-foreground">
-                Puedes cambiar el sub-modelo de cada IA antes de enviar tu mensaje
+                Configura las capacidades de cada modelo antes de enviar tu mensaje
               </p>
             </div>
 
             <div className="space-y-3">
-              {selectedModels.map((model) => (
+              {reasoningModels.map((model) => (
                 <ModelResponseCard
                   key={model.modelId}
                   response={{
                     modelId: model.modelId,
-                    subModelId: model.subModelId,
+                    provider: model.provider,
+                    category: model.category,
                     content: '',
                     isLoading: false,
                     isExpanded: true,
@@ -49,6 +54,11 @@ const Page = () => {
                   showContent={false} // Modo Config
                 />
               ))}
+              {reasoningModels.length === 0 && selectedModels.length > 0 && (
+                  <div className="text-center text-muted-foreground">
+                      Selecciona un modelo de razonamiento (Orquestador) para comenzar.
+                  </div>
+              )}
             </div>
 
             <div className="text-center text-sm text-muted-foreground pt-4">

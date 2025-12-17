@@ -5,7 +5,7 @@ import { ChevronDown, MessageSquare, Pin, Archive, Trash2, MoreHorizontal } from
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
-import AI_MODELS from "@/shared/AiModelList";
+import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,7 +16,7 @@ import {
 interface Chat {
   _id: string;
   title: string;
-  models: Array<{ modelId: string; subModelId: string }>;
+  models: Array<{ modelId: string; provider: string; category: string; providerModelId: string }>;
   isPinned?: boolean;
   lastMessage?: {
     content: string;
@@ -42,13 +42,13 @@ export function ChatList({
   onDeleteChat,
   selectedChatId,
 }: ChatListProps) {
-  // Agrupar conversaciones por modelo principal
+  // Agrupar conversaciones por proveedor (Provider)
   const groupedChats = conversations.reduce((acc, chat) => {
-    const mainModelId = chat.models[0]?.modelId || "Other";
-    if (!acc[mainModelId]) {
-      acc[mainModelId] = [];
+    const mainProvider = chat.models[0]?.provider || "Other";
+    if (!acc[mainProvider]) {
+      acc[mainProvider] = [];
     }
-    acc[mainModelId].push(chat);
+    acc[mainProvider].push(chat);
     return acc;
   }, {} as Record<string, Chat[]>);
 
@@ -72,19 +72,20 @@ export function ChatList({
         />
       )}
 
-      {/* Chats por Modelo */}
-      {Object.entries(groupedChats).map(([modelId, chats]) => {
-        const model = AI_MODELS.find((m) => m.model === modelId);
+      {/* Chats por Modelo (Provider) */}
+      {Object.entries(groupedChats).map(([provider, chats]) => {
+        // Find any model from this provider to get the icon
+        const model = SPECIALIZED_MODELS.find((m) => m.provider === provider);
         
         return (
           <ChatGroup
-            key={modelId}
-            title={model?.model || modelId}
+            key={provider}
+            title={provider}
             icon={
               model?.icon ? (
                 <Image
                   src={model.icon}
-                  alt={model.model}
+                  alt={provider}
                   width={14}
                   height={14}
                   className="object-contain"
