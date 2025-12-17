@@ -1,7 +1,7 @@
 'use client';
 
 import ChatInputBox from '@/app/_components/ChatInputBox';
-import { ModelResponseCard } from '@/app/_components/chat/ModelResponseCard';
+import { ModelConfigCard } from '@/app/_components/chat/ModelConfigCard';
 import { useAIContext } from '@/context/AIContext';
 import { Sparkles } from 'lucide-react';
 
@@ -19,7 +19,7 @@ const Page = () => {
           // ESTADO 1: Sin modelos seleccionados
           <div className="flex flex-col items-center justify-center h-full text-center space-y-7 pt-6">
             <div>
-              <h2 className="logo-font">Bienvenido a DISI</h2> 
+              <h2 className="logo-font">Bienvenido a DISI</h2>
               <p className="text-muted-foreground">
                 Selecciona uno o más modelos de IA en el dock superior para comenzar
               </p>
@@ -39,9 +39,9 @@ const Page = () => {
             </div>
 
             <div className="space-y-3">
-              {reasoningModels.map((model) => (
-                <ModelResponseCard
-                  key={model.modelId}
+              {reasoningModels.map((model, index) => (
+                <ModelConfigCard
+                  key={`${model.modelId}-${index}`}
                   response={{
                     modelId: model.modelId,
                     provider: model.provider,
@@ -51,7 +51,12 @@ const Page = () => {
                     isExpanded: true,
                     responseTime: 0,
                   }}
-                  showContent={false} // Modo Config
+                  modelIndex={selectedModels.findIndex((m, i) =>
+                    m.modelId === model.modelId &&
+                    selectedModels.slice(0, i).filter(sm => sm.modelId === model.modelId).length ===
+                    reasoningModels.slice(0, index).filter(rm => rm.modelId === model.modelId).length
+                  )}
+                  isEnabled={model.isEnabled}
                 />
               ))}
               {reasoningModels.length === 0 && selectedModels.length > 0 && (

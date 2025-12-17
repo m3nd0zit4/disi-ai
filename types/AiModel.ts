@@ -51,6 +51,8 @@ export interface SelectedModel {
   modelId: string;               // ID of the SpecializedModel
   provider: Provider;
   providerModelId: string;
+  isEnabled: boolean;            // Whether the model is active
+  specializedModels?: string[];  // IDs of specialized models (image/video) for this instance
 }
 
 /**
