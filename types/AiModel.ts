@@ -56,7 +56,7 @@ export interface SelectedModel {
 /**
  * Generic model response
  */
-export interface ModelResponse {
+export interface ModelResponseData {
   id: string;
   category: ModelCategory;
   modelId: string;
