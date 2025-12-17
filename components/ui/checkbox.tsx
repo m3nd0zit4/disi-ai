@@ -17,10 +17,10 @@ const Checkbox = React.forwardRef<
       {...props}
     />
     <div className={cn(
-      "h-4 w-4 shrink-0 rounded-sm border border-primary ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 peer-checked:bg-primary peer-checked:text-primary-foreground flex items-center justify-center pointer-events-none",
+      "h-4 w-4 shrink-0 rounded-sm border border-primary ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 peer-checked:bg-primary peer-checked:text-primary-foreground flex items-center justify-center pointer-events-none [&>svg]:hidden peer-checked:[&>svg]:block",
       className
     )}>
-      <Check className="h-3 w-3 hidden peer-checked:block text-current font-bold" strokeWidth={3} />
+      <Check className="h-3 w-3 text-current font-bold" strokeWidth={3} />
     </div>
   </div>
 ))
