@@ -8,7 +8,10 @@ interface AIContextType {
   selectedModels: SelectedModel[];
   toggleModel: (model: SpecializedModel) => void;
   removeModelInstance: (index: number) => void; 
+  toggleModelEnabled: (index: number) => void;
+  toggleSpecializedModel: (reasoningIndex: number, specializedModel: SpecializedModel) => void;
   isModelSelected: (modelId: string) => boolean;
+  isSpecializedModelSelected: (reasoningIndex: number, modelId: string) => boolean;
   getModelsByProvider: (provider: Provider) => SpecializedModel[];
   getSelectedModelsByProvider: (provider: Provider) => SelectedModel[];
   hasModelsSelected: boolean;
@@ -30,6 +33,8 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
             modelId: model.id,
             provider: model.provider,
             providerModelId: model.providerModelId,
+            isEnabled: true,
+            specializedModels: [], // Initialize empty array for this instance
           },
         ];
       }
@@ -50,6 +55,7 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
             modelId: model.id,
             provider: model.provider,
             providerModelId: model.providerModelId,
+            isEnabled: true,
           },
         ];
       }
@@ -59,6 +65,41 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
   // Remove a specific instance by index
   const removeModelInstance = (index: number) => {
     setSelectedModels(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Toggle enabled state of a specific instance by index
+  const toggleModelEnabled = (index: number) => {
+    setSelectedModels(prev => 
+      prev.map((model, i) => 
+        i === index ? { ...model, isEnabled: !model.isEnabled } : model
+      )
+    );
+  };
+
+  // Toggle specialized model for a specific reasoning model instance
+  const toggleSpecializedModel = (reasoningIndex: number, specializedModel: SpecializedModel) => {
+    setSelectedModels(prev => 
+      prev.map((model, i) => {
+        if (i !== reasoningIndex) return model;
+        
+        const currentSpecialized = model.specializedModels || [];
+        const exists = currentSpecialized.includes(specializedModel.id);
+        
+        return {
+          ...model,
+          specializedModels: exists
+            ? currentSpecialized.filter(id => id !== specializedModel.id)
+            : [...currentSpecialized, specializedModel.id]
+        };
+      })
+    );
+  };
+
+  // Check if a specialized model is selected for a specific reasoning instance
+  const isSpecializedModelSelected = (reasoningIndex: number, modelId: string): boolean => {
+    const model = selectedModels[reasoningIndex];
+    if (!model || !model.specializedModels) return false;
+    return model.specializedModels.includes(modelId);
   };
 
   const isModelSelected = (modelId: string) => {
@@ -81,7 +122,10 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
         selectedModels,
         toggleModel,
         removeModelInstance,
+        toggleModelEnabled,
+        toggleSpecializedModel,
         isModelSelected,
+        isSpecializedModelSelected,
         getModelsByProvider,
         getSelectedModelsByProvider,
         hasModelsSelected,
