@@ -4,13 +4,10 @@ import ChatInputBox from '@/app/_components/ChatInputBox';
 import { ModelConfigCard } from '@/app/_components/chat/ModelConfigCard';
 import { useAIContext } from '@/context/AIContext';
 import { Sparkles } from 'lucide-react';
+import { Reorder } from 'framer-motion';
 
 const Page = () => {
-  const { selectedModels, hasModelsSelected } = useAIContext();
-
-  // Only show reasoning models in the main list
-  // Tools (Image/Video) are accessed via the reasoning model cards
-  const reasoningModels = selectedModels.filter(m => m.category === 'reasoning');
+  const { selectedModels, hasModelsSelected, reorderModels } = useAIContext();
 
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)]">
@@ -38,33 +35,38 @@ const Page = () => {
               </p>
             </div>
 
-            <div className="space-y-3">
-              {reasoningModels.map((model, index) => (
-                <ModelConfigCard
-                  key={`${model.modelId}-${index}`}
-                  response={{
-                    modelId: model.modelId,
-                    provider: model.provider,
-                    category: model.category,
-                    content: '',
-                    isLoading: false,
-                    isExpanded: true,
-                    responseTime: 0,
-                  }}
-                  modelIndex={selectedModels.findIndex((m, i) =>
-                    m.modelId === model.modelId &&
-                    selectedModels.slice(0, i).filter(sm => sm.modelId === model.modelId).length ===
-                    reasoningModels.slice(0, index).filter(rm => rm.modelId === model.modelId).length
-                  )}
-                  isEnabled={model.isEnabled}
-                />
+            <Reorder.Group 
+              axis="y" 
+              values={selectedModels} 
+              onReorder={reorderModels}
+              className="space-y-3"
+            >
+              {selectedModels.map((model, index) => (
+                <Reorder.Item 
+                  key={`${model.modelId}-${index}`} 
+                  value={model}
+                >
+                  <ModelConfigCard
+                    response={{
+                      modelId: model.modelId,
+                      provider: model.provider,
+                      category: model.category,
+                      content: '',
+                      isLoading: false,
+                      isExpanded: true,
+                      responseTime: 0,
+                    }}
+                    modelIndex={index}
+                    isEnabled={model.isEnabled}
+                  />
+                </Reorder.Item>
               ))}
-              {reasoningModels.length === 0 && selectedModels.length > 0 && (
-                  <div className="text-center text-muted-foreground">
-                      Selecciona un modelo de razonamiento (Orquestador) para comenzar.
-                  </div>
-              )}
-            </div>
+            </Reorder.Group>
+            {selectedModels.length === 0 && (
+                <div className="text-center text-muted-foreground">
+                    Selecciona un modelo de razonamiento (Orquestador) para comenzar.
+                </div>
+            )}
 
             <div className="text-center text-sm text-muted-foreground pt-4">
               Escribe tu mensaje abajo para comenzar ↓

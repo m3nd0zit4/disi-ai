@@ -9,30 +9,31 @@ interface ConversationTurnProps {
     turn: ConversationTurnType;
 }
 
-
 export function ConversationTurn({ turn }: ConversationTurnProps) {
-    const { responses, toggleExpansion } = useModelResponses(turn.modelResponse);
+    const { responses } = useModelResponses(turn.modelResponse);
 
     return (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-8 w-full max-w-4xl mx-auto">
             {/* User Message */}
-            <Message className="justify-end">
-                <MessageContent className="bg-primary text-primary-foreground">
-                    {turn.userMessage.content}
-                </MessageContent>
-                <MessageAvatar 
-                    src=""
-                    alt="User"
-                    fallback="U"
-                />
+            <Message className="flex flex-col items-end gap-2 w-full">
+                <div className="flex flex-row-reverse items-end gap-3 w-full">
+                    <MessageAvatar 
+                        src="https://github.com/ibelick.png"
+                        alt="User"
+                        className="h-6 w-6 mb-0.5"
+                    />
+                    <MessageContent className="bg-secondary text-primary max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-2">
+                        {turn.userMessage.content}
+                    </MessageContent>
+                </div>
             </Message>
+
             {/* Model Responses */}
-            <div className="space-y-3">
+            <div className="flex flex-col gap-6 w-full">
                 {responses.map((response) => (
                     <ModelResponseCard
                         key={response.modelId}
                         response={response}
-                        onToggleExpansion={() => toggleExpansion(response.modelId)}
                     />
                 ))}
             </div>
