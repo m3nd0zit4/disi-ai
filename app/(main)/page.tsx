@@ -43,7 +43,7 @@ const Page = () => {
             >
               {selectedModels.map((model, index) => (
                 <Reorder.Item 
-                  key={`${model.modelId}-${index}`} 
+                  key={model.modelId} 
                   value={model}
                 >
                   <ModelConfigCard
