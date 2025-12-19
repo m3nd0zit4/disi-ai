@@ -6,6 +6,7 @@ if (typeof window === "undefined" && !process.env.NEXT_RUNTIME) {
 import { Redis } from "@upstash/redis";
 import { Queue, QueueEvents } from "bullmq";
 import IORedis from "ioredis";
+import { ModelCategory } from "@/types/AiModel";
 
 //*Upstash Redis
 export const upstashRedis = new Redis({
@@ -40,7 +41,7 @@ export interface AIJobData {
     timestamp: number;
     // Orchestration support
     specializedModels?: Array<{
-        type: "image_generation" | "video_generation";
+        type: ModelCategory;
         modelId: string;
         providerModelId: string;
         modelName: string;

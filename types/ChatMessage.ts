@@ -3,6 +3,8 @@ export interface ChatMessage {
     role: 'user' | 'assistant';
     content: string;
     timestamp: Date;
+    userAvatar?: string;
+    userName?: string;
 }
 
 export interface ModelResponse {

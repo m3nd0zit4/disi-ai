@@ -79,14 +79,14 @@ export async function POST(req: Request) {
             if (!modelDef) return null;
             
             return {
-              type: modelDef.category === 'image' ? 'image' as const : 'video' as const,
+              type: modelDef.category,
               modelId: modelDef.id,
               providerModelId: modelDef.providerModelId,
               modelName: modelDef.name,
               provider: modelDef.provider,
             };
           })
-          .filter(Boolean);
+          .filter((m): m is NonNullable<typeof m> => m !== null);
 
         // *Get user API key (REQUIRED in free tier)
         console.log(`[Request] Fetching API key for ${model.provider}...`);
