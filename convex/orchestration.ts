@@ -18,6 +18,12 @@ export const createOrchestratedResponse = internalMutation({
     taskType: v.string(),
   },
   handler: async (ctx, args) => {
+    // Verify parent exists before creating child
+    const parent = await ctx.db.get(args.parentResponseId);
+    if (!parent) {
+      throw new Error(`Parent response not found: ${args.parentResponseId}`);
+    }
+
     // Create child response
     const childResponseId = await ctx.db.insert("modelResponses", {
       messageId: args.messageId,
@@ -34,27 +40,24 @@ export const createOrchestratedResponse = internalMutation({
     });
 
     // Update parent's orchestration data
-    const parent = await ctx.db.get(args.parentResponseId);
-    if (parent) {
-      const orchestrationData = parent.orchestrationData || {
-        isOrchestrator: true,
-        orchestratedTasks: [],
-      };
+    const orchestrationData = parent.orchestrationData || {
+      isOrchestrator: true,
+      orchestratedTasks: [],
+    };
 
-      orchestrationData.orchestratedTasks = [
-        ...(orchestrationData.orchestratedTasks || []),
-        {
-          taskType: args.taskType,
-          modelId: args.modelId,
-          status: "pending",
-          responseId: childResponseId,
-        },
-      ];
+    orchestrationData.orchestratedTasks = [
+      ...(orchestrationData.orchestratedTasks || []),
+      {
+        taskType: args.taskType,
+        modelId: args.modelId,
+        status: "pending",
+        responseId: childResponseId,
+      },
+    ];
 
-      await ctx.db.patch(args.parentResponseId, {
-        orchestrationData,
-      });
-    }
+    await ctx.db.patch(args.parentResponseId, {
+      orchestrationData,
+    });
 
     return childResponseId;
   },

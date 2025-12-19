@@ -27,6 +27,44 @@ export const updateResponseStatus = action({
 });
 
 /**
+ * !Create an orchestrated child response
+ * !Called by worker when a reasoning model needs to execute a specialized task
+ */
+export const createOrchestratedResponse = action({
+  args: {
+    parentResponseId: v.id("modelResponses"),
+    conversationId: v.id("conversations"),
+    messageId: v.id("messages"),
+    userId: v.id("users"),
+    modelId: v.string(),
+    provider: v.string(),
+    category: v.string(),
+    providerModelId: v.string(),
+    taskType: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const childResponseId = await ctx.runMutation(internal.orchestration.createOrchestratedResponse, args);
+    return childResponseId;
+  },
+});
+
+/**
+ * !Update orchestration task status
+ * !Called by worker when a specialized task is finished
+ */
+export const updateOrchestrationTask = action({
+  args: {
+    parentResponseId: v.id("modelResponses"),
+    childResponseId: v.id("modelResponses"),
+    status: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.runMutation(internal.orchestration.updateOrchestrationTask, args);
+    return { success: true };
+  },
+});
+
+/**
  * !Update complete response with content, tokens, cost, etc.
  * !Called by worker when finished processing
  */

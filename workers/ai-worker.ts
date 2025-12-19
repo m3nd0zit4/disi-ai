@@ -79,8 +79,8 @@ const worker = new Worker<AIJobData, AIJobResult>(
               console.log(`  📸 Task: ${task.taskType} - ${task.prompt.substring(0, 50)}...`);
               
               // Create child response in Convex
-              const childResponseId = await convex.mutation(
-                api.orchestration.createOrchestratedResponse as any,
+              const childResponseId = await convex.action(
+                api.actions.createOrchestratedResponse,
                 {
                   parentResponseId: responseId as Id<"modelResponses">,
                   conversationId: job.data.conversationId as Id<"conversations">,
@@ -140,8 +140,8 @@ const worker = new Worker<AIJobData, AIJobResult>(
               }
 
               // Update orchestration task status
-              await convex.mutation(
-                api.orchestration.updateOrchestrationTask as any,
+              await convex.action(
+                api.actions.updateOrchestrationTask,
                 {
                   parentResponseId: responseId as Id<"modelResponses">,
                   childResponseId: childResponseId as Id<"modelResponses">,

@@ -67,29 +67,27 @@ export async function POST(req: Request) {
     // Models come with specializedModels array containing IDs of image/video models
     const { SPECIALIZED_MODELS } = await import("@/shared/AiModelList");
     
-    const specializedModelsData = models
-      .filter((m: any) => m.specializedModels && m.specializedModels.length > 0)
-      .flatMap((m: any) => {
-        return (m.specializedModels || []).map((modelId: string) => {
-          const modelDef = SPECIALIZED_MODELS.find(sm => sm.id === modelId);
-          if (!modelDef) return null;
-          
-          return {
-            type: modelDef.category === 'image' ? 'image' as const : 'video' as const,
-            modelId: modelDef.id,
-            providerModelId: modelDef.providerModelId,
-            modelName: modelDef.name,
-            provider: modelDef.provider,
-          };
-        });
-      })
-      .filter(Boolean);
-
     // *For each reasoning model, enqueue a job
     const jobs = await Promise.all(
       models.map(async (model: { modelId: string; provider: string; subModelId: string; specializedModels?: string[] }, index: number) => {
         console.log(`[Request] Processing model ${model.modelId} (Provider: ${model.provider})...`);
         
+        // *Extract specialized models for THIS specific model
+        const currentSpecializedModelsData = (model.specializedModels || [])
+          .map((modelId: string) => {
+            const modelDef = SPECIALIZED_MODELS.find(sm => sm.id === modelId);
+            if (!modelDef) return null;
+            
+            return {
+              type: modelDef.category === 'image' ? 'image' as const : 'video' as const,
+              modelId: modelDef.id,
+              providerModelId: modelDef.providerModelId,
+              modelName: modelDef.name,
+              provider: modelDef.provider,
+            };
+          })
+          .filter(Boolean);
+
         // *Get user API key (REQUIRED in free tier)
         console.log(`[Request] Fetching API key for ${model.provider}...`);
         const apiKey = await getUserApiKeyForModel(userId, model.provider);
@@ -119,8 +117,8 @@ export async function POST(req: Request) {
             apiKey: finalApiKey,
             timestamp: Date.now(),
             // Pass specialized models for orchestration
-            specializedModels: model.specializedModels && model.specializedModels.length > 0 
-              ? specializedModelsData 
+            specializedModels: currentSpecializedModelsData.length > 0 
+              ? currentSpecializedModelsData 
               : undefined,
           },
           {
