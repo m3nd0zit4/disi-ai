@@ -138,7 +138,13 @@ export class OpenAIService extends BaseAIService {
       // Type guard for function tool calls
       if (call.type !== 'function') return null;
       
-      const args = JSON.parse(call.function.arguments);
+      let args;
+      try {
+        args = JSON.parse(call.function.arguments);
+      } catch (parseError) {
+        console.error(`Failed to parse tool call arguments: ${call.function.arguments}`);
+        return null;
+      }
       const taskType = call.function.name === "generate_image" ? "image" : "video";
       
       // Find the appropriate model for this task type
@@ -146,10 +152,15 @@ export class OpenAIService extends BaseAIService {
         t.type === (taskType === "image" ? "image_generation" : "video_generation")
       );
       
+      if (!tool) {
+        console.warn(`No available tool found for task type: ${taskType}`);
+        return null;
+      }
+
       return {
         taskType: taskType as "image" | "video",
-        modelId: tool?.modelId || "",
-        providerModelId: tool?.providerModelId || "",
+        modelId: tool.modelId,
+        providerModelId: tool.providerModelId,
         prompt: args.prompt,
         reasoning: args.reasoning,
       };
