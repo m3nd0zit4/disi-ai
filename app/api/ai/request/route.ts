@@ -63,24 +63,46 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "User record not found" }, { status: 404 });
     }
 
-    // *For each model, enqueue a job
+    // *Extract specialized models from request
+    // Models come with specializedModels array containing IDs of image/video models
+    const { SPECIALIZED_MODELS } = await import("@/shared/AiModelList");
+    
+    const specializedModelsData = models
+      .filter((m: any) => m.specializedModels && m.specializedModels.length > 0)
+      .flatMap((m: any) => {
+        return (m.specializedModels || []).map((modelId: string) => {
+          const modelDef = SPECIALIZED_MODELS.find(sm => sm.id === modelId);
+          if (!modelDef) return null;
+          
+          return {
+            type: modelDef.category === 'image' ? 'image' as const : 'video' as const,
+            modelId: modelDef.id,
+            providerModelId: modelDef.providerModelId,
+            modelName: modelDef.name,
+            provider: modelDef.provider,
+          };
+        });
+      })
+      .filter(Boolean);
+
+    // *For each reasoning model, enqueue a job
     const jobs = await Promise.all(
-      models.map(async (model: { modelId: string; subModelId: string }, index: number) => {
-        console.log(`[Request] Processing model ${model.modelId}...`);
+      models.map(async (model: { modelId: string; provider: string; subModelId: string; specializedModels?: string[] }, index: number) => {
+        console.log(`[Request] Processing model ${model.modelId} (Provider: ${model.provider})...`);
         
         // *Get user API key (REQUIRED in free tier)
-        console.log(`[Request] Fetching API key for ${model.modelId}...`);
-        const apiKey = await getUserApiKeyForModel(userId, model.modelId);
-        console.log(`[Request] API key fetched for ${model.modelId} (found: ${!!apiKey})`);
+        console.log(`[Request] Fetching API key for ${model.provider}...`);
+        const apiKey = await getUserApiKeyForModel(userId, model.provider);
+        console.log(`[Request] API key fetched for ${model.provider} (found: ${!!apiKey})`);
         
         if (!apiKey && user.plan === "free") {
           throw new Error(
-            `No tienes configurada una API key para ${model.modelId}. Ve a Configuración.`
+            `No tienes configurada una API key para ${model.provider}. Ve a Configuración.`
           );
         }
 
         // *If PRO and no key, use the system key
-        const finalApiKey = apiKey || getSystemApiKey(model.modelId);
+        const finalApiKey = apiKey || getSystemApiKey(model.provider);
 
         // *Create a job in the queue
         console.log(`[Request] Adding job to queue for ${model.modelId}...`);
@@ -96,6 +118,10 @@ export async function POST(req: Request) {
             userMessage,
             apiKey: finalApiKey,
             timestamp: Date.now(),
+            // Pass specialized models for orchestration
+            specializedModels: model.specializedModels && model.specializedModels.length > 0 
+              ? specializedModelsData 
+              : undefined,
           },
           {
             jobId: `${messageId}-${model.modelId}-${Date.now()}`,

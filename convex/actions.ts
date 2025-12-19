@@ -43,6 +43,7 @@ export const updateResponseCompleted = action({
     responseTime: v.optional(v.number()),
     tokens: v.optional(v.number()),
     cost: v.optional(v.number()),
+    mediaUrl: v.optional(v.string()), // For image/video responses
   },
   handler: async (ctx, args) => {
     await ctx.runMutation(internal.messages.updateResponseInternal, {
@@ -53,6 +54,7 @@ export const updateResponseCompleted = action({
       responseTime: args.responseTime,
       tokens: args.tokens,
       cost: args.cost,
+      mediaUrl: args.mediaUrl,
     });
     
     return { success: true };

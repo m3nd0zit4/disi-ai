@@ -17,6 +17,11 @@ export interface ModelResponse {
     isExpanded: boolean;
     _id?: string;
     status?: "processing" | "completed" | "failed";
+    sources?: {
+        title: string;
+        url: string;
+        description?: string;
+    }[];
 }
 
 export interface ConversationTurn {

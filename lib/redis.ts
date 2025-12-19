@@ -38,6 +38,14 @@ export interface AIJobData {
     userMessage: string;
     apiKey: string; // User API Key or System API Key
     timestamp: number;
+    // Orchestration support
+    specializedModels?: Array<{
+        type: "image_generation" | "video_generation";
+        modelId: string;
+        providerModelId: string;
+        modelName: string;
+        provider: string;
+    }>;
 }
 
 export interface AIJobResult {
