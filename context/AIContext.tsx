@@ -14,6 +14,8 @@ interface AIContextType {
   isSpecializedModelSelected: (reasoningIndex: number, modelId: string) => boolean;
   getModelsByProvider: (provider: Provider) => SpecializedModel[];
   getSelectedModelsByProvider: (provider: Provider) => SelectedModel[];
+  moveModel: (fromIndex: number, toIndex: number) => void;
+  reorderModels: (newModels: SelectedModel[]) => void;
   hasModelsSelected: boolean;
 }
 
@@ -114,6 +116,26 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
     return selectedModels.filter(m => m.provider === provider);
   };
 
+  const moveModel = (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex < 0 || 
+      fromIndex >= selectedModels.length ||
+      toIndex < 0 || 
+      toIndex >= selectedModels.length
+    ) return;
+    
+    setSelectedModels(prev => {
+      const newModels = [...prev];
+      const [movedItem] = newModels.splice(fromIndex, 1);
+      newModels.splice(toIndex, 0, movedItem);
+      return newModels;
+    });
+  };
+
+  const reorderModels = (newModels: SelectedModel[]) => {
+    setSelectedModels(newModels);
+  };
+
   const hasModelsSelected = selectedModels.length > 0;
 
   return (
@@ -128,6 +150,8 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
         isSpecializedModelSelected,
         getModelsByProvider,
         getSelectedModelsByProvider,
+        moveModel,
+        reorderModels,
         hasModelsSelected,
       }}
     >

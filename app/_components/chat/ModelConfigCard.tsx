@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ModelResponse } from "@/types/ChatMessage";
-import { ChevronUp, ChevronDown, Image as ImageIcon, Video as VideoIcon, Check, X } from "lucide-react";
+import { ChevronUp, ChevronDown, Image as ImageIcon, Video as VideoIcon, Check, X, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MessageAvatar } from "@/components/ui/message";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +24,14 @@ export function ModelConfigCard({
   modelIndex,
   isEnabled,
 }: ModelConfigCardProps) {
-  const { getModelsByProvider, removeModelInstance, toggleModelEnabled, toggleSpecializedModel, isSpecializedModelSelected } = useAIContext();
+  const { 
+    selectedModels,
+    getModelsByProvider, 
+    removeModelInstance, 
+    toggleModelEnabled, 
+    toggleSpecializedModel, 
+    isSpecializedModelSelected,
+  } = useAIContext();
   const { resolvedTheme } = useTheme();
   const [isSpecializedExpanded, setIsSpecializedExpanded] = React.useState(false);
 
@@ -44,17 +51,25 @@ export function ModelConfigCard({
 
   const hasSpecializedModels = imageModels.length > 0 || videoModels.length > 0;
 
+  // Get selected specialized models for preview
+  const selectedSpecializedIds = selectedModels[modelIndex]?.specializedModels || [];
+  const selectedSpecializedModels = SPECIALIZED_MODELS.filter(m => selectedSpecializedIds.includes(m.id));
+
   return (
     <div
       className={cn(
         "border rounded-lg transition-all duration-200 bg-muted/30 hover:bg-muted/50",
-        // Inactive state styling - visual only, interaction still enabled
         !isEnabled && "opacity-50 grayscale"
       )}
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 gap-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
+          {/* Drag Handle */}
+          <div className="flex items-center text-muted-foreground/30 cursor-grab active:cursor-grabbing">
+            <GripVertical className="w-4 h-4" />
+          </div>
+
           {/* Model Avatar */}
           <MessageAvatar
             src={resolvedTheme === "dark" ? model.icon.light : model.icon.dark}
@@ -76,9 +91,8 @@ export function ModelConfigCard({
           </div>
         </div>
 
-        {/* Config Mode Controls: Enable/Disable Switch and Deselect Button */}
+        {/* Config Mode Controls */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Enable/Disable Switch */}
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">
               {isEnabled ? 'Activo' : 'Inactivo'}
@@ -90,7 +104,6 @@ export function ModelConfigCard({
             />
           </div>
 
-          {/* Deselect Button */}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -108,7 +121,6 @@ export function ModelConfigCard({
       {/* Specialized Models Selection */}
       {hasSpecializedModels && (
         <div className="border-t">
-          {/* Header Expandable/Collapsible */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -116,13 +128,31 @@ export function ModelConfigCard({
             }}
             className="w-full px-4 py-3 flex items-center justify-between hover:bg-accent/50 transition-colors"
           >
-            <div className="flex items-center gap-2">
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                Modelos Especializados
-              </p>
-              <Badge variant="outline" className="text-[10px] h-4 px-1.5">
-                {imageModels.length + videoModels.length} disponibles
-              </Badge>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                  Modelos Especializados
+                </p>
+                <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                  {imageModels.length + videoModels.length} disponibles
+                </Badge>
+              </div>
+
+              {/* Preview of selected models when collapsed */}
+              {!isSpecializedExpanded && selectedSpecializedModels.length > 0 && (
+                <div className="flex items-center gap-1.5 border-l pl-3 ml-1">
+                  {selectedSpecializedModels.map(sm => (
+                    <div key={sm.id} className="relative w-4 h-4" title={sm.name}>
+                      <Image
+                        src={resolvedTheme === "dark" ? sm.icon.light : sm.icon.dark}
+                        alt={sm.name}
+                        fill
+                        className="object-contain"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             {isSpecializedExpanded ? (
               <ChevronUp className="w-4 h-4 text-muted-foreground" />
@@ -131,10 +161,8 @@ export function ModelConfigCard({
             )}
           </button>
 
-          {/* Content Expandable/Collapsible */}
           {isSpecializedExpanded && (
             <div className="px-4 pb-4 space-y-3">
-              {/* Info Message */}
               <div className="bg-muted/50 border border-border/50 rounded-lg p-3 flex items-start gap-2">
                 <div className="w-1 h-1 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                 <p className="text-xs text-muted-foreground leading-relaxed">
@@ -145,7 +173,6 @@ export function ModelConfigCard({
               </div>
 
               <div className="space-y-2">
-                {/* Image Models */}
                 {imageModels.length > 0 && (
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -154,7 +181,6 @@ export function ModelConfigCard({
                     </div>
                     <div className="grid gap-2">
                       {imageModels.map(imageModel => {
-                        // Use instance-specific selection check
                         const isSelected = isSpecializedModelSelected(modelIndex, imageModel.id);
 
                         return (
@@ -209,7 +235,6 @@ export function ModelConfigCard({
                   </div>
                 )}
 
-                {/* Video Models */}
                 {videoModels.length > 0 && (
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -218,7 +243,6 @@ export function ModelConfigCard({
                     </div>
                     <div className="grid gap-2">
                       {videoModels.map(videoModel => {
-                        // Use instance-specific selection check
                         const isSelected = isSpecializedModelSelected(modelIndex, videoModel.id);
 
                         return (
@@ -273,13 +297,6 @@ export function ModelConfigCard({
                   </div>
                 )}
               </div>
-
-              {/* Info message if no models available */}
-              {!hasSpecializedModels && (
-                <p className="text-xs text-muted-foreground text-center py-2">
-                  Este proveedor no tiene modelos especializados de imagen/video disponibles
-                </p>
-              )}
             </div>
           )}
         </div>
