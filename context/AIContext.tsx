@@ -117,7 +117,12 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
   };
 
   const moveModel = (fromIndex: number, toIndex: number) => {
-    if (toIndex < 0 || toIndex >= selectedModels.length) return;
+    if (
+      fromIndex < 0 || 
+      fromIndex >= selectedModels.length ||
+      toIndex < 0 || 
+      toIndex >= selectedModels.length
+    ) return;
     
     setSelectedModels(prev => {
       const newModels = [...prev];
