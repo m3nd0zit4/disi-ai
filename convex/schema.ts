@@ -146,6 +146,25 @@ export default defineSchema({
     // UI State (para saber si está expandido en el frontend)
     isExpanded: v.optional(v.boolean()),
     
+    // Orchestration Support
+    parentResponseId: v.optional(v.id("modelResponses")), // Para respuestas orquestadas
+    orchestrationData: v.optional(
+      v.object({
+        isOrchestrator: v.boolean(),
+        orchestratedTasks: v.optional(
+          v.array(
+            v.object({
+              taskType: v.string(), // "image", "video", "analysis"
+              modelId: v.string(),
+              status: v.string(),
+              responseId: v.optional(v.id("modelResponses")),
+            })
+          )
+        ),
+        orchestrationPrompt: v.optional(v.string()),
+      })
+    ),
+    
     createdAt: v.number(),
     completedAt: v.optional(v.number()),
   })
@@ -153,7 +172,8 @@ export default defineSchema({
     .index("by_conversation", ["conversationId"])
     .index("by_user", ["userId"])
     .index("by_status", ["status"])
-    .index("by_user_and_date", ["userId", "createdAt"]),
+    .index("by_user_and_date", ["userId", "createdAt"])
+    .index("by_parent_response", ["parentResponseId"]),
 
   // ===== USAGE TRACKING =====
   usageRecords: defineTable({

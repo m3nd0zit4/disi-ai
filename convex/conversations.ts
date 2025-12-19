@@ -11,6 +11,8 @@ export const createConversation = mutation({
         provider: v.string(),
         category: v.string(),
         providerModelId: v.string(),
+        isEnabled: v.optional(v.boolean()), // From frontend
+        specializedModels: v.optional(v.array(v.string())), // From frontend
       })
     ),
   },
@@ -43,7 +45,13 @@ export const createConversation = mutation({
     const conversationId = await ctx.db.insert("conversations", {
       userId: user._id,
       title: args.title || "Nueva conversación",
-      models: args.models,
+      // Filter out frontend-only fields (isEnabled, specializedModels)
+      models: args.models.map(m => ({
+        modelId: m.modelId,
+        provider: m.provider,
+        category: m.category,
+        providerModelId: m.providerModelId,
+      })),
       messageCount: 0,
       createdAt: Date.now(),
       updatedAt: Date.now(),

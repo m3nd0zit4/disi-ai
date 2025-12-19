@@ -13,6 +13,8 @@ export const sendMessage = mutation({
         provider: v.string(),
         category: v.string(),
         providerModelId: v.string(),
+        isEnabled: v.optional(v.boolean()), // From frontend
+        specializedModels: v.optional(v.array(v.string())), // IDs of specialized models
       })
     ),
   },
@@ -62,9 +64,12 @@ export const sendMessage = mutation({
       createdAt: Date.now(),
     });
 
-    // Create pending responses for each model
+    // Only create responses for reasoning models
+    // Specialized models will be created dynamically during orchestration
+    const reasoningModels = args.models.filter(m => m.category === 'reasoning');
+    
     const responseIds = await Promise.all(
-      args.models.map((model) =>
+      reasoningModels.map((model) =>
         ctx.db.insert("modelResponses", {
           messageId,
           conversationId: args.conversationId,
@@ -75,6 +80,11 @@ export const sendMessage = mutation({
           providerModelId: model.providerModelId,
           content: "",
           status: "pending",
+          // Mark as orchestrator if it has specialized models
+          orchestrationData: model.specializedModels && model.specializedModels.length > 0 ? {
+            isOrchestrator: true,
+            orchestratedTasks: [],
+          } : undefined,
           createdAt: Date.now(),
         })
       )
@@ -102,6 +112,7 @@ export const sendMessage = mutation({
     return {
       messageId,
       responseIds,
+      reasoningModels, // Return for API to know which models to queue
     };
   },
 });
@@ -191,6 +202,7 @@ export const updateResponseInternal = internalMutation({
     responseTime: v.optional(v.number()),
     tokens: v.optional(v.number()),
     cost: v.optional(v.number()),
+    mediaUrl: v.optional(v.string()), // For image/video responses
   },
   handler: async (ctx, args) => {
     const response = await ctx.db.get(args.responseId);
@@ -205,6 +217,7 @@ export const updateResponseInternal = internalMutation({
       responseTime: args.responseTime,
       tokens: args.tokens,
       cost: args.cost,
+      mediaUrl: args.mediaUrl,
       completedAt: args.status === "completed" ? Date.now() : undefined,
     });
 
