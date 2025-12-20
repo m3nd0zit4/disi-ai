@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { aiRequestQueue } from "@/lib/redis";
+import { sendToQueue } from "@/lib/sqs";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 
@@ -64,12 +64,11 @@ export async function POST(req: Request) {
     }
 
     // *Extract specialized models from request
-    // Models come with specializedModels array containing IDs of image/video models
     const { SPECIALIZED_MODELS } = await import("@/shared/AiModelList");
     
-    // *For each reasoning model, enqueue a job
+    // *For each reasoning model, send to SQS
     const jobs = await Promise.all(
-      models.map(async (model: { modelId: string; provider: string; subModelId: string; specializedModels?: string[] }, index: number) => {
+      models.map(async (model: { modelId: string; provider: string; providerModelId: string; specializedModels?: string[] }, index: number) => {
         console.log(`[Request] Processing model ${model.modelId} (Provider: ${model.provider})...`);
         
         // *Extract specialized models for THIS specific model
@@ -89,9 +88,7 @@ export async function POST(req: Request) {
           .filter(Boolean);
 
         // *Get user API key (REQUIRED in free tier)
-        console.log(`[Request] Fetching API key for ${model.provider}...`);
         const apiKey = await getUserApiKeyForModel(userId, model.provider);
-        console.log(`[Request] API key fetched for ${model.provider} (found: ${!!apiKey})`);
         
         if (!apiKey && user.plan === "free") {
           throw new Error(
@@ -102,34 +99,33 @@ export async function POST(req: Request) {
         // *If PRO and no key, use the system key
         const finalApiKey = apiKey || getSystemApiKey(model.provider);
 
-        // *Create a job in the queue
-        console.log(`[Request] Adding job to queue for ${model.modelId}...`);
-        const job = await aiRequestQueue.add(
-          `${model.modelId}-${model.subModelId}`,
-          {
-            responseId: body.responseIds[index],
-            conversationId,
-            userId: userRecord._id,
-            messageId,
-            modelId: model.modelId,
-            subModelId: model.subModelId,
-            userMessage,
-            apiKey: finalApiKey,
-            timestamp: Date.now(),
-            // Pass specialized models for orchestration
-            specializedModels: currentSpecializedModelsData.length > 0 
-              ? currentSpecializedModelsData 
-              : undefined,
-          },
-          {
-            jobId: `${messageId}-${model.modelId}-${Date.now()}`,
-            priority: user.plan === "pro" ? 1 : 2, // !PRO has priority
-          }
-        );
-        console.log(`[Request] Job added for ${model.modelId}, ID: ${job.id}`);
+        // *Send message to SQS
+        const queueUrl = user.plan === "pro" 
+          ? process.env.SQS_QUEUE_URL_PRO! 
+          : process.env.SQS_QUEUE_URL_FREE!;
 
+        console.log(`[Request] Sending message to SQS for ${model.modelId} (Provider: ${model.provider})...`);
+        
+        const messageBody = {
+          responseId: body.responseIds[index],
+          conversationId,
+          userId: userRecord._id,
+          messageId,
+          modelId: model.modelId,
+          provider: model.provider,
+          subModelId: model.providerModelId,
+          userMessage,
+          apiKey: finalApiKey,
+          timestamp: Date.now(),
+          specializedModels: currentSpecializedModelsData.length > 0 
+            ? currentSpecializedModelsData 
+            : undefined,
+        };
+
+        const sqsResponse = await sendToQueue(queueUrl, messageBody, conversationId);
+        
         return {
-          jobId: job.id,
+          jobId: sqsResponse.MessageId,
           modelId: model.modelId,
           responseId: body.responseIds[index],
         };
@@ -153,19 +149,15 @@ export async function POST(req: Request) {
 
 // *Helpers
 
-// TODO: Implement actual AWS Secrets Manager integration
 async function getUserApiKeyForModel(
   userId: string,
   modelId: string
 ): Promise<string | null> {
   const { getUserApiKey } = await import("@/lib/aws-secrets");
-  // TODO: Implement AWS Secrets Manager integration
-  // For now, return null to use system keys
   return getUserApiKey(userId, modelId); 
 }
 
 function getSystemApiKey(modelId: string): string {
-
   const envVarMap: Record<string, string> = {
     "GPT": "OPENAI_API_KEY",
     "Claude": "ANTHROPIC_API_KEY",

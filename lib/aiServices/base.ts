@@ -71,6 +71,11 @@ export abstract class BaseAIService {
     }
 
     abstract generateResponse(request: AIRequest): Promise<AIResponse>;
+    
+    async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<any>> {
+        throw new Error("Streaming not supported by this service");
+    }
+
     abstract validateApiKey(): Promise<boolean>;
     
     // Orchestration methods (optional - not all services support all features)

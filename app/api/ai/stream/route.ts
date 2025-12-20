@@ -27,12 +27,16 @@ export async function POST(req: Request) {
         const body = await req.json();
         const {
             responseId,
-            modelId,
-            subModelId,
+            modelId, // This is the specific model ID (e.g., gpt-5-nano)
+            provider, // This is the provider name (e.g., GPT)
+            subModelId, // This is the provider's model ID (e.g., gpt-5-nano)
             userMessage,
         } = body;
 
-        console.log(`Starting stream for ${modelId}/${subModelId}`);
+        // Use provider for configuration, modelId for logging
+        const targetProvider = provider || modelId;
+
+        console.log(`Starting stream for ${modelId} (Provider: ${targetProvider})`);
 
         // Upgrade the status to "processing"
         await convex.action(api.actions.updateResponseStatus, {
@@ -44,17 +48,17 @@ export async function POST(req: Request) {
         let model: LanguageModel;
 
         // *Get user API key (REQUIRED in free tier)
-        const apiKey = await getUserApiKeyForModel(userId, modelId);
+        const apiKey = await getUserApiKeyForModel(userId, targetProvider);
         
         // *If PRO and no key, use the system key
-        const finalApiKey = apiKey || getSystemApiKey(modelId);
+        const finalApiKey = apiKey || getSystemApiKey(targetProvider);
 
         if (!finalApiKey || typeof finalApiKey !== 'string' || finalApiKey.trim() === '') {
             return NextResponse.json({ error: "Invalid API Key" }, { status: 400 });
         }
 
-        // Configure provider based on modelId
-        switch (modelId) {
+        // Configure provider based on targetProvider
+        switch (targetProvider) {
             case "GPT": {
                 const openai = createOpenAI({
                     apiKey: finalApiKey,
@@ -98,13 +102,35 @@ export async function POST(req: Request) {
             }
             
             default:
-                throw new Error(`Streaming not supported for ${modelId}`);
+                throw new Error(`Streaming not supported for ${targetProvider}`);
         }
+
+        const isReasoningModel = (model: any) => {
+            if (typeof model !== 'string') return false;
+            return model.startsWith('o1') || model.startsWith('o3') || model.includes('gpt-5');
+        };
+
+        // Build messages with system prompt for orchestration if needed
+        const messages = [
+            { 
+                role: "system" as const, 
+                content: `You are an AI orchestrator. Your primary job is to decide if the user's request requires specialized tools (image or video generation). 
+
+RULES:
+1. If the user asks for an image, illustration, or visual content, you MUST call 'generate_image'.
+2. If the user asks for a video or animation, you MUST call 'generate_video'.
+3. DO NOT provide the image prompt in your text response.
+4. DO NOT provide SVG code or any other code in your text response.
+5. Keep your text response extremely brief (e.g., "Generating your image...").
+6. If you call a tool, your text response should NOT contain the prompt you sent to the tool.`
+            },
+            { role: "user" as const, content: userMessage }
+        ];
 
         const result = streamText({
             model: model,
-            messages: [{ role: "user", content: userMessage }],
-            temperature: 0.7,
+            messages: messages,
+            temperature: isReasoningModel(subModelId) ? undefined : 0.7,
             onFinish: async ({ text, usage }) => {
                 try {
                     const responseTime = (Date.now() - startTime) / 1000;
@@ -112,11 +138,12 @@ export async function POST(req: Request) {
                     
                     console.log(`Stream completed for ${modelId} - ${responseTime} seconds`);
 
-                    // Storage in convex
+                    // Storage in convex - ONLY update content, don't mark as completed if it's an orchestrator
+                    // The worker will handle the final completion for orchestrators
                     await convex.action(api.actions.updateResponseCompleted, {
                         responseId: responseId as Id<"modelResponses">,
-                        content: text,
-                        status: "completed",
+                        content: text || "Generando respuesta...",
+                        status: "processing", // Keep as processing so worker can finish
                         responseTime,
                         tokens: tokenCount,
                         cost: calculateCost(modelId, subModelId, tokenCount)

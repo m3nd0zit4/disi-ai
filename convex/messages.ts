@@ -177,7 +177,7 @@ export const updateResponseStatus = internalMutation({
   handler: async (ctx, args) => {
     const response = await ctx.db.get(args.responseId);
     if (!response) {
-      throw new Error("Response not found");
+      return { success: false, error: "Response not found" };
     }
 
     await ctx.db.patch(args.responseId, {
@@ -207,7 +207,7 @@ export const updateResponseInternal = internalMutation({
   handler: async (ctx, args) => {
     const response = await ctx.db.get(args.responseId);
     if (!response) {
-      throw new Error("Response not found");
+      return { success: false, error: "Response not found" };
     }
 
     await ctx.db.patch(args.responseId, {

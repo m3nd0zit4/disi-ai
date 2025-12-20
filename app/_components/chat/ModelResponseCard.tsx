@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useTheme } from "next-themes";
 import { StreamingText } from "./StreamingText";
 import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
-import Image from "next/image";
+import { Image } from "@/components/ui/image";
 import { Loader } from "@/components/ui/loader";
 import { ChainOfThought, ChainOfThoughtStep, ChainOfThoughtTrigger, ChainOfThoughtContent } from "@/components/ui/chain-of-thought";
 import { Source, SourceTrigger, SourceContent } from "@/components/ui/source";
@@ -84,10 +84,8 @@ export function ModelResponseCard({
                   <div className="rounded-xl overflow-hidden border bg-black/5 shadow-sm">
                     {response.category === 'image' ? (
                       <Image
-                        src={response.mediaUrl}
+                        src={response.mediaUrl!}
                         alt="Generated image"
-                        width={512}
-                        height={512}
                         className="w-full h-auto max-w-md mx-auto"
                       />
                     ) : response.category === 'video' ? (

@@ -1,247 +1,323 @@
-import { Worker, Job } from "bullmq";
-import { connection, AIJobData, AIJobResult } from "@/lib/redis";
+import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand, Message } from "@aws-sdk/client-sqs";
 import { getAIService } from "@/lib/aiServices";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { isInsufficientFundsError, INSUFFICIENT_FUNDS_MESSAGE } from "@/lib/ai-errors";
-//
 import "dotenv/config";
 import { config } from "dotenv";
 import { resolve } from "path";
 
-// !Load environment variables from .env file
+// Load environment variables
 config({ path: resolve(process.cwd(), ".env.local") });
 
-if(!process.env.NEXT_PUBLIC_CONVEX_URL) {
-  console.error("NEXT_PUBLIC_CONVEX_URL is not defined");
-}
-
-if(!process.env.REDIS_URL) {
-  console.error("REDIS_URL is not defined");
-}
-
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+const sqsClient = new SQSClient({
+  region: process.env.AWS_REGION || "us-east-1",
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
 
-// *Main worker
-const worker = new Worker<AIJobData, AIJobResult>(
-  "ai-requests",
-  async (job: Job<AIJobData>) => {
-    const { responseId, modelId, subModelId, userMessage, apiKey, timestamp, specializedModels } = job.data;
+const QUEUE_URLS = [
+  process.env.SQS_QUEUE_URL_PRO!,
+  process.env.SQS_QUEUE_URL_FREE!,
+].filter(Boolean);
 
-    console.log(`🔄 Processing job ${job.id} - ${modelId}/${subModelId}`);
+function log(level: "INFO" | "WARN" | "ERROR", message: string, context?: any) {
+  const timestamp = new Date().toISOString();
+  const contextStr = context ? ` | ${JSON.stringify(context)}` : "";
+  console.log(`[${timestamp}] [${level}] ${message}${contextStr}`);
+}
 
-    try {
-      // STEP 1: Update status to "processing"
-      await convex.action(api.actions.updateResponseStatus, {
-        responseId: responseId as Id<"modelResponses">, 
-        status: "processing",
+async function processMessage(message: Message, queueUrl: string) {
+  if (!message.Body) return;
+
+  const data = JSON.parse(message.Body);
+  const { responseId, modelId, provider, subModelId, userMessage, apiKey, specializedModels, userId, conversationId } = data;
+
+  log("INFO", `Processing message ${message.MessageId}`, { 
+    modelId, 
+    provider, 
+    subModelId, 
+    userId, 
+    conversationId,
+    responseId
+  });
+
+  try {
+    // STEP 1: Update status to "processing"
+    const statusResult = await convex.action(api.actions.updateResponseStatus, {
+      responseId: responseId as Id<"modelResponses">, 
+      status: "processing",
+    });
+
+    // @ts-expect-error - statusResult might have error if response not found
+    if (statusResult?.error === "Response not found") {
+      log("WARN", `Response ${responseId} not found in database. Deleting zombie message.`, { messageId: message.MessageId });
+      await sqsClient.send(new DeleteMessageCommand({
+        QueueUrl: queueUrl,
+        ReceiptHandle: message.ReceiptHandle!,
+      }));
+      return;
+    }
+
+    // STEP 2: Validate message body (handle old/malformed messages)
+    if (!provider || !subModelId) {
+      log("WARN", `Message ${message.MessageId} is missing provider or subModelId. Deleting malformed message.`, { 
+        modelId, 
+        provider, 
+        subModelId 
+      });
+      await sqsClient.send(new DeleteMessageCommand({
+        QueueUrl: queueUrl,
+        ReceiptHandle: message.ReceiptHandle!,
+      }));
+      return;
+    }
+
+    // Use provider if available, fallback to modelId (for backward compatibility if needed)
+    const targetProvider = provider || modelId;
+    const service = getAIService(targetProvider, apiKey);
+    const startTime = Date.now();
+
+    // STEP 2: Check if orchestration is needed
+    const hasSpecializedModels = specializedModels && specializedModels.length > 0;
+    
+    if (hasSpecializedModels) {
+      // Use a capable model for orchestration (gpt-4o-mini for GPT) to ensure reliable tool calling
+      // We use gpt-4o-mini because reasoning models (o1/gpt-5) often ignore tool_choice: "required"
+      const orchestrationModelId = targetProvider === "GPT" ? "gpt-4o-mini" : subModelId;
+      
+      log("INFO", `Orchestration mode: analyzing with ${specializedModels.length} specialized models`, { responseId, orchestrationModelId });
+      
+      const orchestrationResult = await service.analyzeOrchestration({
+        model: orchestrationModelId,
+        messages: [{ role: "user", content: userMessage }],
+        temperature: 0.7,
+        maxTokens: 2000,
+        availableTools: specializedModels,
+        userIntent: userMessage,
       });
 
-      // Get AI service
-      const service = getAIService(modelId, apiKey);
-      const startTime = Date.now();
+      log("INFO", `Orchestration result`, { 
+        needsOrchestration: orchestrationResult.needsOrchestration,
+        tasksCount: orchestrationResult.tasks?.length || 0,
+        textResponse: orchestrationResult.textResponse.substring(0, 50) + "..."
+      });
 
-      // STEP 2: Check if orchestration is needed
-      const hasSpecializedModels = specializedModels && specializedModels.length > 0;
-      
-      if (hasSpecializedModels) {
-        console.log(`🎯 Orchestration mode: analyzing with ${specializedModels.length} specialized models available`);
+      const responseTime = (Date.now() - startTime) / 1000;
+
+      await convex.action(api.actions.updateResponseCompleted, {
+        responseId: responseId as Id<"modelResponses">,
+        content: orchestrationResult.textResponse,
+        status: orchestrationResult.needsOrchestration ? "processing" : "completed",
+        responseTime,
+        tokens: Math.ceil(orchestrationResult.textResponse.length / 4),
+        cost: 0.001,
+      });
+
+      if (orchestrationResult.needsOrchestration && orchestrationResult.tasks) {
+        log("INFO", `Orchestration tasks found: ${orchestrationResult.tasks.length}`, { responseId });
         
-        // Analyze if orchestration is needed
-        const orchestrationResult = await service.analyzeOrchestration({
-          model: subModelId,
-          messages: [{ role: "user", content: userMessage }],
-          temperature: 0.7,
-          maxTokens: 2000,
-          availableTools: specializedModels,
-          userIntent: userMessage,
-        });
+        for (const task of orchestrationResult.tasks) {
+          try {
+            log("INFO", `Executing task: ${task.taskType}`, { taskModel: task.modelId });
+            
+            const childResponseId = await convex.action(
+              // @ts-expect-error - createOrchestratedResponse might not be in generated types yet
+              api.actions.createOrchestratedResponse,
+              {
+                parentResponseId: responseId as Id<"modelResponses">,
+                conversationId: data.conversationId as Id<"conversations">,
+                messageId: data.messageId as Id<"messages">,
+                userId: data.userId as Id<"users">,
+                modelId: task.modelId,
+                provider: specializedModels.find((m: { modelId: string; provider: string }) => m.modelId === task.modelId)?.provider || targetProvider,
+                category: task.taskType,
+                providerModelId: task.providerModelId,
+                taskType: task.taskType,
+              }
+            );
 
-        const responseTime = (Date.now() - startTime) / 1000;
+            await convex.action(api.actions.updateResponseStatus, {
+              responseId: childResponseId as Id<"modelResponses">,
+              status: "processing",
+            });
 
-        // STEP 3: Update with text response
-        await convex.action(api.actions.updateResponseCompleted, {
-          responseId: responseId as Id<"modelResponses">,
-          content: orchestrationResult.textResponse,
-          status: orchestrationResult.needsOrchestration ? "processing" : "completed",
-          responseTime,
-          tokens: Math.ceil(orchestrationResult.textResponse.length / 4), // Estimate
-          cost: 0.001, // TODO: Calculate actual cost
-        });
+            const specializedTool = specializedModels.find((m: { modelId: string; provider: string }) => m.modelId === task.modelId);
+            const specializedService = specializedTool 
+              ? getAIService(specializedTool.provider, apiKey)
+              : service;
 
-        // STEP 4: Execute orchestrated tasks if needed
-        if (orchestrationResult.needsOrchestration && orchestrationResult.tasks) {
-          console.log(`🚀 Executing ${orchestrationResult.tasks.length} orchestrated tasks`);
-          
-          for (const task of orchestrationResult.tasks) {
-            try {
-              console.log(`  📸 Task: ${task.taskType} - ${task.prompt.substring(0, 50)}...`);
-              
-              // Create child response in Convex
-              const childResponseId = await convex.action(
-                api.actions.createOrchestratedResponse,
-                {
-                  parentResponseId: responseId as Id<"modelResponses">,
-                  conversationId: job.data.conversationId as Id<"conversations">,
-                  messageId: job.data.messageId as Id<"messages">,
-                  userId: job.data.userId as Id<"users">,
-                  modelId: task.modelId,
-                  provider: specializedModels.find(m => m.modelId === task.modelId)?.provider || modelId,
-                  category: task.taskType,
-                  providerModelId: task.providerModelId,
-                  taskType: task.taskType,
-                }
-              );
-
-              // Update child status to processing
-              await convex.action(api.actions.updateResponseStatus, {
-                responseId: childResponseId as Id<"modelResponses">,
-                status: "processing",
+            const mediaStartTime = Date.now();
+            let mediaResult;
+            
+            if (task.taskType === "image") {
+              mediaResult = await specializedService.generateImage({
+                model: task.providerModelId,
+                prompt: task.prompt,
               });
-
-              // Get service for specialized model (might be different provider)
-              const specializedTool = specializedModels.find(m => m.modelId === task.modelId);
-              const specializedService = specializedTool 
-                ? getAIService(specializedTool.provider, apiKey)
-                : service;
-
-              // Generate media
-              const mediaStartTime = Date.now();
-              let mediaResult;
-              
-              if (task.taskType === "image") {
-                mediaResult = await specializedService.generateImage({
-                  model: task.providerModelId,
-                  prompt: task.prompt,
-                });
-              } else if (task.taskType === "video") {
-                mediaResult = await specializedService.generateVideo({
-                  model: task.providerModelId,
-                  prompt: task.prompt,
-                });
-              }
-
-              const mediaResponseTime = (Date.now() - mediaStartTime) / 1000;
-
-              // Update child response with result
-              if (mediaResult) {
-                await convex.action(api.actions.updateResponseCompleted, {
-                  responseId: childResponseId as Id<"modelResponses">,
-                  content: task.reasoning,
-                  status: "completed",
-                  mediaUrl: mediaResult.mediaUrl,
-                  responseTime: mediaResponseTime,
-                  tokens: 0, // Media generation doesn't use tokens
-                  cost: 0.01, // TODO: Calculate actual cost
-                });
-
-                console.log(`  ✅ Task completed: ${task.taskType}`);
-              }
-
-              // Update orchestration task status
-              await convex.action(
-                api.actions.updateOrchestrationTask,
-                {
-                  parentResponseId: responseId as Id<"modelResponses">,
-                  childResponseId: childResponseId as Id<"modelResponses">,
-                  status: "completed",
-                }
-              );
-
-            } catch (taskError) {
-              console.error(`  ❌ Task failed:`, taskError);
-              // Continue with other tasks even if one fails
+            } else if (task.taskType === "video") {
+              mediaResult = await specializedService.generateVideo({
+                model: task.providerModelId,
+                prompt: task.prompt,
+              });
             }
-          }
 
-          // Mark parent as fully completed
-          await convex.action(api.actions.updateResponseStatus, {
-            responseId: responseId as Id<"modelResponses">,
-            status: "completed",
-          });
+            const mediaResponseTime = (Date.now() - mediaStartTime) / 1000;
+
+            if (mediaResult) {
+              await convex.action(api.actions.updateResponseCompleted, {
+                responseId: childResponseId as Id<"modelResponses">,
+                content: task.reasoning,
+                status: "completed",
+                mediaUrl: mediaResult.mediaUrl,
+                responseTime: mediaResponseTime,
+                tokens: 0,
+                cost: 0.01,
+              });
+              log("INFO", `Task completed: ${task.taskType}`, { childResponseId });
+            }
+
+            await convex.action(api.actions.updateOrchestrationTask, {
+              parentResponseId: responseId as Id<"modelResponses">,
+              childResponseId: childResponseId as Id<"modelResponses">,
+              status: "completed",
+            });
+
+          } catch (taskError) {
+            log("ERROR", `Task failed: ${task.taskType}`, { error: taskError });
+          }
         }
 
-      } else {
-        // No orchestration needed - simple text response
-        console.log(`💬 Simple mode: generating text response`);
-        
-        const result = await service.generateResponse({
-          model: subModelId,
-          messages: [{ role: "user", content: userMessage }],
-          temperature: 0.7,
-          maxTokens: 2000,
-        });
-        
-        const responseTime = (Date.now() - startTime) / 1000;
-
-        await convex.action(api.actions.updateResponseCompleted, {
+        await convex.action(api.actions.updateResponseStatus, {
           responseId: responseId as Id<"modelResponses">,
-          content: result.content,
           status: "completed",
-          responseTime,
-          tokens: result.tokens,
-          cost: result.cost,
         });
       }
 
-      console.log(`✅ Job ${job.id} completed successfully`);
+    } else {
+      log("INFO", `Simple mode: generating text response (streaming)`, { responseId });
+      
+      // Call streaming API
+      const stream = await service.generateStreamResponse({
+        model: subModelId,
+        messages: [{ role: "user", content: userMessage }],
+        temperature: 0.7,
+        maxTokens: 2000,
+      });
 
-      return {
-        responseId,
-        content: "Completed",
-        tokens: 0,
-        cost: 0,
-        responseTime: (Date.now() - startTime) / 1000,
-        timestamp,
-      };
+      let fullContent = "";
+      let tokenCount = 0;
+      let lastUpdateTime = Date.now();
+      const UPDATE_INTERVAL = 150; // Update DB every 150ms
 
-    } catch (error) {
-      console.error(`❌ Job ${job.id} failed:`, error);
+      // Iterate over the stream
+      for await (const chunk of stream) {
+        const contentDelta = chunk.choices[0]?.delta?.content || "";
+        if (contentDelta) {
+          fullContent += contentDelta;
+          tokenCount++; // Rough estimation, accurate count comes from usage if available or post-calc
 
-      const isFundsError = isInsufficientFundsError(error);
-      const finalErrorMessage = isFundsError 
-        ? INSUFFICIENT_FUNDS_MESSAGE 
-        : (error instanceof Error ? error.message : "Unknown error");
-
-      // Update error status in Convex
-      try {
-        await convex.action(api.actions.updateResponseCompleted, {
-          responseId: responseId as Id<"modelResponses">,
-          content: "",
-          status: "error",
-          error: finalErrorMessage,
-        });
-      } catch (updateError) {
-        console.error(`❌ Failed to update error status for job ${job.id}:`, updateError);
+          // Throttle updates to Convex
+          const now = Date.now();
+          if (now - lastUpdateTime > UPDATE_INTERVAL) {
+            await convex.action(api.actions.updateResponseCompleted, {
+              responseId: responseId as Id<"modelResponses">,
+              content: fullContent,
+              status: "processing", // Keep as processing while streaming
+              responseTime: (now - startTime) / 1000,
+              tokens: tokenCount,
+              cost: 0.001, // Placeholder cost
+            });
+            lastUpdateTime = now;
+          }
+        }
       }
+      
+      const responseTime = (Date.now() - startTime) / 1000;
 
-      throw error; // BullMQ will handle the retry
+      // Final update with completed status
+      await convex.action(api.actions.updateResponseCompleted, {
+        responseId: responseId as Id<"modelResponses">,
+        content: fullContent,
+        status: "completed",
+        responseTime,
+        tokens: tokenCount, // Or calculate more accurately
+        cost: 0.001 * (tokenCount / 1000), // Example cost calc
+      });
     }
-  },
-  {
-    connection,
-    concurrency: 5, // Process 5 jobs simultaneously
-    limiter: {
-      max: 100, // Maximum 100 jobs
-      duration: 60000, // per minute
-    },
+
+    // STEP 3: Delete message from SQS
+    await sqsClient.send(new DeleteMessageCommand({
+      QueueUrl: queueUrl,
+      ReceiptHandle: message.ReceiptHandle!,
+    }));
+
+    log("INFO", `Message ${message.MessageId} processed and deleted`);
+
+  } catch (error: unknown) {
+    const err = error as { message?: string; code?: string };
+    log("ERROR", `Message ${message.MessageId} failed`, { error: err.message || err });
+
+    if (err.code === 'ECONNRESET') {
+      log("WARN", `Connection reset detected. This might be a temporary network issue.`);
+    }
+
+    const isFundsError = isInsufficientFundsError(error);
+    const finalErrorMessage = isFundsError 
+      ? INSUFFICIENT_FUNDS_MESSAGE 
+      : (err.message || "Unknown error");
+
+    try {
+      await convex.action(api.actions.updateResponseCompleted, {
+        responseId: responseId as Id<"modelResponses">,
+        content: "",
+        status: "error",
+        error: finalErrorMessage,
+      });
+    } catch (updateError) {
+      log("ERROR", `Failed to update error status for message ${message.MessageId}`, { error: updateError });
+    }
   }
-);
+}
 
-// Event handlers
-worker.on("completed", (job) => {
-  console.log(` Job ${job.id} completed`);
-});
+async function pollQueues() {
+  log("INFO", "AI Worker started and polling SQS queues...", { 
+    queues: QUEUE_URLS.map(url => url.split('/').pop()) 
+  });
+  
+  while (true) {
+    let messageReceived = false;
 
-worker.on("failed", (job, err) => {
-  console.error(` Job ${job?.id} failed:`, err.message);
-});
+    for (const queueUrl of QUEUE_URLS) {
+      try {
+        const response = await sqsClient.send(new ReceiveMessageCommand({
+          QueueUrl: queueUrl,
+          MaxNumberOfMessages: 1,
+          WaitTimeSeconds: 5, // Short wait to allow checking other queues
+          VisibilityTimeout: 60,
+        }));
 
-worker.on("error", (err) => {
-  console.error("Worker error:", err);
-});
+        if (response.Messages && response.Messages.length > 0) {
+          messageReceived = true;
+          await processMessage(response.Messages[0], queueUrl);
+          // If we got a message from a high-priority queue, break and start over to check high-priority again
+          break; 
+        }
+      } catch (error) {
+        log("ERROR", `Error polling queue ${queueUrl.split('/').pop()}`, { error });
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+    }
 
-console.log(" AI Worker started and listening for jobs...");
+    if (!messageReceived) {
+      // If no messages in any queue, wait a bit before next poll
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+}
 
-export default worker;
+pollQueues().catch(console.error);
