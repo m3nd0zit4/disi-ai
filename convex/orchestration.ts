@@ -74,7 +74,13 @@ export const updateOrchestrationTask = internalMutation({
   },
   handler: async (ctx, args) => {
     const parent = await ctx.db.get(args.parentResponseId);
-    if (!parent || !parent.orchestrationData) return;
+    if (!parent) {
+      return { success: false, error: "Parent response not found" };
+    }
+    
+    if (!parent.orchestrationData) {
+      return { success: false, error: "No orchestration data found on parent" };
+    }
 
     const orchestrationData = parent.orchestrationData;
     orchestrationData.orchestratedTasks = orchestrationData.orchestratedTasks?.map(
@@ -87,5 +93,7 @@ export const updateOrchestrationTask = internalMutation({
     await ctx.db.patch(args.parentResponseId, {
       orchestrationData,
     });
+
+    return { success: true };
   },
 });
