@@ -15,6 +15,7 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useRouter } from "next/navigation";
+import ModelSelector from "./chat/ModelSelector";
 
 interface ChatInputBoxProps {
   conversationId?: Id<"conversations">;
@@ -111,6 +112,7 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
           responseId: responseIds[index],
           modelId: model.modelId,
           provider: model.provider,
+          subModelId: model.providerModelId,
           userMessage,
         });
       })
@@ -131,6 +133,7 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
     responseId: Id<"modelResponses">;
     modelId: string;
     provider: string;
+    subModelId: string;
     userMessage: string;
   }) {
     try {
@@ -167,6 +170,9 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
         className="border-input bg-popover relative z-10 w-full rounded-3xl border p-0 pt-1 shadow-xs"
       >
         <div className="flex flex-col">
+          <div className="px-4 pt-2">
+            <ModelSelector />
+          </div>
           <PromptInputTextarea
             placeholder={
               hasModelsSelected

@@ -47,8 +47,14 @@ function CodeBlockCode({
         return
       }
 
-      const html = await codeToHtml(code, { lang: language, theme })
-      setHighlightedHtml(html)
+      try {
+        const html = await codeToHtml(code, { lang: language, theme })
+        setHighlightedHtml(html)
+      } catch (error) {
+        // Fallback for incomplete code blocks during streaming
+        console.warn("Failed to highlight code block:", error)
+        setHighlightedHtml(`<pre><code>${code}</code></pre>`)
+      }
     }
     highlight()
   }, [code, language, theme])

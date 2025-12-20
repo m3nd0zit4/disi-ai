@@ -13,16 +13,20 @@ import { useTheme } from "next-themes";
 import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
 import Image from "next/image";
 
+import { DragControls } from "framer-motion";
+
 interface ModelConfigCardProps {
   response: ModelResponse;
   modelIndex: number;
   isEnabled: boolean;
+  dragControls: DragControls;
 }
 
 export function ModelConfigCard({
   response,
   modelIndex,
   isEnabled,
+  dragControls,
 }: ModelConfigCardProps) {
   const { 
     selectedModels,
@@ -66,7 +70,10 @@ export function ModelConfigCard({
       <div className="flex items-center justify-between p-4 gap-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           {/* Drag Handle */}
-          <div className="flex items-center text-muted-foreground/30 cursor-grab active:cursor-grabbing">
+          <div 
+            className="flex items-center text-muted-foreground/30 cursor-grab active:cursor-grabbing p-1 -ml-1 hover:text-muted-foreground/60 transition-colors"
+            onPointerDown={(e) => dragControls.start(e)}
+          >
             <GripVertical className="w-4 h-4" />
           </div>
 

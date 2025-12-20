@@ -9,17 +9,23 @@ export class OpenAIService extends BaseAIService {
     this.client = new OpenAI({ apiKey });
   }
 
+  private isReasoningModel(model: any): boolean {
+    if (typeof model !== 'string') return false;
+    return model.startsWith('o1') || model.startsWith('o3') || model.includes('gpt-5');
+  }
+
   //* Generate a response
   async generateResponse(request: AIRequest): Promise<AIResponse> {
     const startTime = Date.now();
+    const isReasoning = this.isReasoningModel(request.model);
     
     const completion = await this.client.chat.completions.create({
       model: request.model,
       messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
-      temperature: request.temperature ?? 0.7,
-      max_tokens: request.maxTokens,
+      temperature: isReasoning ? undefined : (request.temperature ?? 0.7),
+      [isReasoning ? "max_completion_tokens" : "max_tokens"]: request.maxTokens,
       stream: false,
-    });
+    } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming);
 
     const responseTime = (Date.now() - startTime) / 1000;
     const tokens = completion.usage?.total_tokens ?? 0;
@@ -33,14 +39,16 @@ export class OpenAIService extends BaseAIService {
   }
 
   //* Generate a stream of responses
-  async generateStreamResponse(request: AIRequest) {
-    return this.client.chat.completions.create({
+  async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+    const isReasoning = this.isReasoningModel(request.model);
+    const stream = await this.client.chat.completions.create({
       model: request.model,
       messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
-      temperature: request.temperature ?? 0.7,
-      max_tokens: request.maxTokens,
+      temperature: isReasoning ? undefined : (request.temperature ?? 0.7),
+      [isReasoning ? "max_completion_tokens" : "max_tokens"]: request.maxTokens,
       stream: true,
-    })
+    } as OpenAI.Chat.ChatCompletionCreateParamsStreaming);
+    return stream;
   }
 
   //* Calculate the cost of a request
@@ -62,6 +70,8 @@ export class OpenAIService extends BaseAIService {
     // Build tools from available specialized models
     const tools: OpenAI.Chat.ChatCompletionTool[] = [];
     
+    console.log(`[Orchestration] Available tools for ${request.model}:`, JSON.stringify(request.availableTools, null, 2));
+
     const hasImageGen = request.availableTools.some(t => t.type === "image_generation");
     const hasVideoGen = request.availableTools.some(t => t.type === "video_generation");
     
@@ -113,14 +123,41 @@ export class OpenAIService extends BaseAIService {
       });
     }
 
-    // Call GPT with tools
-    const completion = await this.client.chat.completions.create({
+    const isReasoning = this.isReasoningModel(request.model);
+
+    // Build messages with system prompt for orchestration
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { 
+        role: "system", 
+        content: `You are an AI orchestrator. Your primary job is to decide if the user's request requires specialized tools (image or video generation). 
+
+RULES:
+1. If the user asks for an image, illustration, or visual content, you MUST call 'generate_image'.
+2. If the user asks for a video or animation, you MUST call 'generate_video'.
+3. DO NOT provide the image prompt in your text response.
+4. DO NOT provide SVG code or any other code in your text response.
+5. Keep your text response extremely brief (e.g., "Generating your image...").
+6. If you call a tool, your text response should NOT contain the prompt you sent to the tool.
+7. DO NOT output the tool call as JSON text. You MUST use the native tool calling capability.`
+      },
+      ...(request.messages as OpenAI.Chat.ChatCompletionMessageParam[])
+    ];
+
+    const requestPayload = {
       model: request.model,
-      messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
-      temperature: request.temperature ?? 0.7,
+      messages: messages,
+      temperature: isReasoning ? undefined : (request.temperature ?? 0.7),
+      [isReasoning ? "max_completion_tokens" : "max_tokens"]: request.maxTokens,
       tools: tools.length > 0 ? tools : undefined,
-      tool_choice: tools.length > 0 ? "auto" : undefined,
-    });
+      tool_choice: tools.length > 0 ? "required" : undefined,
+    };
+
+    console.log(`[Orchestration] Request payload for ${request.model}:`, JSON.stringify(requestPayload, null, 2));
+
+    // Call GPT with tools
+    const completion = await this.client.chat.completions.create(requestPayload as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming);
+
+    console.log(`[Orchestration] Completion for ${request.model}:`, JSON.stringify(completion.choices[0].message, null, 2));
 
     const message = completion.choices[0].message;
     const toolCalls = message.tool_calls;
