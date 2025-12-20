@@ -80,11 +80,11 @@ export function ModelResponseCard({
               <div className="flex flex-col gap-3">
                 {response.status === "processing" ? (
                   <StreamingText content={response.content} isStreaming={true} />
-                ) : response.mediaUrl ? (
+                ) : response.mediaUrl != null ? (
                   <div className="rounded-xl overflow-hidden border bg-black/5 shadow-sm">
                     {response.category === 'image' ? (
                       <Image
-                        src={response.mediaUrl!}
+                        src={response.mediaUrl}
                         alt="Generated image"
                         className="w-full h-auto max-w-md mx-auto"
                       />

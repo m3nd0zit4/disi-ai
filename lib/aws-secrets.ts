@@ -13,11 +13,22 @@ let _client: SecretsManagerClient | null = null;
 
 function getSecretsManagerClient() {
   if (!_client) {
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+
+    if (!accessKeyId) {
+      throw new Error("Missing AWS_ACCESS_KEY_ID environment variable");
+    }
+
+    if (!secretAccessKey) {
+      throw new Error("Missing AWS_SECRET_ACCESS_KEY environment variable");
+    }
+
     _client = new SecretsManagerClient({
       region: process.env.AWS_REGION || "us-east-1",
       credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+        accessKeyId,
+        secretAccessKey,
       },
     });
   }
@@ -86,7 +97,7 @@ export async function storeUserApiKey(
                 }
             } else if (error && typeof error === 'object' && 'name' in error && error.name === 'InvalidRequestException') {
                 // Check if it's marked for deletion
-                const errorMessage = (error as any).message || "";
+                const errorMessage = (error as { message?: string }).message || "";
                 if (errorMessage.includes("marked for deletion")) {
                      try {
                         console.log(`Restoring secret ${secretName}...`);
@@ -151,7 +162,7 @@ export async function getUserApiKey(
         }
         if (error.name === 'InvalidRequestException') {
              // Check if it's marked for deletion
-             const errorMessage = (error as any).message || "";
+             const errorMessage = (error as { message?: string }).message || "";
              if (errorMessage.includes("marked for deletion")) {
                  // Treat as not found
                  return null;

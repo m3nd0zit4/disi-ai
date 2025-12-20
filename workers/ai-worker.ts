@@ -20,21 +20,56 @@ const sqsClient = new SQSClient({
   },
 });
 
+let isShuttingDown = false;
+
+process.on("SIGTERM", () => {
+  log("INFO", "Received SIGTERM, initiating graceful shutdown...");
+  isShuttingDown = true;
+});
+
+process.on("SIGINT", () => {
+  log("INFO", "Received SIGINT, initiating graceful shutdown...");
+  isShuttingDown = true;
+});
+
 const QUEUE_URLS = [
   process.env.SQS_QUEUE_URL_PRO!,
   process.env.SQS_QUEUE_URL_FREE!,
 ].filter(Boolean);
 
-function log(level: "INFO" | "WARN" | "ERROR", message: string, context?: any) {
+function log(level: "INFO" | "WARN" | "ERROR", message: string, context?: Record<string, unknown>) {
   const timestamp = new Date().toISOString();
   const contextStr = context ? ` | ${JSON.stringify(context)}` : "";
   console.log(`[${timestamp}] [${level}] ${message}${contextStr}`);
 }
 
 async function processMessage(message: Message, queueUrl: string) {
-  if (!message.Body) return;
+  if (!message.Body) {
+    log("WARN", `Message ${message.MessageId} has no body. Deleting message.`);
+    await sqsClient.send(new DeleteMessageCommand({
+      QueueUrl: queueUrl,
+      ReceiptHandle: message.ReceiptHandle!,
+    }));
+    return;
+  }
 
-  const data = JSON.parse(message.Body);
+  let data;
+  try {
+    data = JSON.parse(message.Body);
+  } catch (parseError) {
+    log("ERROR", `Failed to parse message ${message.MessageId}`, { 
+      error: parseError instanceof Error ? parseError.message : parseError,
+      bodyPreview: message.Body.substring(0, 100) + (message.Body.length > 100 ? "..." : "")
+    });
+    
+    // Delete malformed message to prevent retry storms
+    await sqsClient.send(new DeleteMessageCommand({
+      QueueUrl: queueUrl,
+      ReceiptHandle: message.ReceiptHandle!,
+    }));
+    return;
+  }
+
   const { responseId, modelId, provider, subModelId, userMessage, apiKey, specializedModels, userId, conversationId } = data;
 
   log("INFO", `Processing message ${message.MessageId}`, { 
@@ -53,7 +88,6 @@ async function processMessage(message: Message, queueUrl: string) {
       status: "processing",
     });
 
-    // @ts-expect-error - statusResult might have error if response not found
     if (statusResult?.error === "Response not found") {
       log("WARN", `Response ${responseId} not found in database. Deleting zombie message.`, { messageId: message.MessageId });
       await sqsClient.send(new DeleteMessageCommand({
@@ -126,7 +160,6 @@ async function processMessage(message: Message, queueUrl: string) {
             log("INFO", `Executing task: ${task.taskType}`, { taskModel: task.modelId });
             
             const childResponseId = await convex.action(
-              // @ts-expect-error - createOrchestratedResponse might not be in generated types yet
               api.actions.createOrchestratedResponse,
               {
                 parentResponseId: responseId as Id<"modelResponses">,
@@ -281,6 +314,17 @@ async function processMessage(message: Message, queueUrl: string) {
     } catch (updateError) {
       log("ERROR", `Failed to update error status for message ${message.MessageId}`, { error: updateError });
     }
+
+    // IMPORTANT: Delete message even on failure to prevent retry storms
+    try {
+      await sqsClient.send(new DeleteMessageCommand({
+        QueueUrl: queueUrl,
+        ReceiptHandle: message.ReceiptHandle!,
+      }));
+      log("INFO", `Message ${message.MessageId} deleted after failure`);
+    } catch (deleteError) {
+      log("ERROR", `Failed to delete message ${message.MessageId} after failure`, { error: deleteError });
+    }
   }
 }
 
@@ -289,7 +333,7 @@ async function pollQueues() {
     queues: QUEUE_URLS.map(url => url.split('/').pop()) 
   });
   
-  while (true) {
+  while (!isShuttingDown) {
     let messageReceived = false;
 
     for (const queueUrl of QUEUE_URLS) {
@@ -313,11 +357,13 @@ async function pollQueues() {
       }
     }
 
-    if (!messageReceived) {
+    if (!messageReceived && !isShuttingDown) {
       // If no messages in any queue, wait a bit before next poll
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
+
+  log("INFO", "Worker shutdown complete");
 }
 
 pollQueues().catch(console.error);

@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const internalAny = internal as any;
 
 /**
  * !Update response status only
@@ -16,13 +18,13 @@ export const updateResponseStatus = action({
       v.literal("error")
     ),
   },
-  handler: async (ctx, args) => {
-    await ctx.runMutation(internal.messages.updateResponseStatus, {
+  handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
+    const result: { success: boolean; error?: string } = await ctx.runMutation(internalAny.messages.updateResponseStatus, {
       responseId: args.responseId,
       status: args.status,
     });
     
-    return { success: true };
+    return result;
   },
 });
 
@@ -42,8 +44,8 @@ export const createOrchestratedResponse = action({
     providerModelId: v.string(),
     taskType: v.string(),
   },
-  handler: async (ctx, args) => {
-    const childResponseId = await ctx.runMutation(internal.orchestration.createOrchestratedResponse, args);
+  handler: async (ctx, args): Promise<string> => {
+    const childResponseId: string = await ctx.runMutation(internalAny.orchestration.createOrchestratedResponse, args);
     return childResponseId;
   },
 });
@@ -58,9 +60,9 @@ export const updateOrchestrationTask = action({
     childResponseId: v.id("modelResponses"),
     status: v.string(),
   },
-  handler: async (ctx, args) => {
-    await ctx.runMutation(internal.orchestration.updateOrchestrationTask, args);
-    return { success: true };
+  handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
+    const result: { success: boolean; error?: string } = await ctx.runMutation(internalAny.orchestration.updateOrchestrationTask, args);
+    return result;
   },
 });
 
@@ -83,8 +85,8 @@ export const updateResponseCompleted = action({
     cost: v.optional(v.number()),
     mediaUrl: v.optional(v.string()), // For image/video responses
   },
-  handler: async (ctx, args) => {
-    await ctx.runMutation(internal.messages.updateResponseInternal, {
+  handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
+    const result: { success: boolean; error?: string } = await ctx.runMutation(internalAny.messages.updateResponseInternal, {
       responseId: args.responseId,
       content: args.content,
       status: args.status,
@@ -95,6 +97,6 @@ export const updateResponseCompleted = action({
       mediaUrl: args.mediaUrl,
     });
     
-    return { success: true };
+    return result;
   },
 });

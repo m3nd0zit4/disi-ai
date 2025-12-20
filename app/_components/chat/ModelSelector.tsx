@@ -26,6 +26,9 @@ function ModelItem({ model, index }: ModelItemProps) {
   } = useAIContext();
   const { resolvedTheme } = useTheme();
   const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+
+  const showMenu = (isHovered || isFocused) && model.isEnabled;
 
   const mainModel = SPECIALIZED_MODELS.find(m => m.id === model.modelId);
   if (!mainModel) return null;
@@ -44,10 +47,24 @@ function ModelItem({ model, index }: ModelItemProps) {
       exit={{ opacity: 0, scale: 0.9 }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsFocused(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setIsFocused(false);
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          setIsFocused(false);
+          setIsHovered(false);
+        }
+      }}
+      aria-haspopup="menu"
+      aria-expanded={showMenu}
       className={cn(
         "relative flex items-center gap-2 p-1.5 px-3 rounded-full border transition-all duration-200 group",
         model.isEnabled 
-          ? (isHovered ? "border-primary/50 shadow-md bg-background/80" : "border-border bg-background/50")
+          ? (showMenu ? "border-primary/50 shadow-md bg-background/80" : "border-border bg-background/50")
           : "border-muted-foreground/20 bg-muted/50 opacity-60 grayscale",
         "backdrop-blur-sm"
       )}
@@ -110,8 +127,10 @@ function ModelItem({ model, index }: ModelItemProps) {
 
       {/* Hover Menu for Specialized Models */}
       <AnimatePresence>
-        {isHovered && model.isEnabled && (
+        {showMenu && (
           <motion.div
+            role="menu"
+            aria-label={`Opciones para ${mainModel.name}`}
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -131,6 +150,8 @@ function ModelItem({ model, index }: ModelItemProps) {
                       "flex items-center gap-2 w-full p-2 rounded-lg text-left text-xs transition-colors",
                       isSelected ? "bg-primary/10 text-primary font-medium" : "hover:bg-accent"
                     )}
+                    role="menuitemcheckbox"
+                    aria-checked={isSelected}
                   >
                     <div className="relative w-5 h-5 shrink-0">
                       <Image
