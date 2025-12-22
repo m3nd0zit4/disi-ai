@@ -39,12 +39,12 @@ export function useStreamingResponse(responseId: string, isInitialStreaming: boo
           setError(data.error || "Unknown error during streaming");
           eventSource.close();
         }
-      } catch (e) {
-        console.error(`[Hook] Error parsing SSE data:`, e);
+      } catch {
+        console.error(`[Hook] Error parsing SSE data:`);
       }
     };
 
-    eventSource.onerror = (e) => {
+    eventSource.onerror = () => {
       setIsStreaming(false);
       eventSource.close();
     };

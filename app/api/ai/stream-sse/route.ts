@@ -1,10 +1,13 @@
 import { auth } from "@clerk/nextjs/server";
 import { getRedisSubscriber } from "@/lib/redis";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) {
     return new Response("Unauthorized", { status: 401 });
   }
@@ -14,6 +17,26 @@ export async function GET(req: Request) {
 
   if (!responseId) {
     return new Response("Missing responseId", { status: 400 });
+  }
+
+  // *Verify ownership
+  try {
+    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+    const token = await getToken({ template: "convex" });
+    if (token) {
+      convex.setAuth(token);
+    }
+
+    const isOwner = await convex.query(api.conversations.verifyResponseOwnership, {
+      responseId: responseId as Id<"modelResponses">,
+    });
+
+    if (!isOwner) {
+      return new Response("Forbidden", { status: 403 });
+    }
+  } catch (error) {
+    console.error("[SSE] Ownership check failed:", error);
+    return new Response("Internal Server Error", { status: 500 });
   }
 
   const encoder = new TextEncoder();
@@ -39,7 +62,7 @@ export async function GET(req: Request) {
             if (parsed.status === "completed" || parsed.status === "error") {
               cleanup();
             }
-          } catch (e) {
+          } catch {
             // Ignore parse errors
           }
         }
@@ -49,12 +72,12 @@ export async function GET(req: Request) {
         try {
           await subscriber.unsubscribe(channel);
           await subscriber.quit();
-        } catch (e) {
+        } catch {
           // Ignore cleanup errors
         }
         try {
           controller.close();
-        } catch (e) {
+        } catch {
           // Stream might already be closed
         }
       };
