@@ -97,67 +97,19 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
       console.log("Jobs Found: ", data.jobs);
 
       // Clean input
-      const userMessage = prompt;
       setPrompt("");
 
       if (!conversationId && currentConversationId) {
         router.push(`/c/${currentConversationId}`);
       }
 
-      //Start streaming
-      selectedModels.forEach((model, index) => {
-        startStreaming({
-          conversationId: currentConversationId!,
-          messageId,
-          responseId: responseIds[index],
-          modelId: model.modelId,
-          provider: model.provider,
-          subModelId: model.providerModelId,
-          userMessage,
-        });
-      })
-      
-
     } catch (error) {
       console.error("Error sending message:", error);
-      
       alert(error instanceof Error ? error.message : "The message could not be sent")
     } finally {
       setIsLoading(false);
     }
   };
-
-  async function startStreaming(params: {
-    conversationId: Id<"conversations">;
-    messageId: Id<"messages">;
-    responseId: Id<"modelResponses">;
-    modelId: string;
-    provider: string;
-    subModelId: string;
-    userMessage: string;
-  }) {
-    try {
-      // Start streaming
-      const response = await fetch("/api/ai/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...params,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Streaming failed: ${response.statusText}`);
-      }
-
-      // The streaming is automatically handled by Vercel AI SDK
-      // Convex will be updated through the onCompletion callback
-      console.log(` Streaming Initiated for ${params.modelId}`);
-
-    } catch (error) {
-      console.error(` Error streaming ${params.modelId}:`, error);
-    }
-  }
 
   return (
     <div className="absolute inset-x-0 bottom-0 mx-auto max-w-3xl px-3 pb-3 md:px-5 md:pb-5">

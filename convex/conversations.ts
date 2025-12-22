@@ -363,3 +363,26 @@ export const searchConversations = query({
     return results;
   },
 });
+
+// *Verify response ownership
+export const verifyResponseOwnership = query({
+  args: { responseId: v.id("modelResponses") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return false;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) return false;
+
+    const response = await ctx.db.get(args.responseId);
+    if (!response || response.userId !== user._id) {
+      return false;
+    }
+
+    return true;
+  },
+});

@@ -1,5 +1,6 @@
 import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand, Message } from "@aws-sdk/client-sqs";
 import { getAIService } from "@/lib/aiServices";
+import { redis } from "@/lib/redis";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -243,34 +244,38 @@ async function processMessage(message: Message, queueUrl: string) {
       });
 
       let fullContent = "";
-      let tokenCount = 0;
-      let lastUpdateTime = Date.now();
-      const UPDATE_INTERVAL = 150; // Update DB every 150ms
-
       // Iterate over the stream
       for await (const chunk of stream) {
         const contentDelta = chunk.choices[0]?.delta?.content || "";
         if (contentDelta) {
           fullContent += contentDelta;
-          tokenCount++; // Rough estimation, accurate count comes from usage if available or post-calc
 
-          // Throttle updates to Convex
-          const now = Date.now();
-          if (now - lastUpdateTime > UPDATE_INTERVAL) {
-            await convex.action(api.actions.updateResponseCompleted, {
-              responseId: responseId as Id<"modelResponses">,
-              content: fullContent,
-              status: "processing", // Keep as processing while streaming
-              responseTime: (now - startTime) / 1000,
-              tokens: tokenCount,
-              cost: 0.001, // Placeholder cost
-            });
-            lastUpdateTime = now;
+          // Publish to Redis for real-time streaming
+          if (redis) {
+            try {
+              const publishResult = await redis.publish(`stream:${responseId}`, JSON.stringify({
+                content: contentDelta,
+                status: "processing"
+              }));
+              if (publishResult === 0) {
+                log("WARN", `No subscribers for stream:${responseId}`);
+              }
+            } catch (publishError) {
+              log("ERROR", `Failed to publish to Redis for ${responseId}`, { error: publishError });
+            }
           }
         }
       }
       
       const responseTime = (Date.now() - startTime) / 1000;
+
+      // *Get actual token count from SDK or estimate
+      // OpenAI SDK provides usage in the last chunk or via a separate property depending on version/config
+      // For now, we'll use the estimate as a fallback if not found in the stream
+      const estimatedTokens = Math.ceil(fullContent.length / 4);
+      const finalTokenCount = estimatedTokens; // TODO: Pull from SDK if available in future refactor
+
+      const cost = calculateCost(provider, subModelId, finalTokenCount);
 
       // Final update with completed status
       await convex.action(api.actions.updateResponseCompleted, {
@@ -278,9 +283,22 @@ async function processMessage(message: Message, queueUrl: string) {
         content: fullContent,
         status: "completed",
         responseTime,
-        tokens: tokenCount, // Or calculate more accurately
-        cost: 0.001 * (tokenCount / 1000), // Example cost calc
+        tokens: finalTokenCount,
+        cost,
       });
+
+      // Signal completion to Redis
+      if (redis) {
+        try {
+          await redis.publish(`stream:${responseId}`, JSON.stringify({
+            status: "completed",
+            fullContent
+          }));
+          log("INFO", `Completion signal sent to Redis for ${responseId}`);
+        } catch (publishError) {
+          log("ERROR", `Failed to publish completion to Redis for ${responseId}`, { error: publishError });
+        }
+      }
     }
 
     // STEP 3: Delete message from SQS
@@ -315,6 +333,18 @@ async function processMessage(message: Message, queueUrl: string) {
       log("ERROR", `Failed to update error status for message ${message.MessageId}`, { error: updateError });
     }
 
+    // Signal error to Redis
+    if (redis) {
+      try {
+        await redis.publish(`stream:${responseId}`, JSON.stringify({
+          status: "error",
+          error: finalErrorMessage
+        }));
+      } catch (publishError) {
+        log("ERROR", `Failed to publish error to Redis for ${responseId}`, { error: publishError });
+      }
+    }
+
     // IMPORTANT: Delete message even on failure to prevent retry storms
     try {
       await sqsClient.send(new DeleteMessageCommand({
@@ -326,6 +356,40 @@ async function processMessage(message: Message, queueUrl: string) {
       log("ERROR", `Failed to delete message ${message.MessageId} after failure`, { error: deleteError });
     }
   }
+}
+
+/**
+ * Calculates the estimated cost of an AI response
+ */
+function calculateCost(provider: string, subModelId: string, tokens: number): number {
+  const pricing: Record<string, Record<string, number>> = {
+    "GPT": {
+      "gpt-4o": 0.005 / 1000,
+      "gpt-4o-mini": 0.00015 / 1000,
+      "gpt-4-turbo": 0.01 / 1000,
+      "gpt-3.5-turbo": 0.0005 / 1000,
+    },
+    "Claude": {
+      "claude-3-5-sonnet-20241022": 0.003 / 1000,
+      "claude-3-opus-20240229": 0.015 / 1000,
+      "claude-3-haiku-20240307": 0.00025 / 1000,
+    },
+    "Gemini": {
+      "gemini-1.5-pro": 0.00125 / 1000,
+      "gemini-1.5-flash": 0.000075 / 1000,
+    },
+    "Grok": {
+      "grok-beta": 0.005 / 1000,
+    },
+    "DeepSeek": {
+      "deepseek-chat": 0.00014 / 1000,
+    }
+  };
+
+  const providerPricing = pricing[provider] || {};
+  const pricePerToken = providerPricing[subModelId] || 0.001 / 1000; // Default fallback
+  
+  return tokens * pricePerToken;
 }
 
 async function pollQueues() {
