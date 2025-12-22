@@ -1,5 +1,6 @@
 import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand, Message } from "@aws-sdk/client-sqs";
 import { getAIService } from "@/lib/aiServices";
+import { redis } from "@/lib/redis";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -244,28 +245,26 @@ async function processMessage(message: Message, queueUrl: string) {
 
       let fullContent = "";
       let tokenCount = 0;
-      let lastUpdateTime = Date.now();
-      const UPDATE_INTERVAL = 150; // Update DB every 150ms
-
       // Iterate over the stream
       for await (const chunk of stream) {
         const contentDelta = chunk.choices[0]?.delta?.content || "";
         if (contentDelta) {
           fullContent += contentDelta;
-          tokenCount++; // Rough estimation, accurate count comes from usage if available or post-calc
+          tokenCount++;
 
-          // Throttle updates to Convex
-          const now = Date.now();
-          if (now - lastUpdateTime > UPDATE_INTERVAL) {
-            await convex.action(api.actions.updateResponseCompleted, {
-              responseId: responseId as Id<"modelResponses">,
-              content: fullContent,
-              status: "processing", // Keep as processing while streaming
-              responseTime: (now - startTime) / 1000,
-              tokens: tokenCount,
-              cost: 0.001, // Placeholder cost
-            });
-            lastUpdateTime = now;
+          // Publish to Redis for real-time streaming
+          if (redis) {
+            try {
+              const publishResult = await redis.publish(`stream:${responseId}`, JSON.stringify({
+                content: contentDelta,
+                status: "processing"
+              }));
+              if (publishResult === 0) {
+                log("WARN", `No subscribers for stream:${responseId}`);
+              }
+            } catch (publishError) {
+              log("ERROR", `Failed to publish to Redis for ${responseId}`, { error: publishError });
+            }
           }
         }
       }
@@ -281,6 +280,19 @@ async function processMessage(message: Message, queueUrl: string) {
         tokens: tokenCount, // Or calculate more accurately
         cost: 0.001 * (tokenCount / 1000), // Example cost calc
       });
+
+      // Signal completion to Redis
+      if (redis) {
+        try {
+          await redis.publish(`stream:${responseId}`, JSON.stringify({
+            status: "completed",
+            fullContent
+          }));
+          log("INFO", `Completion signal sent to Redis for ${responseId}`);
+        } catch (publishError) {
+          log("ERROR", `Failed to publish completion to Redis for ${responseId}`, { error: publishError });
+        }
+      }
     }
 
     // STEP 3: Delete message from SQS
@@ -313,6 +325,14 @@ async function processMessage(message: Message, queueUrl: string) {
       });
     } catch (updateError) {
       log("ERROR", `Failed to update error status for message ${message.MessageId}`, { error: updateError });
+    }
+
+    // Signal error to Redis
+    if (redis) {
+      await redis.publish(`stream:${responseId}`, JSON.stringify({
+        status: "error",
+        error: finalErrorMessage
+      }));
     }
 
     // IMPORTANT: Delete message even on failure to prevent retry storms

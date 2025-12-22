@@ -14,6 +14,8 @@ import { Loader } from "@/components/ui/loader";
 import { ChainOfThought, ChainOfThoughtStep, ChainOfThoughtTrigger, ChainOfThoughtContent } from "@/components/ui/chain-of-thought";
 import { Source, SourceTrigger, SourceContent } from "@/components/ui/source";
 
+import { useStreamingResponse } from "@/hooks/useStreamingResponse";
+
 interface ModelResponseCardProps {
   response: ModelResponse;
 }
@@ -22,11 +24,22 @@ export function ModelResponseCard({
   response,
 }: ModelResponseCardProps) {
   const { resolvedTheme } = useTheme();
+  
+  // Use the streaming hook if the response is in processing status
+  const { streamingContent, isStreaming } = useStreamingResponse(
+    response._id || "", 
+    response.status === "processing"
+  );
 
   // Find the model definition
   const model = SPECIALIZED_MODELS.find(m => m.id === response.modelId);
 
   if (!model) return null;
+
+  // Use streaming content if available, otherwise fallback to response content
+  const displayContent = isStreaming && streamingContent 
+    ? streamingContent 
+    : response.content;
 
   return (
     <div className="flex flex-col gap-2 w-full">
@@ -79,7 +92,7 @@ export function ModelResponseCard({
             ) : (
               <div className="flex flex-col gap-3">
                 {response.status === "processing" ? (
-                  <StreamingText content={response.content} isStreaming={true} />
+                  <StreamingText content={displayContent} isStreaming={true} />
                 ) : response.mediaUrl != null ? (
                   <div className="rounded-xl overflow-hidden border bg-black/5 shadow-sm">
                     {response.category === 'image' ? (
@@ -94,7 +107,7 @@ export function ModelResponseCard({
                   </div>
                 ) : (
                   <MessageContent markdown className="prose-sm text-primary w-full max-w-none bg-transparent p-0">
-                    {response.content || "*Sin respuesta*"}
+                    {displayContent || "*Sin respuesta*"}
                   </MessageContent>
                 )}
 
@@ -114,14 +127,14 @@ export function ModelResponseCard({
                 )}
 
                 {/* Actions */}
-                {!response.isLoading && response.content && (
+                {!response.isLoading && displayContent && (
                   <MessageActions className="pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <MessageAction tooltip="Copy">
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-primary"
-                        onClick={() => navigator.clipboard.writeText(response.content)}
+                        onClick={() => navigator.clipboard.writeText(displayContent)}
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </Button>

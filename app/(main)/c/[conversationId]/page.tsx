@@ -22,7 +22,10 @@ export default function ConversationPage() {
 
   // Transformar datos de Convex al formato de UI
   const conversationTurns: ConversationTurnType[] = (messages || []).map((msg) => {
-    const modelResponses: ModelResponse[] = msg.modelResponses?.map((resp) => ({
+    // Check if the message has modelResponses (only user messages from the query)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const modelResponses: ModelResponse[] = ("modelResponses" in msg ? (msg as any).modelResponses : []).map((resp: any) => ({
+      _id: resp._id,
       modelId: resp.modelId,
       provider: resp.provider,
       category: resp.category,
@@ -33,7 +36,7 @@ export default function ConversationPage() {
       responseTime: resp.responseTime || 0,
       error: resp.error,
       status: resp.status,
-    })) || [];
+    }));
 
     return {
       userMessage: {
