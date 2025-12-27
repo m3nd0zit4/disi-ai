@@ -1,3 +1,5 @@
+import { BaseToolInfo } from "./base-tools";
+
 export type OpenAIToolId = 
   | "webSearch"
   | "fileSearch"
@@ -9,14 +11,11 @@ export type OpenAIToolId =
   | "applyPatch"
   | "shell";
 
-export interface ToolInfo {
-  id: OpenAIToolId;
-  name: string;
-  description: string;
-  useCases: string[];
-  docsUrl: string;
-  isPreview?: boolean;
-}
+export type OpenAIToolInfo = BaseToolInfo<OpenAIToolId>;
+
+
+export type ToolInfo = OpenAIToolInfo;
+
 
 export const OPENAI_TOOLS_INFO: Record<OpenAIToolId, ToolInfo> = {
   webSearch: {

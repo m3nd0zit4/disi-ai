@@ -1,3 +1,5 @@
+import { BaseToolInfo } from "./base-tools";
+
 export type GeminiToolId = 
   | "googleSearch"
   | "googleMaps"
@@ -10,15 +12,13 @@ export type GeminiToolId =
 export type GeminiAgentId = 
   | "deepResearch";
 
-export interface ToolInfo {
-  id: GeminiToolId | GeminiAgentId;
-  name: string;
-  description: string;
-  useCases: string[];
-  docsUrl: string;
-  isAgent?: boolean;
-  isPreview?: boolean;
-}
+export type GeminiToolInfo = BaseToolInfo<GeminiToolId | GeminiAgentId>;
+
+
+// Keep the name ToolInfo for backward compatibility within this file if needed, 
+// but GeminiToolInfo is more descriptive.
+export type ToolInfo = GeminiToolInfo;
+
 
 export const GEMINI_TOOLS_INFO: Record<GeminiToolId, ToolInfo> = {
   googleSearch: {

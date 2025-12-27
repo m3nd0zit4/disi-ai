@@ -1,3 +1,5 @@
+import { BaseToolInfo } from "./base-tools";
+
 export type GrokToolId = 
   | "webSearch"
   | "xSearch"
@@ -7,14 +9,11 @@ export type GrokToolId =
   | "mcp"
   | "documentSearch";
 
-export interface ToolInfo {
-  id: GrokToolId;
-  name: string;
-  description: string;
-  useCases: string[];
-  docsUrl: string;
-  isPreview?: boolean;
-}
+export type GrokToolInfo = BaseToolInfo<GrokToolId>;
+
+
+export type ToolInfo = GrokToolInfo;
+
 
 export const GROK_TOOLS_INFO: Record<GrokToolId, ToolInfo> = {
   webSearch: {

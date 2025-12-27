@@ -1,3 +1,5 @@
+import { BaseToolInfo } from "./base-tools";
+
 export type ClaudeToolId = 
   | "computerUse"
   | "textEditor"
@@ -6,14 +8,11 @@ export type ClaudeToolId =
   | "mcp"
   | "functionCalling";
 
-export interface ToolInfo {
-  id: ClaudeToolId;
-  name: string;
-  description: string;
-  useCases: string[];
-  docsUrl: string;
-  isPreview?: boolean;
-}
+export type ClaudeToolInfo = BaseToolInfo<ClaudeToolId>;
+
+
+export type ToolInfo = ClaudeToolInfo;
+
 
 export const CLAUDE_TOOLS_INFO: Record<ClaudeToolId, ToolInfo> = {
   computerUse: {

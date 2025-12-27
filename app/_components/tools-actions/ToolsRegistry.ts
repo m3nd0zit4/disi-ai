@@ -4,17 +4,18 @@ import {
   Image as ImageIcon, 
   Monitor, 
   FileSearch, 
-  Map, 
+  Map as MapIcon, 
   Twitter, 
   FlaskConical, 
   Server, 
-  Braces 
+  Braces,
+  LucideIcon
 } from "lucide-react";
 
 export interface ToolDefinition {
   id: string;
   label: string;
-  icon: any;
+  icon: LucideIcon;
   description: string;
   providerIds: {
     gemini?: string;
@@ -86,7 +87,7 @@ export const TOOLS_REGISTRY: ToolDefinition[] = [
   {
     id: "googleMaps",
     label: "Google Maps",
-    icon: Map,
+    icon: MapIcon,
     description: "Access location data and maps",
     providerIds: {
       gemini: "googleMaps",

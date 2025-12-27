@@ -19,12 +19,20 @@ interface AIContextType {
   getAllSpecializedModels: () => SpecializedModel[];
   setModelsFromConversation: (models: SelectedModel[]) => void; // NEW: Restore models from conversation
   hasModelsSelected: boolean;
+  
+  // Tool Actions
+  enabledTools: Record<string, boolean>;
+  isToolEnabled: (toolId: string) => boolean;
+  toggleToolEnabled: (toolId: string, value?: boolean) => void;
 }
+
 
 const AIContext = createContext<AIContextType | undefined>(undefined);
 
 export function AIContextProvider({ children }: { children: ReactNode }) {
   const [selectedModels, setSelectedModels] = useState<SelectedModel[]>([]);
+  const [enabledTools, setEnabledTools] = useState<Record<string, boolean>>({});
+
 
   const toggleModel = (model: SpecializedModel) => {
     setSelectedModels(prev => {
@@ -156,6 +164,17 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
 
   const hasModelsSelected = selectedModels.length > 0;
 
+  // Tool Actions Logic
+  const isToolEnabled = (toolId: string) => !!enabledTools[toolId];
+
+  const toggleToolEnabled = (toolId: string, value?: boolean) => {
+    setEnabledTools(prev => ({
+      ...prev,
+      [toolId]: value !== undefined ? value : !prev[toolId]
+    }));
+  };
+
+
   return (
     <AIContext.Provider
       value={{
@@ -173,7 +192,11 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
         getAllSpecializedModels,
         setModelsFromConversation,
         hasModelsSelected,
+        enabledTools,
+        isToolEnabled,
+        toggleToolEnabled,
       }}
+
     >
       {children}
     </AIContext.Provider>
