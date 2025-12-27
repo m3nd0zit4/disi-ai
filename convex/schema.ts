@@ -61,6 +61,7 @@ export default defineSchema({
         provider: v.string(),
         category: v.string(),
         providerModelId: v.string(),
+        specializedModels: v.optional(v.array(v.string())), // IDs of specialized models (image/video) for this reasoning instance
       })
     ),
     

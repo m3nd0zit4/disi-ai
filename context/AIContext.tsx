@@ -17,6 +17,7 @@ interface AIContextType {
   moveModel: (fromIndex: number, toIndex: number) => void;
   reorderModels: (newModels: SelectedModel[]) => void;
   getAllSpecializedModels: () => SpecializedModel[];
+  setModelsFromConversation: (models: SelectedModel[]) => void; // NEW: Restore models from conversation
   hasModelsSelected: boolean;
 }
 
@@ -141,6 +142,18 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
     return SPECIALIZED_MODELS.filter(m => m.category === 'image' || m.category === 'video');
   };
 
+  // NEW: Restore model configuration from a conversation
+  const setModelsFromConversation = (models: SelectedModel[]) => {
+    setSelectedModels(models.map(m => ({
+      category: m.category,
+      modelId: m.modelId,
+      provider: m.provider,
+      providerModelId: m.providerModelId,
+      isEnabled: m.isEnabled ?? true,
+      specializedModels: m.specializedModels || [],
+    })));
+  };
+
   const hasModelsSelected = selectedModels.length > 0;
 
   return (
@@ -158,6 +171,7 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
         moveModel,
         reorderModels,
         getAllSpecializedModels,
+        setModelsFromConversation,
         hasModelsSelected,
       }}
     >

@@ -8,10 +8,17 @@ import ChatInputBox from "@/app/_components/ChatInputBox";
 import { ConversationTurn } from "@/app/_components/chat/ConversationTurn";
 import { useRef, useEffect } from "react";
 import { ConversationTurn as ConversationTurnType, ModelResponse } from "@/types/ChatMessage";
+import { useAIContext } from "@/context/AIContext";
 
 export default function ConversationPage() {
   const params = useParams();
   const conversationId = params.conversationId as Id<"conversations">;
+  const { setModelsFromConversation } = useAIContext();
+  
+  // Fetch conversation data to restore model configuration
+  const conversation = useQuery(api.conversations.getConversation, { 
+    conversationId 
+  });
   
   const messages = useQuery(api.conversations.getMessages, { 
     conversationId 
@@ -19,6 +26,19 @@ export default function ConversationPage() {
 
   const conversationsEndRef = useRef<HTMLDivElement>(null);
   
+  // Restore model configuration when conversation loads
+  useEffect(() => {
+    if (conversation?.models) {
+      setModelsFromConversation(conversation.models.map(m => ({
+        category: m.category as "reasoning" | "image" | "video",
+        modelId: m.modelId,
+        provider: m.provider as "GPT" | "Claude" | "Gemini" | "Grok" | "DeepSeek",
+        providerModelId: m.providerModelId,
+        isEnabled: true,
+        specializedModels: m.specializedModels || [],
+      })));
+    }
+  }, [conversation, setModelsFromConversation]);
 
   // Transformar datos de Convex al formato de UI
   const conversationTurns: ConversationTurnType[] = (messages || []).map((msg) => {

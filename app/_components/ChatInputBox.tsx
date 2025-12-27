@@ -16,6 +16,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useRouter } from "next/navigation";
 import ModelSelector from "./chat/ModelSelector";
+import { ToolActionsBar } from "./tools-actions/ToolActionsBar";
 
 interface ChatInputBoxProps {
   conversationId?: Id<"conversations">;
@@ -125,6 +126,12 @@ export default function ChatInputBox({ conversationId }: ChatInputBoxProps) {
           <div className="px-4 pt-2">
             <ModelSelector />
           </div>
+          
+          {/* Tool Actions Bar */}
+          <div className="px-4 pt-2">
+            <ToolActionsBar />
+          </div>
+
           <PromptInputTextarea
             placeholder={
               hasModelsSelected
