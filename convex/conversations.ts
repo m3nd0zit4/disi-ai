@@ -45,12 +45,13 @@ export const createConversation = mutation({
     const conversationId = await ctx.db.insert("conversations", {
       userId: user._id,
       title: args.title || "Nueva conversación",
-      // Filter out frontend-only fields (isEnabled, specializedModels)
+      // Store complete model configuration including specialized models
       models: args.models.map(m => ({
         modelId: m.modelId,
         provider: m.provider,
         category: m.category,
         providerModelId: m.providerModelId,
+        specializedModels: m.specializedModels, // Persist specialized models configuration
       })),
       messageCount: 0,
       createdAt: Date.now(),
