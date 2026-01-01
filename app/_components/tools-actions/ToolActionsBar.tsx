@@ -6,7 +6,8 @@ import {
   Code, 
   Globe, 
   Image as ImageIcon,
-  Zap
+  Zap,
+  HelpCircle
 } from "lucide-react";
 import { LucideIcon } from "lucide-react";
 
@@ -23,14 +24,14 @@ export function ToolActionsBar() {
   
   const activeTools = Object.entries(enabledTools)
     .filter(([, enabled]) => enabled)
-    .map(([id]) => ({ id, name: id.replace('_', ' ') }));
+    .map(([id]) => ({ id, name: id.replaceAll('_', ' ') }));
 
   if (activeTools.length === 0) return null;
 
   return (
     <div className="flex items-center gap-1">
       {activeTools.map((tool) => {
-        const Icon = toolIcons[tool.id as keyof typeof toolIcons] || Globe;
+        const Icon = toolIcons[tool.id as keyof typeof toolIcons] || HelpCircle;
         return (
           <div
             key={tool.id}

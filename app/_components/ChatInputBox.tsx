@@ -262,6 +262,10 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
         removeNode(previewNodeIdRef.current);
         previewNodeIdRef.current = null;
       }
+      if (previewEdgeIdRef.current) {
+        removeEdge(previewEdgeIdRef.current);
+        previewEdgeIdRef.current = null;
+      }
       
       // Clear local state
       setPrompt("");

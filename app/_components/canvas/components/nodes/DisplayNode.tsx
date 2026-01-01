@@ -31,7 +31,7 @@ export const DisplayNode = memo(({ data, selected }: NodeProps) => {
                 {content}
               </div>
             )}
-            {(type === "image" || type === "video") && mediaUrl && (
+            {type === "image" && mediaUrl && (
               <div className="relative aspect-video bg-primary/10 overflow-hidden">
                 <Image 
                   src={mediaUrl} 
@@ -40,10 +40,33 @@ export const DisplayNode = memo(({ data, selected }: NodeProps) => {
                   className="object-cover transition-transform duration-500 group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 gap-2">
+                  {/* TODO: Implement maximize handler to open image in modal/lightbox */}
                   <Button variant="secondary" size="icon" className="h-7 w-7 bg-white/10 backdrop-blur-md border-white/10 hover:bg-white/20 text-white rounded-lg">
                     <Maximize2 className="w-3 h-3" />
                   </Button>
+                  {/* TODO: Implement download handler to save media to user's device */}
                   <Button variant="secondary" size="icon" className="h-7 w-7 bg-white/10 backdrop-blur-md border-white/10 hover:bg-white/20 text-white rounded-lg">
+                    <Download className="w-3 h-3" />
+                  </Button>
+                </div>
+              </div>
+            )}
+            {type === "video" && mediaUrl && (
+              <div className="relative aspect-video bg-primary/10 overflow-hidden">
+                <video 
+                  src={mediaUrl} 
+                  controls
+                  muted
+                  playsInline
+                  loop
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  aria-label="Generated video content"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 gap-2 pointer-events-none">
+                  <Button variant="secondary" size="icon" className="h-7 w-7 bg-white/10 backdrop-blur-md border-white/10 hover:bg-white/20 text-white rounded-lg pointer-events-auto">
+                    <Maximize2 className="w-3 h-3" />
+                  </Button>
+                  <Button variant="secondary" size="icon" className="h-7 w-7 bg-white/10 backdrop-blur-md border-white/10 hover:bg-white/20 text-white rounded-lg pointer-events-auto">
                     <Download className="w-3 h-3" />
                   </Button>
                 </div>

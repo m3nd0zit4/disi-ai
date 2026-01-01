@@ -110,7 +110,7 @@ export const ResponseNode = memo(({ data, selected }: NodeProps) => {
             <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/50">{modelId}</span>
           </div>
           <div className="text-[9px] text-muted-foreground/40 font-medium">
-            {createdAt ? formatDistanceToNow(createdAt) : 'Just now'}
+            {createdAt ? formatDistanceToNow(createdAt, { addSuffix: true }) : 'Just now'}
           </div>
         </div>
       </div>

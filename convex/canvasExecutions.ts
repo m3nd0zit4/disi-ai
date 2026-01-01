@@ -58,6 +58,11 @@ export const createCanvasExecutionByClerkId = mutation({
   },
 });
 
+/**
+ * Internal mutation for updating execution status from the AI worker.
+ * NOTE: This mutation is intended for server-to-server use only (e.g., AI worker).
+ * It does not verify user authentication as it is called from trusted backend services.
+ */
 // UPDATE EXECUTION STATUS
 export const updateExecutionStatus = mutation({
   args: {
@@ -138,7 +143,23 @@ export const updateNodeExecution = mutation({
 export const getExecution = query({
   args: { executionId: v.id("canvasExecutions") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.executionId);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const execution = await ctx.db.get(args.executionId);
+    if (!execution) return null;
+
+    // Verify ownership
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user || execution.userId !== user._id) {
+      return null;
+    }
+
+    return execution;
   },
 });
 
@@ -146,6 +167,22 @@ export const getExecution = query({
 export const listCanvasExecutions = query({
   args: { canvasId: v.id("canvas") },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    // Verify user owns the canvas
+    const canvas = await ctx.db.get(args.canvasId);
+    if (!canvas) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user || canvas.userId !== user._id) {
+      return [];
+    }
+
     return await ctx.db
       .query("canvasExecutions")
       .withIndex("by_canvas", (q) => q.eq("canvasId", args.canvasId))

@@ -142,7 +142,9 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
       provider: m.provider,
       providerModelId: m.providerModelId,
       isEnabled: m.isEnabled ?? true,
-      specializedModels: m.specializedModels || [],
+      specializedModels: m.category === 'reasoning' 
+        ? (m.specializedModels || [])
+        : undefined,
     })));
   };
 

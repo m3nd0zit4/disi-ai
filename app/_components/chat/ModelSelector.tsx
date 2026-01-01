@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { 
   Sparkles, 
   Image as ImageIcon, 
@@ -43,12 +43,25 @@ export default function ModelSelector() {
   const [search, setSearch] = useState("");
   const [isMultiSelect, setIsMultiSelect] = useState(true);
   const { theme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const filteredModels = useMemo(() => {
     return SPECIALIZED_MODELS.filter(m => {
       const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
                            m.provider.toLowerCase().includes(search.toLowerCase());
-      const category = mode === "image" ? "image" : mode === "video" ? "video" : "reasoning";
+      let category: string;
+      if (mode === "image") {
+        category = "image";
+      } else if (mode === "video") {
+        category = "video";
+      } else {
+        // Match both reasoning and standard models for other modes
+        return matchesSearch && (m.category === "reasoning" || m.category === "standard");
+      }
       return matchesSearch && m.category === category;
     });
   }, [mode, search]);
@@ -125,6 +138,7 @@ export default function ModelSelector() {
                     placeholder="Search..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
+                    aria-label="Search models"
                     className="w-full bg-muted/40 border-none rounded-lg py-1.5 pl-7 pr-2.5 text-[11px] focus:ring-1 focus:ring-primary/10 outline-none placeholder:text-muted-foreground/30"
                   />
                 </div>
@@ -146,36 +160,42 @@ export default function ModelSelector() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 custom-scrollbar">
-                {filteredModels.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => handleModelClick(m)}
-                    className={cn(
-                      "w-full flex items-center justify-between px-2 py-2 rounded-lg text-left transition-all group",
-                      isModelSelected(m.id) ? "bg-primary/5" : "hover:bg-muted/40"
-                    )}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="relative w-4 h-4 flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
-                        <NextImage 
-                          src={theme === 'dark' ? m.icon.light : m.icon.dark} 
-                          alt={m.name}
-                          fill
-                          className="object-contain"
-                        />
+                {filteredModels.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <span className="text-[11px] text-muted-foreground/50">No models found</span>
+                  </div>
+                ) : (
+                  filteredModels.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => handleModelClick(m)}
+                      className={cn(
+                        "w-full flex items-center justify-between px-2 py-2 rounded-lg text-left transition-all group",
+                        isModelSelected(m.id) ? "bg-primary/5" : "hover:bg-muted/40"
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="relative w-4 h-4 flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
+                          <NextImage 
+                            src={mounted && theme === 'dark' ? m.icon.dark : m.icon.light} 
+                            alt={m.name}
+                            fill
+                            className="object-contain"
+                          />
+                        </div>
+                        <div className="flex flex-col leading-tight">
+                          <span className={cn("text-[11px] font-medium", isModelSelected(m.id) ? "text-primary" : "text-foreground/90")}>{m.name}</span>
+                          <span className="text-[9px] text-muted-foreground/50">{m.provider}</span>
+                        </div>
                       </div>
-                      <div className="flex flex-col leading-tight">
-                        <span className={cn("text-[11px] font-medium", isModelSelected(m.id) ? "text-primary" : "text-foreground/90")}>{m.name}</span>
-                        <span className="text-[9px] text-muted-foreground/50">{m.provider}</span>
-                      </div>
-                    </div>
-                    {isMultiSelect ? (
-                      <Checkbox checked={isModelSelected(m.id)} className="size-3.5 rounded border-muted-foreground/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary" />
-                    ) : (
-                      isModelSelected(m.id) && <Check className="w-3 h-3 text-primary" />
-                    )}
-                  </button>
-                ))}
+                      {isMultiSelect ? (
+                        <Checkbox checked={isModelSelected(m.id)} className="size-3.5 rounded border-muted-foreground/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary" />
+                      ) : (
+                        isModelSelected(m.id) && <Check className="w-3 h-3 text-primary" />
+                      )}
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           </div>

@@ -19,6 +19,7 @@ export function CanvasToolbar() {
         size="icon"
         className="size-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
         onClick={toggleSidebar}
+        aria-label="Toggle sidebar"
       >
         <PanelLeft className="size-4" />
       </Button>
@@ -27,6 +28,7 @@ export function CanvasToolbar() {
         variant="ghost"
         size="icon"
         className="size-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+        aria-label="Messages"
       >
         <MessageSquare className="size-4" />
       </Button>
@@ -35,6 +37,7 @@ export function CanvasToolbar() {
         variant="ghost"
         size="icon"
         className="size-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+        aria-label="Add new"
       >
         <Plus className="size-4" />
       </Button>
@@ -43,6 +46,7 @@ export function CanvasToolbar() {
         variant="ghost"
         size="icon"
         className="size-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+        aria-label="Search"
       >
         <Search className="size-4" />
       </Button>

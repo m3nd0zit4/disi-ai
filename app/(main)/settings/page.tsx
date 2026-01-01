@@ -64,7 +64,7 @@ export default function SettingsPage() {
       return;
     }
 
-    setValidating({ ...validating, [providerId]: true });
+    setValidating((prev) => ({ ...prev, [providerId]: true }));
     
     try {
       const response = await fetch("/api/user/api-keys", {
@@ -104,7 +104,7 @@ export default function SettingsPage() {
         type: "error"
       });
     } finally {
-      setValidating({ ...validating, [providerId]: false });
+      setValidating((prev) => ({ ...prev, [providerId]: false }));
     }
   };
 

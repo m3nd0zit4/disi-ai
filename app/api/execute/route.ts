@@ -4,7 +4,15 @@ import { sendToQueue } from "@/lib/sqs";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+function getRequiredEnv(key: string): string {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+  return value;
+}
+
+const convex = new ConvexHttpClient(getRequiredEnv("NEXT_PUBLIC_CONVEX_URL"));
 
 export async function POST(req: Request) {
   try {
@@ -132,8 +140,8 @@ export async function POST(req: Request) {
 
     // 4. Queue nodes in SQS with context
     const queueUrl = user.plan === "pro" 
-      ? process.env.SQS_QUEUE_URL_PRO! 
-      : process.env.SQS_QUEUE_URL_FREE!;
+      ? getRequiredEnv("SQS_QUEUE_URL_PRO")
+      : getRequiredEnv("SQS_QUEUE_URL_FREE");
 
     const jobs = await Promise.all(
       nodesToQueue.map(async (node) => {

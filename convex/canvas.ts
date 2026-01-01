@@ -144,6 +144,12 @@ export const addNode = mutation({
   },
 });
 
+/**
+ * Internal mutation for updating node data from the AI worker.
+ * NOTE: This mutation is intended for server-to-server use only (e.g., AI worker).
+ * It does not verify user authentication as it is called from trusted backend services.
+ * Do not expose this mutation to client-side code.
+ */
 export const updateNodeDataInternal = mutation({
   args: {
     canvasId: v.id("canvas"),

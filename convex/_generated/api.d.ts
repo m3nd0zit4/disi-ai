@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as actions from "../actions.js";
 import type * as ai from "../ai.js";
 import type * as canvas from "../canvas.js";
 import type * as canvasExecutions from "../canvasExecutions.js";
@@ -21,7 +20,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  actions: typeof actions;
   ai: typeof ai;
   canvas: typeof canvas;
   canvasExecutions: typeof canvasExecutions;

@@ -25,7 +25,7 @@ export class OpenAIService extends BaseAIService {
       temperature: isReasoning ? undefined : (request.temperature ?? 0.7),
       [isReasoning ? "max_completion_tokens" : "max_tokens"]: request.maxTokens,
       stream: false,
-    } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming);
+    } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, { signal: request.signal });
 
     const responseTime = (Date.now() - startTime) / 1000;
     const tokens = completion.usage?.total_tokens ?? 0;
@@ -47,7 +47,7 @@ export class OpenAIService extends BaseAIService {
       temperature: isReasoning ? undefined : (request.temperature ?? 0.7),
       [isReasoning ? "max_completion_tokens" : "max_tokens"]: request.maxTokens,
       stream: true,
-    } as OpenAI.Chat.ChatCompletionCreateParamsStreaming);
+    } as OpenAI.Chat.ChatCompletionCreateParamsStreaming, { signal: request.signal });
     return stream;
   }
 

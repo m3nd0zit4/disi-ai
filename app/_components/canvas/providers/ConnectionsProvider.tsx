@@ -1,12 +1,10 @@
 "use client";
 
-import { createContext, useContext, useCallback, useRef, useState, ReactNode } from "react";
+import { createContext, useContext, useCallback, useRef, useState, useEffect, ReactNode } from "react";
 import { 
   Connection, 
   EdgeChange, 
   NodeChange, 
-  applyNodeChanges, 
-  applyEdgeChanges,
   OnConnectStartParams,
   Edge,
   Node
@@ -41,8 +39,6 @@ interface ConnectionsProviderProps {
 
 export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderProps) => {
   const { 
-    nodes, 
-    edges, 
     setEdges,
     onNodesChange: storeOnNodesChange, 
     onEdgesChange: storeOnEdgesChange 
@@ -52,6 +48,16 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
   
   const connectingNodeId = useRef<string | null>(null);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+        updateTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Debounced update
   const debouncedUpdateCanvas = useCallback((data: any) => {
@@ -69,21 +75,22 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     const hasRealChanges = changes.some(c => c.type !== 'select');
     if (!hasRealChanges) return;
 
-    const updatedNodes = applyNodeChanges(changes, nodes);
-    debouncedUpdateCanvas({ canvasId, nodes: updatedNodes });
-  }, [canvasId, debouncedUpdateCanvas, nodes, storeOnNodesChange]);
+    const latestNodes = useCanvasStore.getState().nodes;
+    debouncedUpdateCanvas({ canvasId, nodes: latestNodes });
+  }, [canvasId, debouncedUpdateCanvas, storeOnNodesChange]);
 
   const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
     storeOnEdgesChange(changes);
-    const updatedEdges = applyEdgeChanges(changes, edges);
-    debouncedUpdateCanvas({ canvasId, edges: updatedEdges });
-  }, [canvasId, debouncedUpdateCanvas, edges, storeOnEdgesChange]);
+    const latestEdges = useCanvasStore.getState().edges;
+    debouncedUpdateCanvas({ canvasId, edges: latestEdges });
+  }, [canvasId, debouncedUpdateCanvas, storeOnEdgesChange]);
 
   const handleConnect = useCallback((connection: Connection) => {
-    const newEdges = handleWorkflowConnection(connection, edges);
+    const latestEdges = useCanvasStore.getState().edges;
+    const newEdges = handleWorkflowConnection(connection, latestEdges);
     setEdges(newEdges);
     debouncedUpdateCanvas({ canvasId, edges: newEdges });
-  }, [canvasId, debouncedUpdateCanvas, edges, setEdges]);
+  }, [canvasId, debouncedUpdateCanvas, setEdges]);
 
   const onConnectStart = useCallback((_: MouseEvent | TouchEvent, { nodeId }: OnConnectStartParams) => {
     connectingNodeId.current = nodeId;

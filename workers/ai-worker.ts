@@ -154,12 +154,25 @@ async function processNodeExecution(data: {
           throw new Error("No messages to send to AI");
         }
 
-        // 2.1 Start streaming
-        const stream = await service.generateStreamResponse({
-          model: modelId || "gpt-4o",
-          messages: messages as any[],
-          temperature: temperature || 0.7,
-        });
+        // 2.1 Start streaming with timeout protection
+        const GENERATION_TIMEOUT_MS = 30000;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+          log("WARN", `Generation timed out for node ${nodeId}, aborting...`);
+          controller.abort();
+        }, GENERATION_TIMEOUT_MS);
+
+        let stream;
+        try {
+          stream = await service.generateStreamResponse({
+            model: modelId || "gpt-4o",
+            messages: messages as any[],
+            temperature: temperature || 0.7,
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
         let fullText = "";
         let tokenCount = 0;
@@ -170,7 +183,8 @@ async function processNodeExecution(data: {
           const content = chunk.choices[0]?.delta?.content || "";
           if (content) {
             fullText += content;
-            tokenCount++; // Approximation
+            // Estimate tokens based on characters (~4 chars per token for English)
+            tokenCount = Math.ceil(fullText.length / 4);
 
             if (!hasStartedStreaming) {
               hasStartedStreaming = true;
@@ -240,14 +254,20 @@ async function processNodeExecution(data: {
     log("INFO", `Node ${nodeId} completed successfully`);
 
   } catch (error: unknown) {
+    const isAbortError = error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log("ERROR", `Node ${nodeId} failed`, { error: errorMessage });
+    
+    if (isAbortError) {
+      log("WARN", `Node ${nodeId} execution aborted/timed out`, { executionId });
+    } else {
+      log("ERROR", `Node ${nodeId} failed`, { error: errorMessage });
+    }
 
     await convex.mutation(api.canvasExecutions.updateNodeExecution, {
       executionId: executionId as Id<"canvasExecutions">,
       nodeId,
       status: "failed",
-      error: errorMessage,
+      error: isAbortError ? "Execution timed out" : errorMessage,
     });
 
     // Delete even on failure to prevent loops

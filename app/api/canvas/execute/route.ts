@@ -6,6 +6,14 @@ import { api } from "@/convex/_generated/api";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
+function getRequiredEnv(key: string): string {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+  return value;
+}
+
 export async function POST(req: Request) {
   console.log("POST /api/canvas/execute hit");
   try {
@@ -14,7 +22,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { canvasId, executionId: propExecutionId, prompt, models, newNodeId } = await req.json();
+    const body = await req.json();
+    const { canvasId, executionId: propExecutionId, prompt, models, newNodeId } = body;
+
+    // Validate required fields
+    if (!canvasId || typeof canvasId !== 'string') {
+      return NextResponse.json({ error: "Invalid canvasId" }, { status: 400 });
+    }
+
+    if (!propExecutionId && (!prompt || !newNodeId)) {
+      return NextResponse.json({ 
+        error: "Either executionId or (prompt + newNodeId) must be provided" 
+      }, { status: 400 });
+    }
 
     // 1. Get user record
     const user = await convex.query(api.users.getUserByClerkId, { clerkId });
@@ -22,10 +42,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // 2. Get canvas details
-    const canvas = await convex.query(api.canvas.getCanvas, { canvasId });
+    // 2. Get canvas details (Authorized)
+    const canvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId });
     if (!canvas) {
-      return NextResponse.json({ error: "Canvas not found" }, { status: 404 });
+      return NextResponse.json({ error: "Canvas not found or unauthorized" }, { status: 404 });
     }
 
     let executionId = propExecutionId;
@@ -41,7 +61,10 @@ export async function POST(req: Request) {
         isEnabled: true,
       }];
 
-      executionId = await convex.mutation(api.canvasExecutions.createCanvasExecution, { canvasId });
+      executionId = await convex.mutation(api.canvasExecutions.createCanvasExecutionByClerkId, { 
+        canvasId,
+        clerkId 
+      });
 
       const inputNodeId = `input-${newNodeId}`;
       const inputNode = {
@@ -76,9 +99,10 @@ export async function POST(req: Request) {
         animated: true,
       }));
 
-      // Add all at once
-      await convex.mutation(api.canvas.addNodesAndEdges, { 
+      // Add all at once (Authorized)
+      await convex.mutation(api.canvas.addNodesAndEdgesByClerkId, { 
         canvasId, 
+        clerkId,
         nodes: [inputNode, ...responseNodes],
         edges 
       });
@@ -103,8 +127,8 @@ export async function POST(req: Request) {
 
     // 4. Queue nodes in SQS with context
     const queueUrl = user.plan === "pro" 
-      ? process.env.SQS_QUEUE_URL_PRO! 
-      : process.env.SQS_QUEUE_URL_FREE!;
+      ? getRequiredEnv("SQS_QUEUE_URL_PRO")
+      : getRequiredEnv("SQS_QUEUE_URL_FREE");
 
     const jobs = await Promise.all(
       nodesToQueue.map(async (node) => {
