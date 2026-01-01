@@ -29,7 +29,7 @@ export class AnthropicService extends BaseAIService {
       system: systemMessage,
       messages,
       stream: false,
-    });
+    }, { abortSignal: request.signal });
 
     const tokens = completion.usage.input_tokens + completion.usage.output_tokens;
     
@@ -59,7 +59,7 @@ export class AnthropicService extends BaseAIService {
       max_tokens: request.maxTokens ?? 1024,
       system: systemMessage,
       messages,
-    })
+    }, { abortSignal: request.signal })
   }
     
   //* Calculate the cost of a request

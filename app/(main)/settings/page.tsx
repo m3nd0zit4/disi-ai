@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Eye, EyeOff, CheckCircle, XCircle, Loader2, Trash2 } from "lucide-react";
 import Image from "next/image";
+import { useDialog } from "@/hooks/useDialog";
 
 const PROVIDERS = [
   { id: "GPT", name: "OpenAI", icon: "/icons/gpt-claro.svg", docsUrl: "https://platform.openai.com/api-keys" },
@@ -33,6 +34,7 @@ export default function SettingsPage() {
   const [validating, setValidating] = useState<Record<string, boolean>>({});
   const [userKeys, setUserKeys] = useState<UserApiKey[]>([]);
   const [loading, setLoading] = useState(true);
+  const { showDialog } = useDialog();
 
   // Load user API keys
   useEffect(() => {
@@ -54,11 +56,15 @@ export default function SettingsPage() {
 
   const handleSaveKey = async (providerId: string) => {
     if (!apiKeys[providerId]?.trim()) {
-      alert("Por favor ingresa una API key válida");
+      showDialog({
+        title: "Error",
+        description: "Por favor ingresa una API key válida",
+        type: "error"
+      });
       return;
     }
 
-    setValidating({ ...validating, [providerId]: true });
+    setValidating((prev) => ({ ...prev, [providerId]: true }));
     
     try {
       const response = await fetch("/api/user/api-keys", {
@@ -76,7 +82,7 @@ export default function SettingsPage() {
       }
 
       // Clear input and refresh list
-      setApiKeys({ ...apiKeys, [providerId]: "" });
+      setApiKeys((prev) => ({ ...prev, [providerId]: "" }));
       
       // Reload keys
       const keysResponse = await fetch("/api/user/api-keys");
@@ -85,40 +91,60 @@ export default function SettingsPage() {
         setUserKeys(data.keys || []);
       }
 
-      alert(` API Key de ${providerId} guardada correctamente`);
+      showDialog({
+        title: "Éxito",
+        description: `API Key de ${providerId} guardada correctamente`,
+        type: "success"
+      });
       
     } catch (error) {
-      alert(` Error: ${error instanceof Error ? error.message : "Desconocido"}`);
+      showDialog({
+        title: "Error",
+        description: `Error: ${error instanceof Error ? error.message : "Desconocido"}`,
+        type: "error"
+      });
     } finally {
-      setValidating({ ...validating, [providerId]: false });
+      setValidating((prev) => ({ ...prev, [providerId]: false }));
     }
   };
 
   const handleDeleteKey = async (providerId: string) => {
-    if (!confirm(`¿Seguro que quieres eliminar la API key de ${providerId}?`)) {
-      return;
-    }
+    showDialog({
+      title: "Eliminar API Key",
+      description: `¿Seguro que quieres eliminar la API key de ${providerId}?`,
+      type: "confirm",
+      confirmText: "Eliminar",
+      onConfirm: async () => {
+        try {
+          const response = await fetch(`/api/user/api-keys?provider=${providerId}`, {
+            method: "DELETE",
+          });
 
-    try {
-      const response = await fetch(`/api/user/api-keys?provider=${providerId}`, {
-        method: "DELETE",
-      });
+          if (!response.ok) {
+            throw new Error("Failed to delete");
+          }
 
-      if (!response.ok) {
-        throw new Error("Failed to delete");
+          // Reload keys
+          const keysResponse = await fetch("/api/user/api-keys");
+          if (keysResponse.ok) {
+            const data = await keysResponse.json();
+            setUserKeys(data.keys || []);
+          }
+          
+          showDialog({
+            title: "Éxito",
+            description: "API Key eliminada",
+            type: "success"
+          });
+        } catch (error) {
+          showDialog({
+            title: "Error",
+            description: `Error al eliminar: ${error instanceof Error ? error.message : "Desconocido"}`,
+            type: "error"
+          });
+        }
       }
-
-      // Reload keys
-      const keysResponse = await fetch("/api/user/api-keys");
-      if (keysResponse.ok) {
-        const data = await keysResponse.json();
-        setUserKeys(data.keys || []);
-      }
-      
-      alert(` API Key eliminada`);
-    } catch (error) {
-      alert(`❌ Error al eliminar: ${error instanceof Error ? error.message : "Desconocido"}`);
-    }
+    });
   };
 
   if (loading) {

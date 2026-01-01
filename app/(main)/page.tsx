@@ -1,51 +1,58 @@
-'use client';
+"use client";
 
-import React from 'react';
+import { useState } from 'react';
+import {
+  Search,
+  ChevronDown
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import ChatInputBox from '@/app/_components/ChatInputBox';
-import { useAIContext } from '@/context/AIContext';
-import { Sparkles } from 'lucide-react';
+import { AuthModal } from '@/app/_components/auth/AuthModal';
+import { useConvexAuth } from 'convex/react';
 
 const Page = () => {
-  const { hasModelsSelected } = useAIContext();
+  const { isAuthenticated, isLoading } = useConvexAuth();
+  const [userClosed, setUserClosed] = useState(false);
+
+  const showAuthModal = !isLoading && !isAuthenticated && !userClosed;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)]">
-      <div className="flex-1 overflow-y-auto px-4">
-        {!hasModelsSelected ? (
-          // ESTADO 1: Sin modelos seleccionados
-          <div className="flex flex-col items-center justify-center h-full text-center space-y-7 pt-6">
-            <div>
-              <h2 className="logo-font">Bienvenido a DISI</h2>
-              <p className="text-muted-foreground">
-                Selecciona uno o más modelos de IA en el dock superior para comenzar
-              </p>
-            </div>
-          </div>
-        ) : (
-          // ESTADO 2: Modelos seleccionados pero sin conversación
-          <div className="flex flex-col items-center justify-center h-full text-center space-y-7 pt-6">
-            <div className="max-w-md mx-auto space-y-4">
-              <div className="inline-flex items-center gap-2 text-primary">
-                <Sparkles className="w-6 h-6" />
-                <h3 className="text-xl font-semibold">Modelos listos para responder</h3>
-              </div>
-              <p className="text-muted-foreground">
-                Puedes personalizar cada modelo añadiendo capacidades de imagen o video directamente en el selector de abajo.
-              </p>
-              <div className="text-sm text-muted-foreground animate-bounce pt-8">
-                Escribe tu mensaje abajo para comenzar ↓
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="sticky bottom-0 bg-background px-4 py-4 z-10">
-        <div className="max-w-5xl mx-auto">
-          <ChatInputBox />
-        </div>
-      </div>
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] p-4 bg-background relative overflow-hidden">
+      <AuthModal 
+        isOpen={showAuthModal} 
+        onClose={() => setUserClosed(true)} 
+      />
+      {/* Background Glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[120px] pointer-events-none" />
       
+      {isLoading ? (
+        <div className="w-full max-w-3xl space-y-8 relative z-10 animate-pulse">
+          <div className="space-y-3">
+            <div className="h-10 w-48 bg-muted/30 rounded-lg" />
+            <div className="h-5 w-72 bg-muted/20 rounded-lg" />
+          </div>
+          <div className="h-32 w-full bg-muted/20 rounded-2xl" />
+        </div>
+      ) : (
+        <div className="w-full max-w-3xl space-y-8 relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="space-y-1.5 text-center sm:text-left">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground/80">Hello there</h1>
+            <p className="text-muted-foreground text-base font-medium">The night is still young for creativity</p>
+          </div>
+
+          <div className="relative z-10">
+            <ChatInputBox />
+          </div>
+
+          <div className="flex justify-center">
+            <Button variant="ghost" size="sm" className="rounded-full bg-muted/30 border border-primary/5 gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-primary/5 hover:text-primary transition-all">
+              <Search className="w-3 h-3" />
+              Explore agent mode cases
+              <ChevronDown className="w-3 h-3" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

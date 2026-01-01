@@ -1,200 +1,206 @@
 "use client";
 
-import React, { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useAIContext } from "@/context/AIContext";
-import { useTheme } from "next-themes";
-import Image from "next/image";
-import { cn } from "@/lib/utils";
+import { useState, useMemo, useEffect } from "react";
+import { 
+  Sparkles, 
+  Image as ImageIcon, 
+  Video, 
+  Wand2, 
+  Globe, 
+  Zap,
+  ChevronDown,
+  Search,
+  Check
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import NextImage from "next/image";
 import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
-import { SelectedModel } from "@/types/AiModel";
-import { Check, X, Power, PowerOff } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { useAIContext } from "@/context/AIContext";
+import { cn } from "@/lib/utils";
+import { useTheme } from "next-themes";
+import { SpecializedModel } from "@/types/AiModel";
 
-interface ModelItemProps {
-  model: SelectedModel;
-  index: number;
-}
-
-function ModelItem({ model, index }: ModelItemProps) {
-  const { 
-    removeModelInstance, 
-    toggleSpecializedModel, 
-    isSpecializedModelSelected,
-    getAllSpecializedModels,
-    toggleModelEnabled,
-  } = useAIContext();
-  const { resolvedTheme } = useTheme();
-  const [isHovered, setIsHovered] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
-
-  const showMenu = (isHovered || isFocused) && model.isEnabled;
-
-  const mainModel = SPECIALIZED_MODELS.find(m => m.id === model.modelId);
-  if (!mainModel) return null;
-
-  const selectedSpecialized = SPECIALIZED_MODELS.filter(m => 
-    model.specializedModels?.includes(m.id)
-  );
-
-  const allSpecialized = getAllSpecializedModels();
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onFocus={() => setIsFocused(true)}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-          setIsFocused(false);
-        }
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          setIsFocused(false);
-          setIsHovered(false);
-        }
-      }}
-      aria-haspopup="menu"
-      aria-expanded={showMenu}
-      className={cn(
-        "relative flex items-center gap-2 p-1.5 px-3 rounded-full border transition-all duration-200 group",
-        model.isEnabled 
-          ? (showMenu ? "border-primary/50 shadow-md bg-background/80" : "border-border bg-background/50")
-          : "border-muted-foreground/20 bg-muted/50 opacity-60 grayscale",
-        "backdrop-blur-sm"
-      )}
-    >
-      {/* Enable/Disable Toggle */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleModelEnabled(index);
-        }}
-        className={cn(
-          "p-1 rounded-full transition-colors",
-          model.isEnabled 
-            ? "text-primary hover:bg-primary/10" 
-            : "text-muted-foreground hover:bg-muted"
-        )}
-        title={model.isEnabled ? "Desactivar modelo" : "Activar modelo"}
-      >
-        {model.isEnabled ? <Power className="w-3 h-3" /> : <PowerOff className="w-3 h-3" />}
-      </button>
-
-      {/* Main Model Icon */}
-      <div className="relative w-5 h-5 shrink-0">
-        <Image
-          src={resolvedTheme === "dark" ? mainModel.icon.light : mainModel.icon.dark}
-          alt={mainModel.name}
-          fill
-          className="object-contain"
-        />
-      </div>
-
-      {/* Specialized Model Icons */}
-      {selectedSpecialized.length > 0 && (
-        <div className="flex items-center -space-x-2 ml-1">
-          {selectedSpecialized.map((sm) => (
-            <div key={sm.id} className="relative w-4 h-4 rounded-full border border-background bg-background p-0.5" title={sm.name}>
-              <Image
-                src={resolvedTheme === "dark" ? sm.icon.light : sm.icon.dark}
-                alt={sm.name}
-                fill
-                className="object-contain"
-              />
-            </div>
-          ))}
-        </div>
-      )}
-
-      <span className="text-xs font-medium truncate max-w-[100px]">{mainModel.name}</span>
-
-      {/* Remove Button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          removeModelInstance(index);
-        }}
-        className="ml-1 p-0.5 rounded-full hover:bg-destructive/10 hover:text-destructive text-muted-foreground/50 transition-colors"
-      >
-        <X className="w-3 h-3" />
-      </button>
-
-      {/* Hover Menu for Specialized Models */}
-      <AnimatePresence>
-        {showMenu && (
-          <motion.div
-            role="menu"
-            aria-label={`Opciones para ${mainModel.name}`}
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            className="absolute bottom-full mb-3 left-0 p-2 bg-popover/95 backdrop-blur-md border border-border shadow-xl rounded-xl min-w-[220px] z-50"
-          >
-            <div className="px-2 py-1.5 mb-1 border-b">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Añadir Especializado</p>
-            </div>
-            <div className="max-h-[200px] overflow-y-auto space-y-1 custom-scrollbar">
-              {allSpecialized.map((sm) => {
-                const isSelected = isSpecializedModelSelected(index, sm.id);
-                return (
-                  <button
-                    key={sm.id}
-                    onClick={() => toggleSpecializedModel(index, sm)}
-                    className={cn(
-                      "flex items-center gap-2 w-full p-2 rounded-lg text-left text-xs transition-colors",
-                      isSelected ? "bg-primary/10 text-primary font-medium" : "hover:bg-accent"
-                    )}
-                    role="menuitemcheckbox"
-                    aria-checked={isSelected}
-                  >
-                    <div className="relative w-5 h-5 shrink-0">
-                      <Image
-                        src={resolvedTheme === "dark" ? sm.icon.light : sm.icon.dark}
-                        alt={sm.name}
-                        fill
-                        className="object-contain"
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1">
-                            <span className="truncate">{sm.name}</span>
-                            {sm.premium && <Badge variant="secondary" className="text-[8px] h-3 px-1">PRO</Badge>}
-                        </div>
-                    </div>
-                    {isSelected && <Check className="w-3 h-3 text-primary" />}
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
+const modes = [
+  { id: "regular", name: "Regular", icon: Sparkles, color: "text-primary" },
+  { id: "webpage", name: "Webpage", icon: Globe, color: "text-blue-500" },
+  { id: "image", name: "Image", icon: ImageIcon, color: "text-purple-500" },
+  { id: "video", name: "Video", icon: Video, color: "text-pink-500" },
+  { id: "prompt_enhance", name: "Prompt Enhance", icon: Wand2, color: "text-orange-500" },
+  { id: "agent_mode", name: "Agent Mode", icon: Zap, color: "text-yellow-500" },
+];
 
 export default function ModelSelector() {
-  const { selectedModels } = useAIContext();
+  const { selectedModels, toggleModel, isModelSelected, reorderModels } = useAIContext();
+  const [mode, setMode] = useState("regular");
+  const [search, setSearch] = useState("");
+  const [isMultiSelect, setIsMultiSelect] = useState(true);
+  const { theme } = useTheme();
+  const [mounted, setMounted] = useState(false);
 
-  if (selectedModels.length === 0) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const filteredModels = useMemo(() => {
+    return SPECIALIZED_MODELS.filter(m => {
+      const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
+                           m.provider.toLowerCase().includes(search.toLowerCase());
+      let category: string;
+      if (mode === "image") {
+        category = "image";
+      } else if (mode === "video") {
+        category = "video";
+      } else {
+        // Match both reasoning and standard models for other modes
+        return matchesSearch && (m.category === "reasoning" || m.category === "standard");
+      }
+      return matchesSearch && m.category === category;
+    });
+  }, [mode, search]);
+
+  const currentModel = selectedModels[0] || SPECIALIZED_MODELS[0];
+  const modelInfo = 'modelId' in currentModel 
+    ? SPECIALIZED_MODELS.find(m => m.id === currentModel.modelId) 
+    : currentModel;
+
+  const modelName = selectedModels.length > 1 
+    ? `${selectedModels.length} models` 
+    : (modelInfo?.name || "Select Model");
+  const CurrentIcon = modes.find(m => m.id === mode)?.icon || Sparkles;
+
+  const handleModelClick = (m: SpecializedModel) => {
+    if (isMultiSelect) {
+      toggleModel(m);
+    } else {
+      // Single select: replace all with this one
+      reorderModels([{
+        category: m.category,
+        modelId: m.id,
+        provider: m.provider,
+        providerModelId: m.providerModelId,
+        isEnabled: true,
+        specializedModels: m.category === 'reasoning' ? [] : undefined,
+      }]);
+    }
+  };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 mb-2 px-1">
-      <AnimatePresence mode="popLayout">
-        {selectedModels.map((model, index) => (
-          <ModelItem 
-            key={`${model.modelId}-${index}`} 
-            model={model} 
-            index={index} 
-          />
-        ))}
-      </AnimatePresence>
+    <div className="flex items-center gap-2">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-7 gap-1.5 rounded-full bg-muted/40 hover:bg-muted/60 px-2.5 text-[11px] font-semibold transition-all border border-transparent hover:border-primary/10">
+            <div className="flex items-center gap-1">
+              <CurrentIcon className={cn("w-3 h-3", modes.find(m => m.id === mode)?.color)} />
+              <span className="capitalize">{mode.replace('_', ' ')}</span>
+            </div>
+            <div className="w-px h-2.5 bg-border/50 mx-0.5" />
+            <div className="flex items-center gap-1">
+              <span className="text-muted-foreground/80 truncate max-w-[80px]">{modelName}</span>
+              <ChevronDown className="w-2.5 h-2.5 opacity-40" />
+            </div>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-[380px] p-0 bg-card/98 backdrop-blur-xl border-primary/5 rounded-xl overflow-hidden shadow-xl">
+          <div className="flex h-[420px]">
+            {/* Modes Sidebar */}
+            <div className="w-[130px] border-r border-primary/5 bg-muted/20 p-1.5 space-y-0.5">
+              <div className="px-2 py-2 text-[10px] font-bold text-muted-foreground/60 uppercase tracking-tight">Mode</div>
+              {modes.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setMode(m.id)}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all",
+                    mode === m.id ? "bg-primary/10 text-primary" : "hover:bg-primary/5 text-muted-foreground/80"
+                  )}
+                >
+                  <m.icon className={cn("w-3.5 h-3.5", mode === m.id ? m.color : "opacity-40")} />
+                  {m.name}
+                </button>
+              ))}
+            </div>
+
+            {/* Models List */}
+            <div className="flex-1 flex flex-col">
+              <div className="p-2.5 space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground/40" />
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    aria-label="Search models"
+                    className="w-full bg-muted/40 border-none rounded-lg py-1.5 pl-7 pr-2.5 text-[11px] focus:ring-1 focus:ring-primary/10 outline-none placeholder:text-muted-foreground/30"
+                  />
+                </div>
+                
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="multi-select" className="text-[10px] font-medium text-muted-foreground/70">Multi-Select</Label>
+                    <Switch 
+                      id="multi-select" 
+                      checked={isMultiSelect} 
+                      onCheckedChange={setIsMultiSelect}
+                      className="scale-[0.6] origin-left"
+                    />
+                  </div>
+                  <span className="text-[10px] font-medium text-muted-foreground/50">
+                    {selectedModels.length} selected
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 custom-scrollbar">
+                {filteredModels.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <span className="text-[11px] text-muted-foreground/50">No models found</span>
+                  </div>
+                ) : (
+                  filteredModels.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => handleModelClick(m)}
+                      className={cn(
+                        "w-full flex items-center justify-between px-2 py-2 rounded-lg text-left transition-all group",
+                        isModelSelected(m.id) ? "bg-primary/5" : "hover:bg-muted/40"
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="relative w-4 h-4 flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
+                          <NextImage 
+                            src={mounted && theme === 'dark' ? m.icon.dark : m.icon.light} 
+                            alt={m.name}
+                            fill
+                            className="object-contain"
+                          />
+                        </div>
+                        <div className="flex flex-col leading-tight">
+                          <span className={cn("text-[11px] font-medium", isModelSelected(m.id) ? "text-primary" : "text-foreground/90")}>{m.name}</span>
+                          <span className="text-[9px] text-muted-foreground/50">{m.provider}</span>
+                        </div>
+                      </div>
+                      {isMultiSelect ? (
+                        <Checkbox checked={isModelSelected(m.id)} className="size-3.5 rounded border-muted-foreground/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary" />
+                      ) : (
+                        isModelSelected(m.id) && <Check className="w-3 h-3 text-primary" />
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

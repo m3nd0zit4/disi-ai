@@ -1,10 +1,8 @@
 import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand, Message } from "@aws-sdk/client-sqs";
 import { getAIService } from "@/lib/aiServices";
-import { redis } from "@/lib/redis";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { isInsufficientFundsError, INSUFFICIENT_FUNDS_MESSAGE } from "@/lib/ai-errors";
 import "dotenv/config";
 import { config } from "dotenv";
 import { resolve } from "path";
@@ -63,7 +61,6 @@ async function processMessage(message: Message, queueUrl: string) {
       bodyPreview: message.Body.substring(0, 100) + (message.Body.length > 100 ? "..." : "")
     });
     
-    // Delete malformed message to prevent retry storms
     await sqsClient.send(new DeleteMessageCommand({
       QueueUrl: queueUrl,
       ReceiptHandle: message.ReceiptHandle!,
@@ -71,326 +68,219 @@ async function processMessage(message: Message, queueUrl: string) {
     return;
   }
 
-  const { responseId, modelId, provider, subModelId, userMessage, apiKey, specializedModels, userId, conversationId } = data;
+  const { executionId, nodeId } = data;
 
-  log("INFO", `Processing message ${message.MessageId}`, { 
-    modelId, 
-    provider, 
-    subModelId, 
-    userId, 
-    conversationId,
-    responseId
-  });
+  // Detect if this is a node execution
+  if (executionId && nodeId) {
+    return await processNodeExecution(data, message, queueUrl);
+  }
+
+  log("WARN", `Received legacy or unknown message type. Deleting.`, { messageId: message.MessageId });
+  await sqsClient.send(new DeleteMessageCommand({
+    QueueUrl: queueUrl,
+    ReceiptHandle: message.ReceiptHandle!,
+  }));
+}
+
+async function processNodeExecution(data: {
+  executionId: string;
+  nodeId: string;
+  nodeType: string;
+  canvasId: string;
+  inputs: Record<string, any>;
+  apiKey?: string;
+}, message: Message, queueUrl: string) {
+  const { executionId, nodeId, nodeType, canvasId, inputs, apiKey } = data;
+
+  log("INFO", `Processing node execution ${nodeId}`, { executionId, nodeType });
 
   try {
-    // STEP 1: Update status to "processing"
-    const statusResult = await convex.action(api.actions.updateResponseStatus, {
-      responseId: responseId as Id<"modelResponses">, 
-      status: "processing",
+    // 1. Update node status to "running" in execution record
+    await convex.mutation(api.canvasExecutions.updateNodeExecution, {
+      executionId: executionId as Id<"canvasExecutions">,
+      nodeId,
+      status: "running",
     });
 
-    if (statusResult?.error === "Response not found") {
-      log("WARN", `Response ${responseId} not found in database. Deleting zombie message.`, { messageId: message.MessageId });
-      await sqsClient.send(new DeleteMessageCommand({
-        QueueUrl: queueUrl,
-        ReceiptHandle: message.ReceiptHandle!,
-      }));
-      return;
-    }
+    // Update node data status to "thinking" on the canvas
+    await convex.mutation(api.canvas.updateNodeDataInternal, {
+      canvasId: canvasId as Id<"canvas">,
+      nodeId,
+      data: { status: "thinking" },
+    });
 
-    // STEP 2: Validate message body (handle old/malformed messages)
-    if (!provider || !subModelId) {
-      log("WARN", `Message ${message.MessageId} is missing provider or subModelId. Deleting malformed message.`, { 
-        modelId, 
-        provider, 
-        subModelId 
-      });
-      await sqsClient.send(new DeleteMessageCommand({
-        QueueUrl: queueUrl,
-        ReceiptHandle: message.ReceiptHandle!,
-      }));
-      return;
-    }
+    let result: {
+      text: string;
+      tokens: number;
+      cost: number;
+    } | null = null;
 
-    // Use provider if available, fallback to modelId (for backward compatibility if needed)
-    const targetProvider = provider || modelId;
-    const service = getAIService(targetProvider, apiKey);
-    const startTime = Date.now();
-
-    // STEP 2: Check if orchestration is needed
-    const hasSpecializedModels = specializedModels && specializedModels.length > 0;
-    
-    if (hasSpecializedModels) {
-      // Use a capable model for orchestration (gpt-4o-mini for GPT) to ensure reliable tool calling
-      // We use gpt-4o-mini because reasoning models (o1/gpt-5) often ignore tool_choice: "required"
-      const orchestrationModelId = targetProvider === "GPT" ? "gpt-4o-mini" : subModelId;
-      
-      log("INFO", `Orchestration mode: analyzing with ${specializedModels.length} specialized models`, { responseId, orchestrationModelId });
-      
-      const orchestrationResult = await service.analyzeOrchestration({
-        model: orchestrationModelId,
-        messages: [{ role: "user", content: userMessage }],
-        temperature: 0.7,
-        maxTokens: 2000,
-        availableTools: specializedModels,
-        userIntent: userMessage,
-      });
-
-      log("INFO", `Orchestration result`, { 
-        needsOrchestration: orchestrationResult.needsOrchestration,
-        tasksCount: orchestrationResult.tasks?.length || 0,
-        textResponse: orchestrationResult.textResponse.substring(0, 50) + "..."
-      });
-
-      const responseTime = (Date.now() - startTime) / 1000;
-
-      await convex.action(api.actions.updateResponseCompleted, {
-        responseId: responseId as Id<"modelResponses">,
-        content: orchestrationResult.textResponse,
-        status: orchestrationResult.needsOrchestration ? "processing" : "completed",
-        responseTime,
-        tokens: Math.ceil(orchestrationResult.textResponse.length / 4),
-        cost: 0.001,
-      });
-
-      if (orchestrationResult.needsOrchestration && orchestrationResult.tasks) {
-        log("INFO", `Orchestration tasks found: ${orchestrationResult.tasks.length}`, { responseId });
+    // 2. Execute based on node type
+    switch (nodeType) {
+      case "chatInput":
+      case "aiModel":
+      case "response": {
+        const { prompt, text, modelId, provider, systemPrompt, temperature, context } = inputs;
         
-        for (const task of orchestrationResult.tasks) {
-          try {
-            log("INFO", `Executing task: ${task.taskType}`, { taskModel: task.modelId });
-            
-            const childResponseId = await convex.action(
-              api.actions.createOrchestratedResponse,
-              {
-                parentResponseId: responseId as Id<"modelResponses">,
-                conversationId: data.conversationId as Id<"conversations">,
-                messageId: data.messageId as Id<"messages">,
-                userId: data.userId as Id<"users">,
-                modelId: task.modelId,
-                provider: specializedModels.find((m: { modelId: string; provider: string }) => m.modelId === task.modelId)?.provider || targetProvider,
-                category: task.taskType,
-                providerModelId: task.providerModelId,
-                taskType: task.taskType,
-              }
-            );
+        // Fallback to environment variables if apiKey is not provided in the message
+        let effectiveApiKey = apiKey;
+        if (!effectiveApiKey) {
+          const providerUpper = (provider || "openai").toUpperCase();
+          effectiveApiKey = process.env[`${providerUpper}_API_KEY`];
+        }
 
-            await convex.action(api.actions.updateResponseStatus, {
-              responseId: childResponseId as Id<"modelResponses">,
-              status: "processing",
-            });
+        const service = getAIService(provider || "openai", effectiveApiKey || "");
+        
+        // Build messages from context
+        const messages = [];
+        if (systemPrompt) {
+          messages.push({ role: "system", content: systemPrompt });
+        }
 
-            const specializedTool = specializedModels.find((m: { modelId: string; provider: string }) => m.modelId === task.modelId);
-            const specializedService = specializedTool 
-              ? getAIService(specializedTool.provider, apiKey)
-              : service;
-
-            const mediaStartTime = Date.now();
-            let mediaResult;
-            
-            if (task.taskType === "image") {
-              mediaResult = await specializedService.generateImage({
-                model: task.providerModelId,
-                prompt: task.prompt,
-              });
-            } else if (task.taskType === "video") {
-              mediaResult = await specializedService.generateVideo({
-                model: task.providerModelId,
-                prompt: task.prompt,
-              });
-            }
-
-            const mediaResponseTime = (Date.now() - mediaStartTime) / 1000;
-
-            if (mediaResult) {
-              await convex.action(api.actions.updateResponseCompleted, {
-                responseId: childResponseId as Id<"modelResponses">,
-                content: task.reasoning,
-                status: "completed",
-                mediaUrl: mediaResult.mediaUrl,
-                responseTime: mediaResponseTime,
-                tokens: 0,
-                cost: 0.01,
-              });
-              log("INFO", `Task completed: ${task.taskType}`, { childResponseId });
-            }
-
-            await convex.action(api.actions.updateOrchestrationTask, {
-              parentResponseId: responseId as Id<"modelResponses">,
-              childResponseId: childResponseId as Id<"modelResponses">,
-              status: "completed",
-            });
-
-          } catch (taskError) {
-            log("ERROR", `Task failed: ${task.taskType}`, { error: taskError });
+        if (context && Array.isArray(context)) {
+          for (const ctxNode of context) {
+            const role = ctxNode.type === "input" ? "user" : "assistant";
+            messages.push({ role, content: ctxNode.content });
           }
         }
 
-        await convex.action(api.actions.updateResponseStatus, {
-          responseId: responseId as Id<"modelResponses">,
-          status: "completed",
-        });
-      }
-
-    } else {
-      log("INFO", `Simple mode: generating text response (streaming)`, { responseId });
-      
-      // Call streaming API
-      const stream = await service.generateStreamResponse({
-        model: subModelId,
-        messages: [{ role: "user", content: userMessage }],
-        temperature: 0.7,
-        maxTokens: 2000,
-      });
-
-      let fullContent = "";
-      // Iterate over the stream
-      for await (const chunk of stream) {
-        const contentDelta = chunk.choices[0]?.delta?.content || "";
-        if (contentDelta) {
-          fullContent += contentDelta;
-
-          // Publish to Redis for real-time streaming
-          if (redis) {
-            try {
-              const publishResult = await redis.publish(`stream:${responseId}`, JSON.stringify({
-                content: contentDelta,
-                status: "processing"
-              }));
-              if (publishResult === 0) {
-                log("WARN", `No subscribers for stream:${responseId}`);
-              }
-            } catch (publishError) {
-              log("ERROR", `Failed to publish to Redis for ${responseId}`, { error: publishError });
-            }
-          }
+        // Add the current prompt/text
+        const currentPrompt = prompt || text;
+        if (currentPrompt) {
+          messages.push({ role: "user", content: currentPrompt });
         }
-      }
-      
-      const responseTime = (Date.now() - startTime) / 1000;
 
-      // *Get actual token count from SDK or estimate
-      // OpenAI SDK provides usage in the last chunk or via a separate property depending on version/config
-      // For now, we'll use the estimate as a fallback if not found in the stream
-      const estimatedTokens = Math.ceil(fullContent.length / 4);
-      const finalTokenCount = estimatedTokens; // TODO: Pull from SDK if available in future refactor
+        if (messages.length === 0) {
+          throw new Error("No messages to send to AI");
+        }
 
-      const cost = calculateCost(provider, subModelId, finalTokenCount);
+        // 2.1 Start streaming with timeout protection
+        const GENERATION_TIMEOUT_MS = 30000;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+          log("WARN", `Generation timed out for node ${nodeId}, aborting...`);
+          controller.abort();
+        }, GENERATION_TIMEOUT_MS);
 
-      // Final update with completed status
-      await convex.action(api.actions.updateResponseCompleted, {
-        responseId: responseId as Id<"modelResponses">,
-        content: fullContent,
-        status: "completed",
-        responseTime,
-        tokens: finalTokenCount,
-        cost,
-      });
-
-      // Signal completion to Redis
-      if (redis) {
+        let stream;
         try {
-          await redis.publish(`stream:${responseId}`, JSON.stringify({
-            status: "completed",
-            fullContent
-          }));
-          log("INFO", `Completion signal sent to Redis for ${responseId}`);
-        } catch (publishError) {
-          log("ERROR", `Failed to publish completion to Redis for ${responseId}`, { error: publishError });
+          stream = await service.generateStreamResponse({
+            model: modelId || "gpt-4o",
+            messages: messages as any[],
+            temperature: temperature || 0.7,
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
         }
+
+        let fullText = "";
+        let tokenCount = 0;
+        let lastUpdateTime = Date.now();
+        let hasStartedStreaming = false;
+
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content || "";
+          if (content) {
+            fullText += content;
+            // Estimate tokens based on characters (~4 chars per token for English)
+            tokenCount = Math.ceil(fullText.length / 4);
+
+            if (!hasStartedStreaming) {
+              hasStartedStreaming = true;
+              await convex.mutation(api.canvas.updateNodeDataInternal, {
+                canvasId: canvasId as Id<"canvas">,
+                nodeId,
+                data: { status: "streaming" },
+              });
+            }
+
+            // Update Convex every 10 tokens or 500ms
+            const now = Date.now();
+            if (tokenCount % 10 === 0 || now - lastUpdateTime > 500) {
+              await convex.mutation(api.canvas.updateNodeDataInternal, {
+                canvasId: canvasId as Id<"canvas">,
+                nodeId,
+                data: { text: fullText },
+              });
+              lastUpdateTime = now;
+            }
+          }
+        }
+
+        // Final update to ensure text is complete and status is set
+        await convex.mutation(api.canvas.updateNodeDataInternal, {
+          canvasId: canvasId as Id<"canvas">,
+          nodeId,
+          data: { text: fullText, status: "complete" },
+        });
+
+        result = {
+          text: fullText,
+          tokens: tokenCount,
+          cost: 0,
+        };
+        break;
       }
+
+      case "webSearch": {
+        // TODO: Implement web search tool
+        result = { 
+          text: "Web search results for: " + inputs.query,
+          tokens: 0,
+          cost: 0
+        };
+        break;
+      }
+
+      default:
+        throw new Error(`Unsupported node type: ${nodeType}`);
     }
 
-    // STEP 3: Delete message from SQS
+    // 3. Update node status to "completed" in execution record
+    await convex.mutation(api.canvasExecutions.updateNodeExecution, {
+      executionId: executionId as Id<"canvasExecutions">,
+      nodeId,
+      status: "completed",
+      output: result,
+    });
+
+    // 4. Delete message from SQS
     await sqsClient.send(new DeleteMessageCommand({
       QueueUrl: queueUrl,
       ReceiptHandle: message.ReceiptHandle!,
     }));
 
-    log("INFO", `Message ${message.MessageId} processed and deleted`);
+    log("INFO", `Node ${nodeId} completed successfully`);
 
   } catch (error: unknown) {
-    const err = error as { message?: string; code?: string };
-    log("ERROR", `Message ${message.MessageId} failed`, { error: err.message || err });
-
-    if (err.code === 'ECONNRESET') {
-      log("WARN", `Connection reset detected. This might be a temporary network issue.`);
+    const isAbortError = error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    if (isAbortError) {
+      log("WARN", `Node ${nodeId} execution aborted/timed out`, { executionId });
+    } else {
+      log("ERROR", `Node ${nodeId} failed`, { error: errorMessage });
     }
 
-    const isFundsError = isInsufficientFundsError(error);
-    const finalErrorMessage = isFundsError 
-      ? INSUFFICIENT_FUNDS_MESSAGE 
-      : (err.message || "Unknown error");
+    await convex.mutation(api.canvasExecutions.updateNodeExecution, {
+      executionId: executionId as Id<"canvasExecutions">,
+      nodeId,
+      status: "failed",
+      error: isAbortError ? "Execution timed out" : errorMessage,
+    });
 
-    try {
-      await convex.action(api.actions.updateResponseCompleted, {
-        responseId: responseId as Id<"modelResponses">,
-        content: "",
-        status: "error",
-        error: finalErrorMessage,
-      });
-    } catch (updateError) {
-      log("ERROR", `Failed to update error status for message ${message.MessageId}`, { error: updateError });
-    }
-
-    // Signal error to Redis
-    if (redis) {
-      try {
-        await redis.publish(`stream:${responseId}`, JSON.stringify({
-          status: "error",
-          error: finalErrorMessage
-        }));
-      } catch (publishError) {
-        log("ERROR", `Failed to publish error to Redis for ${responseId}`, { error: publishError });
-      }
-    }
-
-    // IMPORTANT: Delete message even on failure to prevent retry storms
-    try {
-      await sqsClient.send(new DeleteMessageCommand({
-        QueueUrl: queueUrl,
-        ReceiptHandle: message.ReceiptHandle!,
-      }));
-      log("INFO", `Message ${message.MessageId} deleted after failure`);
-    } catch (deleteError) {
-      log("ERROR", `Failed to delete message ${message.MessageId} after failure`, { error: deleteError });
-    }
+    // Delete even on failure to prevent loops
+    await sqsClient.send(new DeleteMessageCommand({
+      QueueUrl: queueUrl,
+      ReceiptHandle: message.ReceiptHandle!,
+    }));
   }
 }
 
 /**
- * Calculates the estimated cost of an AI response
+ * Pricing logic moved to lib/pricing.ts
  */
-function calculateCost(provider: string, subModelId: string, tokens: number): number {
-  const pricing: Record<string, Record<string, number>> = {
-    "GPT": {
-      "gpt-4o": 0.005 / 1000,
-      "gpt-4o-mini": 0.00015 / 1000,
-      "gpt-4-turbo": 0.01 / 1000,
-      "gpt-3.5-turbo": 0.0005 / 1000,
-    },
-    "Claude": {
-      "claude-3-5-sonnet-20241022": 0.003 / 1000,
-      "claude-3-opus-20240229": 0.015 / 1000,
-      "claude-3-haiku-20240307": 0.00025 / 1000,
-    },
-    "Gemini": {
-      "gemini-1.5-pro": 0.00125 / 1000,
-      "gemini-1.5-flash": 0.000075 / 1000,
-    },
-    "Grok": {
-      "grok-beta": 0.005 / 1000,
-    },
-    "DeepSeek": {
-      "deepseek-chat": 0.00014 / 1000,
-    }
-  };
-
-  const providerPricing = pricing[provider] || {};
-  const pricePerToken = providerPricing[subModelId] || 0.001 / 1000; // Default fallback
-  
-  return tokens * pricePerToken;
-}
 
 async function pollQueues() {
   log("INFO", "AI Worker started and polling SQS queues...", { 

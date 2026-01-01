@@ -9,6 +9,7 @@ export interface AIRequest {
     messages: Array<{ role: string; content: string }>;
     temperature?: number;
     maxTokens?: number;
+    signal?: AbortSignal;
 }
 
 export interface AIResponse {

@@ -1,15 +1,10 @@
 "use client"
 
 import { SidebarTrigger } from '@/components/ui/sidebar'
-import AiDock from './AiDock'
-
 const AppHeader = () => {
   return (
-    <div className="p-3 w-full shadow flex items-center justify-between">
-        <SidebarTrigger />
-        <div className="flex-1 flex justify-center">
-          <AiDock />
-        </div>
+    <div className="p-2 w-full shadow-sm flex items-center justify-between border-b border-primary/5 bg-background/50 backdrop-blur-md">
+        <SidebarTrigger className="size-8" />
     </div>
   )
 }
