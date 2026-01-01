@@ -61,7 +61,9 @@ export class GoogleService extends BaseAIService {
         });
 
         const lastMessage = request.messages[request.messages.length - 1];
-        const result = await chat.sendMessageStream(lastMessage.content);
+        const result = await chat.sendMessageStream(lastMessage.content, {
+            signal: request.signal,
+        });
         return result.stream;
     }
 

@@ -99,7 +99,7 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
                   <div className="flex items-start gap-2 text-red-500/80">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                     <p className="text-[11px] leading-relaxed font-semibold">
-                      {error || "Ha ocurrido un error inesperado."}
+                      {error || "An unexpected error occurred."}
                     </p>
                   </div>
                   
@@ -110,11 +110,11 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
                         className="w-full h-8 text-[10px] font-bold bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20"
                       >
                         <Settings className="w-3 h-3 mr-1.5" />
-                        Configurar API Keys
+                        Configure API Keys
                       </Button>
                     </Link>
                   )}
-                  {/* TODO: Implementar mejor la sección de configuración y manejo de errores de API */}
+                  {/* TODO: Improve configuration section and API error handling */}
                 </div>
               ) : (
                 <>

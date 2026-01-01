@@ -43,6 +43,8 @@ export class DeepSeekService extends BaseAIService {
       temperature: request.temperature ?? 0.7,
       max_tokens: request.maxTokens,
       stream: true,
+    }, {
+      signal: request.signal,
     });
     return stream;
   }

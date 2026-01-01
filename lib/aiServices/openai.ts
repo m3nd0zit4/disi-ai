@@ -50,14 +50,35 @@ export class OpenAIService extends BaseAIService {
         }
 
         const data = await response.json() as any;
-        const content = data.output?.[0]?.content?.[0]?.text || "";
-        const tokens = data.usage?.total_tokens ?? 0;
+        
+        // Validate response structure
+        if (!Array.isArray(data.output) || data.output.length === 0) {
+          throw new Error("Invalid response: missing or empty output array");
+        }
+        
+        const firstOutput = data.output[0];
+        if (!Array.isArray(firstOutput?.content) || firstOutput.content.length === 0) {
+          throw new Error("Invalid response: missing or empty content array");
+        }
+        
+        const textContent = firstOutput.content[0]?.text;
+        if (typeof textContent !== "string" || textContent.length === 0) {
+          throw new Error("Invalid response: missing or empty text content");
+        }
+        
+        const tokens = data.usage?.total_tokens;
+        if (typeof tokens !== "number") {
+          throw new Error("Invalid response: missing or invalid token count");
+        }
+
+        // Extract finish reason from response, with fallback to "complete"
+        const finishReason = String(firstOutput.finish_reason ?? "complete");
 
         return {
-          content,
+          content: textContent,
           tokens,
           cost: this.calculateCost(request.model, tokens),
-          finishReason: "complete",
+          finishReason,
         };
       } catch (error) {
         console.error("Error using /v1/responses endpoint:", error);
@@ -89,14 +110,13 @@ export class OpenAIService extends BaseAIService {
     const useResponses = this.requiresResponsesEndpoint(request.model);
 
     if (useResponses) {
-      // Streaming for /v1/responses is more complex as it uses Server-Sent Events with a different format.
-      // For now, we'll implement a basic version or throw an error if not supported.
       const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${this.config.apiKey}`,
         },
+        signal: request.signal,
         body: JSON.stringify({
           model: request.model,
           items: request.messages.map(m => ({
@@ -110,12 +130,70 @@ export class OpenAIService extends BaseAIService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error?.message || errorMessage;
+        } catch {
+          // Could not parse JSON error body, use default message
+        }
+        throw new Error(errorMessage);
       }
 
-      // Return the body as an AsyncIterable if possible, or handle the stream
-      return response.body as any;
+      if (!response.body) {
+        throw new Error("Streaming not supported: no response body");
+      }
+
+      // Parse Server-Sent Events (SSE) stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      
+      async function* parseSSEStream(): AsyncGenerator<any> {
+        let buffer = "";
+        
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            
+            // Keep the last incomplete line in the buffer
+            buffer = lines.pop() || "";
+            
+            for (const line of lines) {
+              const trimmedLine = line.trim();
+              
+              if (!trimmedLine || trimmedLine.startsWith(":")) {
+                // Empty line or comment, skip
+                continue;
+              }
+              
+              if (trimmedLine.startsWith("data: ")) {
+                const data = trimmedLine.slice(6);
+                
+                if (data === "[DONE]") {
+                  return;
+                }
+                
+                try {
+                  const parsed = JSON.parse(data);
+                  yield parsed;
+                } catch {
+                  // Skip malformed JSON
+                  console.warn("Failed to parse SSE data:", data);
+                }
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      }
+
+      return parseSSEStream();
     }
 
     const stream = await this.client.chat.completions.create({
