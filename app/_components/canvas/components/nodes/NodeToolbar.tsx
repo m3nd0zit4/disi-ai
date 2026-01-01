@@ -20,10 +20,17 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+interface NodeData {
+  text?: string;
+  userInput?: string;
+  color?: string;
+  [key: string]: unknown; // for extensibility
+}
+
 interface NodeToolbarProps {
   nodeId: string;
   isVisible?: boolean;
-  data: any;
+  data: NodeData;
 }
 
 const COLORS = [
