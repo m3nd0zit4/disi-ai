@@ -36,28 +36,11 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
 
   const toggleModel = (model: SpecializedModel) => {
     setSelectedModels(prev => {
-      // For reasoning models, always add (allow multiple instances)
-      if (model.category === 'reasoning') {
-        return [
-          ...prev,
-          {
-            category: model.category,
-            modelId: model.id,
-            provider: model.provider,
-            providerModelId: model.providerModelId,
-            isEnabled: true,
-            specializedModels: [], // Initialize empty array for this instance
-          },
-        ];
-      }
-      
-      // For specialized models (image/video), normal toggle behavior
       const exists = prev.find(m => m.modelId === model.id);
       
       if (exists) {
-        // Remove model (only the first instance)
-        const index = prev.findIndex(m => m.modelId === model.id);
-        return prev.filter((_, i) => i !== index);
+        // Remove model (all instances of this modelId)
+        return prev.filter(m => m.modelId !== model.id);
       } else {
         // Add model
         return [
@@ -68,6 +51,7 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
             provider: model.provider,
             providerModelId: model.providerModelId,
             isEnabled: true,
+            specializedModels: model.category === 'reasoning' ? [] : undefined,
           },
         ];
       }

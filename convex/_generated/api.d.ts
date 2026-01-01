@@ -10,9 +10,8 @@
 
 import type * as actions from "../actions.js";
 import type * as ai from "../ai.js";
-import type * as conversations from "../conversations.js";
-import type * as messages from "../messages.js";
-import type * as orchestration from "../orchestration.js";
+import type * as canvas from "../canvas.js";
+import type * as canvasExecutions from "../canvasExecutions.js";
 import type * as users from "../users.js";
 
 import type {
@@ -24,9 +23,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   actions: typeof actions;
   ai: typeof ai;
-  conversations: typeof conversations;
-  messages: typeof messages;
-  orchestration: typeof orchestration;
+  canvas: typeof canvas;
+  canvasExecutions: typeof canvasExecutions;
   users: typeof users;
 }>;
 

@@ -5,6 +5,7 @@ import { ThemeProvider } from "./theme-provider";
 import { AIContextProvider } from "@/context/AIContext";
 import ConvexClientProvider from './ConvexClientProvider'
 import ClerkThemeProvider from "./_components/ClerkThemeProvider";
+import { GlobalDialog } from "./_components/ui/GlobalDialog";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,6 +37,7 @@ export default function RootLayout({
             <ConvexClientProvider>
               <AIContextProvider>
                 {children}
+                <GlobalDialog />
               </AIContextProvider>
             </ConvexClientProvider>
           </ClerkThemeProvider>
