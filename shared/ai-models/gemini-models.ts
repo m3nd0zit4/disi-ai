@@ -1,5 +1,7 @@
 import { SpecializedModel } from "@/types/AiModel";
 
+//TODO: Add the endpoint of each model
+
 export const GEMINI_MODELS: SpecializedModel[] = [
     // ========================================================================
     // 2. GOOGLE GEMINI

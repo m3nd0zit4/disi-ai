@@ -3,6 +3,7 @@ import { getAIService } from "@/lib/aiServices";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { isInsufficientFundsError, INSUFFICIENT_FUNDS_MESSAGE } from "@/lib/ai-errors";
 import "dotenv/config";
 import { config } from "dotenv";
 import { resolve } from "path";
@@ -269,6 +270,20 @@ async function processNodeExecution(data: {
       status: "failed",
       error: isAbortError ? "Execution timed out" : errorMessage,
     });
+
+    // Update node data with error status and message
+    const isInsufficientFunds = isInsufficientFundsError(error);
+    await convex.mutation(api.canvas.updateNodeDataInternal, {
+      canvasId: canvasId as Id<"canvas">,
+      nodeId,
+      data: { 
+        status: "error", 
+        errorType: isInsufficientFunds ? "insufficient_funds" : "generic",
+        error: isInsufficientFunds ? INSUFFICIENT_FUNDS_MESSAGE : errorMessage 
+      },
+    });
+    // TODO: Implementar mejor la sección de configuración y manejo de errores de API
+
 
     // Delete even on failure to prevent loops
     await sqsClient.send(new DeleteMessageCommand({

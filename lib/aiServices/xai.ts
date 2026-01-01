@@ -35,11 +35,28 @@ export class XAIService extends BaseAIService {
     };
   }
 
+  //* Generate a stream of responses
+  async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+    const stream = await this.client.chat.completions.create({
+      model: request.model,
+      messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
+      temperature: request.temperature ?? 0.7,
+      max_tokens: request.maxTokens,
+      stream: true,
+    });
+    return stream;
+  }
+
   //* Calculate cost
   //TODO: Hardcoded prices
   private calculateCost(model: string, tokens: number): number {
     const pricing: Record<string, number> = {
-      "grok-beta": 0.005 / 1000, // Estimado $5 per 1M tokens
+      "grok-4-1-fast-reasoning": 0.0005 / 1000,
+      "grok-4-1-fast-non-reasoning": 0.0002 / 1000,
+      "grok-4-fast-reasoning": 0.0005 / 1000,
+      "grok-4-fast-non-reasoning": 0.0002 / 1000,
+      "grok-2-image-1212": 0,
+      "grok-beta": 0.005 / 1000,
       "grok-2-latest": 0.005 / 1000,
     };
     return tokens * (pricing[model] ?? 0.005);

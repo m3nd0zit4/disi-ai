@@ -1,7 +1,6 @@
 import { memo, useState } from "react";
 import { Position, NodeProps } from "@xyflow/react";
 import { Card } from "@/components/ui/card";
-import { ResponseNodeData } from "../../types";
 import { Sparkles, ChevronRight, Lock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import ReactMarkdown from "react-markdown";
@@ -13,9 +12,12 @@ import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
+import { NodeToolbar } from "./NodeToolbar";
+import { AlertCircle, Settings } from "lucide-react";
+import Link from "next/link";
 
-export const ResponseNode = memo(({ data, selected }: NodeProps) => {
-  const { text, modelId, createdAt, reasoning, isProModel, isUserFree, status } = data as unknown as ResponseNodeData;
+export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
+  const { text, modelId, createdAt, reasoning, isProModel, isUserFree, status, color, error, errorType } = data as any;
   const [showReasoning, setShowReasoning] = useState(false);
   const { theme } = useTheme();
   const isLocked = isProModel && isUserFree;
@@ -24,10 +26,19 @@ export const ResponseNode = memo(({ data, selected }: NodeProps) => {
   const modelIcon = modelInfo?.icon;
 
   return (
-    <Card className={cn(
-      "min-w-[300px] max-w-[550px] border border-primary/10 bg-secondary/50 dark:bg-card/90 backdrop-blur-xl transition-all duration-300 rounded-2xl overflow-hidden",
-      selected ? "ring-2 ring-primary/50 border-primary/50 shadow-2xl shadow-primary/30 z-50" : "shadow-sm hover:border-primary/20"
-    )}>
+    <div className="relative">
+      <NodeToolbar nodeId={id} isVisible={selected} data={data} />
+      <Card 
+        className={cn(
+          "min-w-[300px] max-w-[550px] border border-primary/10 backdrop-blur-xl transition-all duration-300 rounded-2xl overflow-hidden",
+          (!color || color === 'transparent') && "bg-secondary/50 dark:bg-card/90",
+          selected ? "ring-2 ring-primary/50 border-primary/50 shadow-2xl shadow-primary/30 z-50" : "shadow-sm hover:border-primary/20"
+        )}
+        style={{ 
+          backgroundColor: color && color !== 'transparent' ? color : undefined,
+          borderColor: color && color !== 'transparent' ? color.replace('0.15', '0.5') : undefined
+        }}
+      >
       <NodeHandle type="target" position={Position.Top} />
       
       <div className="p-4 space-y-3.5">
@@ -82,11 +93,38 @@ export const ResponseNode = memo(({ data, selected }: NodeProps) => {
                   <span>Generating...</span>
                 </div>
               )}
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                {text}
-              </ReactMarkdown>
-              {status === "streaming" && text && (
-                <span className="inline-block w-1.5 h-3.5 ml-1 bg-primary/50 animate-pulse align-middle" />
+              
+              {status === "error" ? (
+                <div className="flex flex-col gap-3 p-3 rounded-xl bg-red-500/5 border border-red-500/10">
+                  <div className="flex items-start gap-2 text-red-500/80">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <p className="text-[11px] leading-relaxed font-semibold">
+                      {error || "Ha ocurrido un error inesperado."}
+                    </p>
+                  </div>
+                  
+                  {errorType === "insufficient_funds" && (
+                    <Link href="/settings">
+                      <Button 
+                        size="sm" 
+                        className="w-full h-8 text-[10px] font-bold bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20"
+                      >
+                        <Settings className="w-3 h-3 mr-1.5" />
+                        Configurar API Keys
+                      </Button>
+                    </Link>
+                  )}
+                  {/* TODO: Implementar mejor la sección de configuración y manejo de errores de API */}
+                </div>
+              ) : (
+                <>
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                    {text}
+                  </ReactMarkdown>
+                  {status === "streaming" && text && (
+                    <span className="inline-block w-1.5 h-3.5 ml-1 bg-primary/50 animate-pulse align-middle" />
+                  )}
+                </>
               )}
             </div>
           </>
@@ -116,7 +154,8 @@ export const ResponseNode = memo(({ data, selected }: NodeProps) => {
       </div>
 
       <NodeHandle type="source" position={Position.Bottom} />
-    </Card>
+      </Card>
+    </div>
   );
 });
 

@@ -35,12 +35,24 @@ export class DeepSeekService extends BaseAIService {
     };
   }
 
+  //* Generate a stream of responses
+  async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+    const stream = await this.client.chat.completions.create({
+      model: request.model,
+      messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
+      temperature: request.temperature ?? 0.7,
+      max_tokens: request.maxTokens,
+      stream: true,
+    });
+    return stream;
+  }
+
   //* Calculate cost
   //TODO: Hardcoded prices
   private calculateCost(model: string, tokens: number): number {
     const pricing: Record<string, number> = {
-      "deepseek-chat": 0.00014 / 1000, // $0.14 per 1M tokens
-      "deepseek-coder": 0.00014 / 1000,
+      "deepseek-chat": 0.00014 / 1000,
+      "deepseek-reasoner": 0.00014 / 1000,
     };
     return tokens * (pricing[model] ?? 0.0001);
   }

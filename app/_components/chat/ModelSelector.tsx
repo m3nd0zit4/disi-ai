@@ -177,7 +177,7 @@ export default function ModelSelector() {
                       <div className="flex items-center gap-2.5">
                         <div className="relative w-4 h-4 flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
                           <NextImage 
-                            src={mounted && theme === 'dark' ? m.icon.dark : m.icon.light} 
+                            src={mounted && theme === 'dark' ? m.icon.light : m.icon.dark} 
                             alt={m.name}
                             fill
                             className="object-contain"

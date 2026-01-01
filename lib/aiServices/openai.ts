@@ -14,10 +14,56 @@ export class OpenAIService extends BaseAIService {
     return model.startsWith('o1') || model.startsWith('o3') || model.includes('gpt-5');
   }
 
+  private requiresResponsesEndpoint(model: string): boolean {
+    // Models that require the /v1/responses endpoint
+    const responseModels = ['gpt-5.2', 'gpt-5.2-pro', 'gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'o3-deep-research', 'o1-pro'];
+    return responseModels.some(m => model.startsWith(m));
+  }
+
   //* Generate a response
   async generateResponse(request: AIRequest): Promise<AIResponse> {
-    const startTime = Date.now();
     const isReasoning = this.isReasoningModel(request.model);
+    const useResponses = this.requiresResponsesEndpoint(request.model);
+
+    if (useResponses) {
+      try {
+        const response = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${this.config.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: request.model,
+            items: request.messages.map(m => ({
+              type: "message",
+              role: m.role,
+              content: [{ type: "text", text: m.content }]
+            })),
+            max_completion_tokens: request.maxTokens,
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json() as any;
+        const content = data.output?.[0]?.content?.[0]?.text || "";
+        const tokens = data.usage?.total_tokens ?? 0;
+
+        return {
+          content,
+          tokens,
+          cost: this.calculateCost(request.model, tokens),
+          finishReason: "complete",
+        };
+      } catch (error) {
+        console.error("Error using /v1/responses endpoint:", error);
+        throw error;
+      }
+    }
     
     const completion = await this.client.chat.completions.create({
       model: request.model,
@@ -27,7 +73,6 @@ export class OpenAIService extends BaseAIService {
       stream: false,
     } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, { signal: request.signal });
 
-    const responseTime = (Date.now() - startTime) / 1000;
     const tokens = completion.usage?.total_tokens ?? 0;
     
     return {
@@ -39,8 +84,40 @@ export class OpenAIService extends BaseAIService {
   }
 
   //* Generate a stream of responses
-  async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+  async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<any>> {
     const isReasoning = this.isReasoningModel(request.model);
+    const useResponses = this.requiresResponsesEndpoint(request.model);
+
+    if (useResponses) {
+      // Streaming for /v1/responses is more complex as it uses Server-Sent Events with a different format.
+      // For now, we'll implement a basic version or throw an error if not supported.
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: request.model,
+          items: request.messages.map(m => ({
+            type: "message",
+            role: m.role,
+            content: [{ type: "text", text: m.content }]
+          })),
+          max_completion_tokens: request.maxTokens,
+          stream: true,
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+      }
+
+      // Return the body as an AsyncIterable if possible, or handle the stream
+      return response.body as any;
+    }
+
     const stream = await this.client.chat.completions.create({
       model: request.model,
       messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
