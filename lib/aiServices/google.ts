@@ -45,15 +45,42 @@ export class GoogleService extends BaseAIService {
         };
     }
 
+    //* Generate a stream of responses
+    async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<any>> {
+        const model = this.client.getGenerativeModel({ model: request.model });
+
+        const chat = model.startChat({
+            history: request.messages.slice(0, -1).map(msg => ({
+                role: msg.role === "assistant" ? "model" : "user",
+                parts: [{ text: msg.content }],
+            })),
+            generationConfig: {
+                temperature: request.temperature ?? 0.7,
+                maxOutputTokens: request.maxTokens ?? 2048,
+            }
+        });
+
+        const lastMessage = request.messages[request.messages.length - 1];
+        const result = await chat.sendMessageStream(lastMessage.content, {
+            signal: request.signal,
+        });
+        return result.stream;
+    }
+
     //* Calculate cost
     //TODO: Hardcoded prices
     private calculateCost(model: string, tokens: number): number {
         const pricing: Record<string, number> = {
-            "gemini-2.0-flash-exp": 0, // Free tier
-            "gemini-1.5-pro": 0.00125 / 1000, // $0.00125 per 1K tokens (input)
-            "gemini-1.5-flash": 0.000075 / 1000, // $0.000075 per 1K tokens
+            "gemini-3-pro-preview": 0.00125 / 1000,
+            "gemini-3-flash-preview": 0.000075 / 1000,
+            "gemini-2.5-flash": 0.000075 / 1000,
+            "gemini-2.5-flash-preview-09-2025": 0.000075 / 1000,
+            "gemini-2.5-flash-lite": 0.0000375 / 1000,
+            "gemini-1.5-pro": 0.00125 / 1000,
+            "gemini-1.5-flash": 0.000075 / 1000,
+            "gemini-2.0-flash-exp": 0,
         };
-        return tokens * (pricing[model] ?? 0.001);
+        return tokens * (pricing[model] ?? 0.0001);
     }
 
     //* Validate API key

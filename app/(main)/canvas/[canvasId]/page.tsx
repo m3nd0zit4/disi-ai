@@ -36,8 +36,8 @@ export default function CanvasPage() {
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden relative">
       <main className="flex-1 relative overflow-hidden w-full h-full">
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
-          <div className="pointer-events-auto">
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 w-full max-w-2xl z-50 px-4 pointer-events-none">
+          <div className="flex justify-center pointer-events-auto">
             <CanvasToolbar />
           </div>
         </div>

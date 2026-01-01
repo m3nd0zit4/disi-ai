@@ -13,11 +13,11 @@ export function CanvasToolbar() {
   const { toggleSidebar } = useSidebar();
 
   return (
-    <div className="flex items-center gap-1 p-1.5 rounded-2xl bg-[#1a1c1e]/80 backdrop-blur-xl border border-white/5 shadow-2xl">
+    <div className="flex items-center gap-1 p-1.5 rounded-2xl bg-popover/80 backdrop-blur-xl border border-border shadow-2xl">
       <Button
         variant="ghost"
         size="icon"
-        className="size-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+        className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
         onClick={toggleSidebar}
         aria-label="Toggle sidebar"
       >
@@ -27,7 +27,7 @@ export function CanvasToolbar() {
       <Button
         variant="ghost"
         size="icon"
-        className="size-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+        className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
         aria-label="Messages"
       >
         <MessageSquare className="size-4" />
@@ -36,7 +36,7 @@ export function CanvasToolbar() {
       <Button
         variant="ghost"
         size="icon"
-        className="size-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+        className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
         aria-label="Add new"
       >
         <Plus className="size-4" />
@@ -45,7 +45,7 @@ export function CanvasToolbar() {
       <Button
         variant="ghost"
         size="icon"
-        className="size-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+        className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
         aria-label="Search"
       >
         <Search className="size-4" />

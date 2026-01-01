@@ -14,10 +14,77 @@ export class OpenAIService extends BaseAIService {
     return model.startsWith('o1') || model.startsWith('o3') || model.includes('gpt-5');
   }
 
+  private requiresResponsesEndpoint(model: string): boolean {
+    // Models that require the /v1/responses endpoint
+    const responseModels = ['gpt-5.2', 'gpt-5.2-pro', 'gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'o3-deep-research', 'o1-pro'];
+    return responseModels.some(m => model.startsWith(m));
+  }
+
   //* Generate a response
   async generateResponse(request: AIRequest): Promise<AIResponse> {
-    const startTime = Date.now();
     const isReasoning = this.isReasoningModel(request.model);
+    const useResponses = this.requiresResponsesEndpoint(request.model);
+
+    if (useResponses) {
+      try {
+        const response = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${this.config.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: request.model,
+            items: request.messages.map(m => ({
+              type: "message",
+              role: m.role,
+              content: [{ type: "text", text: m.content }]
+            })),
+            max_completion_tokens: request.maxTokens,
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json() as any;
+        
+        // Validate response structure
+        if (!Array.isArray(data.output) || data.output.length === 0) {
+          throw new Error("Invalid response: missing or empty output array");
+        }
+        
+        const firstOutput = data.output[0];
+        if (!Array.isArray(firstOutput?.content) || firstOutput.content.length === 0) {
+          throw new Error("Invalid response: missing or empty content array");
+        }
+        
+        const textContent = firstOutput.content[0]?.text;
+        if (typeof textContent !== "string" || textContent.length === 0) {
+          throw new Error("Invalid response: missing or empty text content");
+        }
+        
+        const tokens = data.usage?.total_tokens;
+        if (typeof tokens !== "number") {
+          throw new Error("Invalid response: missing or invalid token count");
+        }
+
+        // Extract finish reason from response, with fallback to "complete"
+        const finishReason = String(firstOutput.finish_reason ?? "complete");
+
+        return {
+          content: textContent,
+          tokens,
+          cost: this.calculateCost(request.model, tokens),
+          finishReason,
+        };
+      } catch (error) {
+        console.error("Error using /v1/responses endpoint:", error);
+        throw error;
+      }
+    }
     
     const completion = await this.client.chat.completions.create({
       model: request.model,
@@ -27,7 +94,6 @@ export class OpenAIService extends BaseAIService {
       stream: false,
     } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, { signal: request.signal });
 
-    const responseTime = (Date.now() - startTime) / 1000;
     const tokens = completion.usage?.total_tokens ?? 0;
     
     return {
@@ -39,8 +105,97 @@ export class OpenAIService extends BaseAIService {
   }
 
   //* Generate a stream of responses
-  async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+  async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<any>> {
     const isReasoning = this.isReasoningModel(request.model);
+    const useResponses = this.requiresResponsesEndpoint(request.model);
+
+    if (useResponses) {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${this.config.apiKey}`,
+        },
+        signal: request.signal,
+        body: JSON.stringify({
+          model: request.model,
+          items: request.messages.map(m => ({
+            type: "message",
+            role: m.role,
+            content: [{ type: "text", text: m.content }]
+          })),
+          max_completion_tokens: request.maxTokens,
+          stream: true,
+        })
+      });
+
+      if (!response.ok) {
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error?.message || errorMessage;
+        } catch {
+          // Could not parse JSON error body, use default message
+        }
+        throw new Error(errorMessage);
+      }
+
+      if (!response.body) {
+        throw new Error("Streaming not supported: no response body");
+      }
+
+      // Parse Server-Sent Events (SSE) stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      
+      async function* parseSSEStream(): AsyncGenerator<any> {
+        let buffer = "";
+        
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            
+            // Keep the last incomplete line in the buffer
+            buffer = lines.pop() || "";
+            
+            for (const line of lines) {
+              const trimmedLine = line.trim();
+              
+              if (!trimmedLine || trimmedLine.startsWith(":")) {
+                // Empty line or comment, skip
+                continue;
+              }
+              
+              if (trimmedLine.startsWith("data: ")) {
+                const data = trimmedLine.slice(6);
+                
+                if (data === "[DONE]") {
+                  return;
+                }
+                
+                try {
+                  const parsed = JSON.parse(data);
+                  yield parsed;
+                } catch {
+                  // Skip malformed JSON
+                  console.warn("Failed to parse SSE data:", data);
+                }
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      }
+
+      return parseSSEStream();
+    }
+
     const stream = await this.client.chat.completions.create({
       model: request.model,
       messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
