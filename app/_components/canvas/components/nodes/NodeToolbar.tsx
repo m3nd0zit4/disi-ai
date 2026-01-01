@@ -20,10 +20,17 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+interface NodeData {
+  text?: string;
+  userInput?: string;
+  color?: string;
+  [key: string]: unknown; // for extensibility
+}
+
 interface NodeToolbarProps {
   nodeId: string;
   isVisible?: boolean;
-  data: any;
+  data: NodeData;
 }
 
 const COLORS = [
@@ -41,11 +48,15 @@ export const NodeToolbar = ({ nodeId, isVisible, data }: NodeToolbarProps) => {
   const { showDialog } = useDialog();
   const [isCopied, setIsCopied] = useState(false);
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     const text = data.text || data.userInput || "";
-    navigator.clipboard.writeText(text);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(text);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy text:", err);
+    }
   };
 
   const handleDelete = (e: React.MouseEvent) => {
