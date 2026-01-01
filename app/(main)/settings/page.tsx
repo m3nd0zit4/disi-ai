@@ -82,7 +82,7 @@ export default function SettingsPage() {
       }
 
       // Clear input and refresh list
-      setApiKeys({ ...apiKeys, [providerId]: "" });
+      setApiKeys((prev) => ({ ...prev, [providerId]: "" }));
       
       // Reload keys
       const keysResponse = await fetch("/api/user/api-keys");
