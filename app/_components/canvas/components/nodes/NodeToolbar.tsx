@@ -72,8 +72,17 @@ export const NodeToolbar = ({ nodeId, isVisible, data, showRegenerate }: NodeToo
     });
   };
 
-  const handleReturn = () => {
-    regenerateNode(nodeId);
+  const handleReturn = async () => {
+    try {
+      await regenerateNode(nodeId);
+    } catch (error) {
+      console.error("Failed to regenerate node:", error);
+      showDialog({
+        title: "Regeneration Failed",
+        description: "An error occurred while trying to regenerate the node. Please try again.",
+        type: "error"
+      });
+    }
   };
 
   const handleColorChange = (color: string) => {

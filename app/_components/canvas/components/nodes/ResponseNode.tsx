@@ -16,7 +16,7 @@ import { NodeToolbar } from "./NodeToolbar";
 import { AlertCircle, Settings } from "lucide-react";
 import Link from "next/link";
 
-export const ResponseNode = memo(({ id, data, selected, dragging }: NodeProps) => {
+export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
   const { text, modelId, createdAt, reasoning, isProModel, isUserFree, status, color, error, errorType } = data as any;
   const [showReasoning, setShowReasoning] = useState(false);
   const { theme } = useTheme();
@@ -27,12 +27,12 @@ export const ResponseNode = memo(({ id, data, selected, dragging }: NodeProps) =
 
   return (
     <div className="relative">
-      <NodeToolbar nodeId={id} isVisible={selected && !dragging} data={data} showRegenerate={true} />
+      <NodeToolbar nodeId={id} isVisible={selected} data={data} showRegenerate={true} />
       <Card 
         className={cn(
           "min-w-[300px] max-w-[550px] border border-primary/10 backdrop-blur-xl transition-all duration-300 rounded-2xl overflow-hidden",
           (!color || color === 'transparent') && "bg-secondary/50 dark:bg-card/90",
-          (selected && !dragging) ? "ring-2 ring-primary/50 border-primary/50 shadow-2xl shadow-primary/30 z-50" : "shadow-sm hover:border-primary/20"
+          selected ? "ring-2 ring-primary/50 border-primary/50 shadow-2xl shadow-primary/30 z-50" : "shadow-sm hover:border-primary/20"
         )}
         style={{ 
           backgroundColor: color && color !== 'transparent' ? color : undefined,

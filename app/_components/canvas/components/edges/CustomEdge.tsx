@@ -23,12 +23,7 @@ export default function CustomEdge({
     <BaseEdge
       path={edgePath}
       markerEnd={markerEnd}
-      style={{
-        ...style,
-        strokeWidth: 2,
-        stroke: 'var(--primary)',
-        opacity: 0.4,
-      }}
+      style={style}
     />
   );
 }

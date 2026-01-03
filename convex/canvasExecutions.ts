@@ -253,7 +253,7 @@ export const updateNodeExecution = mutation({
 
           // Update conversation stats
           await ctx.db.patch(conversation._id, {
-            messageCount: (conversation.messageCount || 0) + 1,
+            messageCount: (conversation.messageCount || 0) + 2,
             lastMessageAt: Date.now(),
             updatedAt: Date.now(),
           });

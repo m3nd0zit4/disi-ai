@@ -27,7 +27,9 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
     onEdgesChange,
     onConnect, 
     onConnectStart, 
-    onConnectEnd
+    onConnectEnd,
+    onNodeDragStart,
+    onNodeDragStop
   } = useConnections();
 
   // Initialize store and sync with DB updates
@@ -70,6 +72,8 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
@@ -94,13 +98,11 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
             border: none !important;
             padding: 0 !important;
             border-radius: 1rem !important;
-            transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
           }
           .react-flow__node.selected {
             box-shadow: none !important;
             border: none !important;
             outline: none !important;
-            transition: none !important;
           }
           .react-flow__controls button {
             background: transparent !important;

@@ -87,6 +87,7 @@ export default defineSchema({
     .index("by_user_and_updated", ["userId", "updatedAt"])
     .index("by_user_pinned", ["userId", "isPinned"])
     .index("by_canvas", ["canvasId"])
+    .index("by_canvas_unique", ["canvasId"]) // Add unique constraint
     .searchIndex("search_title", {
       searchField: "title",
       filterFields: ["userId"],

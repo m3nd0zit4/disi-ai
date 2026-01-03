@@ -26,21 +26,35 @@ interface CanvasState {
   addEdge: (edge: Edge) => void;
   removeEdge: (edgeId: string) => void;
   duplicateNode: (nodeId: string) => void;
+  draggedNodeId: string | null;
+  setDraggedNodeId: (id: string | null) => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodes: [],
   edges: [],
+  draggedNodeId: null as string | null,
+  setDraggedNodeId: (id: string | null) => set({ draggedNodeId: id }),
   onNodesChange: (changes: NodeChange[]) => {
-    const { nodes, edges } = get();
+    const { nodes, edges, draggedNodeId } = get();
     
-    // Find if any node is being dragged
-    const dragChange = changes.find(c => c.type === 'position' && c.dragging) as any;
+    // Determine the primary node being dragged
+    let primaryDraggedId = draggedNodeId;
     
-    if (dragChange && dragChange.position) {
-      const draggedNode = nodes.find(n => n.id === dragChange.id);
+    // Fallback: try to find it in changes if not explicitly set
+    if (!primaryDraggedId) {
+      const dragChange = changes.find(c => c.type === 'position' && c.dragging);
+      if (dragChange) {
+        primaryDraggedId = dragChange.id;
+      }
+    }
+    
+    // If we have a dragged node, enforce connectivity
+    if (primaryDraggedId) {
+      const draggedNode = nodes.find(n => n.id === primaryDraggedId);
+      const dragChange = changes.find(c => c.id === primaryDraggedId && c.type === 'position');
       
-      if (draggedNode) {
+      if (draggedNode && dragChange && dragChange.type === 'position' && dragChange.position) {
         // Calculate delta
         const delta = {
           x: dragChange.position.x - draggedNode.position.x,
@@ -54,8 +68,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
         // BFS to find all downstream nodes (directed descendants)
         const connectedNodeIds = new Set<string>();
-        const queue = [draggedNode.id];
-        connectedNodeIds.add(draggedNode.id);
+        const queue = [primaryDraggedId];
+        connectedNodeIds.add(primaryDraggedId);
 
         let head = 0;
         while (head < queue.length) {
@@ -75,7 +89,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           const updatedNodes = nodes.map(node => {
             // React Flow handles the dragged node via applyNodeChanges, 
             // but we need to move the OTHERS in the component.
-            if (connectedNodeIds.has(node.id) && node.id !== draggedNode.id) {
+            if (connectedNodeIds.has(node.id) && node.id !== primaryDraggedId) {
               return {
                 ...node,
                 position: {
@@ -86,8 +100,27 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             }
             return node;
           });
+
+          // Filter changes: Only allow position changes for nodes that are in the connected set
+          const filteredChanges = changes.filter(c => {
+            if (c.type === 'position' && c.dragging) {
+              return connectedNodeIds.has(c.id);
+            }
+            return true;
+          });
           
-          set({ nodes: applyNodeChanges(changes, updatedNodes) });
+          set({ nodes: applyNodeChanges(filteredChanges, updatedNodes) });
+          return;
+        } else {
+           // Enforce that UNCONNECTED selected nodes don't move
+           const filteredChanges = changes.filter(c => {
+            if (c.type === 'position' && c.dragging) {
+              return connectedNodeIds.has(c.id);
+            }
+            return true;
+          });
+          
+          set({ nodes: applyNodeChanges(filteredChanges, nodes) });
           return;
         }
       }
