@@ -134,6 +134,14 @@ export async function POST(req: Request) {
         // Fallback or manual trigger logic
         nodesToQueue = [nodes[nodes.length - 1]];
       }
+
+      // If prompt is provided in body (e.g. from regenerateNode), inject it into the node data
+      if (prompt && nodesToQueue.length === 1) {
+        nodesToQueue[0].data = {
+          ...nodesToQueue[0].data,
+          prompt: prompt
+        };
+      }
     } else {
       return NextResponse.json({ error: "Invalid request parameters" }, { status: 400 });
     }
@@ -171,6 +179,7 @@ export async function POST(req: Request) {
 
         const inputs = { 
           ...node.data,
+          input: node.data?.text || node.data?.prompt || prompt || "", // Ensure 'input' is present for the worker
           context: parentNodes.reverse(), // Order from root to parent
         };
         

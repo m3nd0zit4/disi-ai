@@ -11,7 +11,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useTheme } from "next-themes";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
-import { nodeTypes, defaultEdgeOptions } from "./Flow-Instance";
+import { nodeTypes, edgeTypes, defaultEdgeOptions } from "./Flow-Instance";
 import { useConnections } from "../providers/ConnectionsProvider";
 
 interface EditorCanvasProps {
@@ -30,10 +30,37 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
     onConnectEnd
   } = useConnections();
 
-  // Initialize store
+  // Initialize store and sync with DB updates
   useEffect(() => {
-    if (initialNodes) setNodes(initialNodes);
-    if (initialEdges) setEdges(initialEdges);
+    if (initialNodes) {
+      const currentNodes = useCanvasStore.getState().nodes;
+      
+      // Merge incoming nodes with local selection state to avoid race conditions
+      // where a DB update overwrites a local deselection
+      const mergedNodes = (initialNodes as any[]).map(incomingNode => {
+        const localNode = currentNodes.find(n => n.id === incomingNode.id);
+        if (localNode) {
+          return {
+            ...incomingNode,
+            selected: localNode.selected // Preserve local selection state
+          };
+        }
+        return incomingNode;
+      });
+
+      // Preserve local preview nodes that haven't been saved to DB yet
+      const previewNodes = currentNodes.filter(n => n.id.startsWith('preview-'));
+      
+      // Add preview nodes if they don't exist in the merged list (they shouldn't)
+      previewNodes.forEach(previewNode => {
+        if (!mergedNodes.find(n => n.id === previewNode.id)) {
+          mergedNodes.push(previewNode);
+        }
+      });
+
+      setNodes(mergedNodes);
+    }
+    if (initialEdges) setEdges(initialEdges as any[]);
   }, [initialNodes, initialEdges, setNodes, setEdges]);
 
   return (
@@ -47,6 +74,7 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         colorMode={theme === 'dark' ? 'dark' : 'light'}
         snapToGrid
@@ -66,11 +94,13 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
             border: none !important;
             padding: 0 !important;
             border-radius: 1rem !important;
+            transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
           }
           .react-flow__node.selected {
             box-shadow: none !important;
             border: none !important;
             outline: none !important;
+            transition: none !important;
           }
           .react-flow__controls button {
             background: transparent !important;
