@@ -141,6 +141,123 @@ export const updateNodeExecution = mutation({
     }
 
     await ctx.db.patch(args.executionId, { nodeExecutions });
+
+      // 1. Sync to Canvas Node
+      // We use the same logic pattern as updateNodeDataInternal to ensure consistency
+      const canvas = await ctx.db.get(execution.canvasId);
+      if (canvas) {
+        const updatedNodes = canvas.nodes.map((node: any) => {
+          if (node.id === args.nodeId) {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                status: args.status,
+                output: args.output,
+                error: args.error,
+                lastExecutedAt: Date.now(),
+              },
+            };
+          }
+          return node;
+        });
+
+        await ctx.db.patch(execution.canvasId, {
+          nodes: updatedNodes,
+          updatedAt: Date.now(),
+        });
+
+      // 2. Sync to Chat Tables (Conversations, Messages, ModelResponses)
+      // Only proceed if the execution is completed successfully and has output
+      if (args.status === "completed" && args.output) {
+        // Find or create conversation for this canvas
+        let conversation = await ctx.db
+          .query("conversations")
+          .withIndex("by_canvas", (q) => q.eq("canvasId", execution.canvasId))
+          .first();
+
+        if (!conversation) {
+          // Create new conversation
+          const conversationId = await ctx.db.insert("conversations", {
+            userId: execution.userId,
+            title: canvas.name,
+            canvasId: execution.canvasId,
+            models: [], // We'll update this if needed
+            messageCount: 0,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            lastMessageAt: Date.now(),
+          });
+          conversation = await ctx.db.get(conversationId);
+        }
+
+        if (conversation) {
+          // Extract prompt from input
+          // Input structure depends on the node type and context collection
+          // Usually args.input has { prompt: "...", context: [...] } or similar
+          let promptContent = "User Input";
+          if (typeof args.input === "string") {
+            promptContent = args.input;
+          } else if (args.input?.prompt) {
+            promptContent = args.input.prompt;
+          } else if (args.input?.text) {
+            promptContent = args.input.text;
+          } else if (args.input?.context && Array.isArray(args.input.context)) {
+             // Try to find the last user message in context or just use a generic label
+             // For now, let's serialize the input if it's complex, or just say "Node Execution Input"
+             promptContent = JSON.stringify(args.input);
+          }
+
+          // Create Message (User)
+          const messageId = await ctx.db.insert("messages", {
+            conversationId: conversation._id,
+            userId: execution.userId,
+            role: "user",
+            content: promptContent,
+            createdAt: Date.now(),
+          });
+
+          // Determine model info from node data or input
+          // We need to look at the node in the canvas to get model config
+          const node = canvas.nodes.find((n: any) => n.id === args.nodeId);
+          const modelId = node?.data?.modelId || "unknown";
+          const provider = node?.data?.provider || "unknown"; // You might need to fetch this from config or node data
+
+          // Create Model Response (Assistant)
+          let responseContent = "";
+          if (typeof args.output === "string") {
+            responseContent = args.output;
+          } else if (args.output?.text) {
+            responseContent = args.output.text;
+          } else {
+            responseContent = JSON.stringify(args.output);
+          }
+
+          await ctx.db.insert("modelResponses", {
+            messageId: messageId,
+            conversationId: conversation._id,
+            userId: execution.userId,
+            modelId: modelId,
+            provider: provider,
+            category: "text", // Defaulting to text
+            providerModelId: modelId,
+            content: responseContent,
+            status: "completed",
+            createdAt: Date.now(),
+            completedAt: Date.now(),
+            tokens: args.output?.usage?.totalTokens,
+            cost: args.output?.usage?.cost,
+          });
+
+          // Update conversation stats
+          await ctx.db.patch(conversation._id, {
+            messageCount: (conversation.messageCount || 0) + 2,
+            lastMessageAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+        }
+      }
+    }
   },
 });
 

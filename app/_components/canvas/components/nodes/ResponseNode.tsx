@@ -27,7 +27,7 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
 
   return (
     <div className="relative">
-      <NodeToolbar nodeId={id} isVisible={selected} data={data} />
+      <NodeToolbar nodeId={id} isVisible={selected} data={data} showRegenerate={true} />
       <Card 
         className={cn(
           "min-w-[300px] max-w-[550px] border border-primary/10 backdrop-blur-xl transition-all duration-300 rounded-2xl overflow-hidden",

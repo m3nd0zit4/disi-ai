@@ -1,4 +1,5 @@
 import { InputNode, ResponseNode, DisplayNode } from "./nodes";
+import CustomEdge from "./edges/CustomEdge";
 
 export const nodeTypes = {
   input: InputNode,
@@ -6,8 +7,12 @@ export const nodeTypes = {
   display: DisplayNode,
 };
 
+export const edgeTypes = {
+  custom: CustomEdge,
+};
+
 export const defaultEdgeOptions = {
-  type: 'bezier',
+  type: 'custom',
   animated: true,
   style: {
     strokeWidth: 2,

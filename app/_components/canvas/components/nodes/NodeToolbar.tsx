@@ -13,6 +13,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
 import { useDialog } from "@/hooks/useDialog";
+import { useConnections } from "../../providers/ConnectionsProvider";
 import {
   Tooltip,
   TooltipContent,
@@ -41,10 +42,10 @@ const COLORS = [
   { name: "yellow", value: "rgba(234, 179, 8, 0.15)", border: "#eab308" },
 ];
 
-export const NodeToolbar = ({ nodeId, isVisible, data }: NodeToolbarProps) => {
+export const NodeToolbar = ({ nodeId, isVisible, data, showRegenerate }: NodeToolbarProps & { showRegenerate?: boolean }) => {
   const updateNodeData = useCanvasStore(state => state.updateNodeData);
-  const removeNode = useCanvasStore(state => state.removeNode);
   const duplicateNode = useCanvasStore(state => state.duplicateNode);
+  const { deleteNode, regenerateNode } = useConnections();
   const { showDialog } = useDialog();
   const [isCopied, setIsCopied] = useState(false);
 
@@ -66,9 +67,22 @@ export const NodeToolbar = ({ nodeId, isVisible, data }: NodeToolbarProps) => {
       description: "Are you sure you want to delete this node? This action cannot be undone.",
       type: "warning",
       onConfirm: () => {
-        removeNode(nodeId);
+        deleteNode(nodeId);
       }
     });
+  };
+
+  const handleReturn = async () => {
+    try {
+      await regenerateNode(nodeId);
+    } catch (error) {
+      console.error("Failed to regenerate node:", error);
+      showDialog({
+        title: "Regeneration Failed",
+        description: "An error occurred while trying to regenerate the node. Please try again.",
+        type: "error"
+      });
+    }
   };
 
   const handleColorChange = (color: string) => {
@@ -108,11 +122,13 @@ export const NodeToolbar = ({ nodeId, isVisible, data }: NodeToolbarProps) => {
         </div>
 
         <div className="flex items-center gap-0.5">
-          <ToolbarButton 
-            icon={<RotateCcw size={15} />} 
-            tooltip="Return" 
-            onClick={() => {}} 
-          />
+          {showRegenerate && (
+            <ToolbarButton 
+              icon={<RotateCcw size={15} />} 
+              tooltip="Regenerate" 
+              onClick={handleReturn} 
+            />
+          )}
           <ToolbarButton 
             icon={<Plus size={15} />} 
             tooltip="Duplicate" 

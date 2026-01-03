@@ -11,7 +11,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useTheme } from "next-themes";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
-import { nodeTypes, defaultEdgeOptions } from "./Flow-Instance";
+import { nodeTypes, edgeTypes, defaultEdgeOptions } from "./Flow-Instance";
 import { useConnections } from "../providers/ConnectionsProvider";
 
 interface EditorCanvasProps {
@@ -27,13 +27,42 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
     onEdgesChange,
     onConnect, 
     onConnectStart, 
-    onConnectEnd
+    onConnectEnd,
+    onNodeDragStart,
+    onNodeDragStop
   } = useConnections();
 
-  // Initialize store
+  // Initialize store and sync with DB updates
   useEffect(() => {
-    if (initialNodes) setNodes(initialNodes);
-    if (initialEdges) setEdges(initialEdges);
+    if (initialNodes) {
+      const currentNodes = useCanvasStore.getState().nodes;
+      
+      // Merge incoming nodes with local selection state to avoid race conditions
+      // where a DB update overwrites a local deselection
+      const mergedNodes = (initialNodes as any[]).map(incomingNode => {
+        const localNode = currentNodes.find(n => n.id === incomingNode.id);
+        if (localNode) {
+          return {
+            ...incomingNode,
+            selected: localNode.selected // Preserve local selection state
+          };
+        }
+        return incomingNode;
+      });
+
+      // Preserve local preview nodes that haven't been saved to DB yet
+      const previewNodes = currentNodes.filter(n => n.id.startsWith('preview-'));
+      
+      // Add preview nodes if they don't exist in the merged list (they shouldn't)
+      previewNodes.forEach(previewNode => {
+        if (!mergedNodes.find(n => n.id === previewNode.id)) {
+          mergedNodes.push(previewNode);
+        }
+      });
+
+      setNodes(mergedNodes);
+    }
+    if (initialEdges) setEdges(initialEdges as any[]);
   }, [initialNodes, initialEdges, setNodes, setEdges]);
 
   return (
@@ -43,10 +72,13 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         colorMode={theme === 'dark' ? 'dark' : 'light'}
         snapToGrid
