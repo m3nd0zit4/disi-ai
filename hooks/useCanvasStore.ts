@@ -84,6 +84,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           }
         }
           
+        // Filter changes: Only allow position changes for nodes that are in the connected set
+        const filteredChanges = changes.filter(c => {
+          if (c.type === 'position' && c.dragging) {
+            return connectedNodeIds.has(c.id);
+          }
+          return true;
+        });
+
         if (connectedNodeIds.size > 1) {
           // Apply the same delta to all connected nodes
           const updatedNodes = nodes.map(node => {
@@ -100,26 +108,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             }
             return node;
           });
-
-          // Filter changes: Only allow position changes for nodes that are in the connected set
-          const filteredChanges = changes.filter(c => {
-            if (c.type === 'position' && c.dragging) {
-              return connectedNodeIds.has(c.id);
-            }
-            return true;
-          });
           
           set({ nodes: applyNodeChanges(filteredChanges, updatedNodes) });
           return;
         } else {
            // Enforce that UNCONNECTED selected nodes don't move
-           const filteredChanges = changes.filter(c => {
-            if (c.type === 'position' && c.dragging) {
-              return connectedNodeIds.has(c.id);
-            }
-            return true;
-          });
-          
           set({ nodes: applyNodeChanges(filteredChanges, nodes) });
           return;
         }

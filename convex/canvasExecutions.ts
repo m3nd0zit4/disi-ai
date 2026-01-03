@@ -142,32 +142,30 @@ export const updateNodeExecution = mutation({
 
     await ctx.db.patch(args.executionId, { nodeExecutions });
 
-    // 1. Sync to Canvas Node
-    const canvas = await ctx.db.get(execution.canvasId);
-    if (canvas) {
-      const updatedNodes = canvas.nodes.map((node: any) => {
-        if (node.id === args.nodeId) {
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              // Update status and output
-              status: args.status,
-              output: args.output,
-              // If there's an error, store it
-              error: args.error,
-              // Store the last execution timestamp
-              lastExecutedAt: Date.now(),
-            },
-          };
-        }
-        return node;
-      });
+      // 1. Sync to Canvas Node
+      // We use the same logic pattern as updateNodeDataInternal to ensure consistency
+      const canvas = await ctx.db.get(execution.canvasId);
+      if (canvas) {
+        const updatedNodes = canvas.nodes.map((node: any) => {
+          if (node.id === args.nodeId) {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                status: args.status,
+                output: args.output,
+                error: args.error,
+                lastExecutedAt: Date.now(),
+              },
+            };
+          }
+          return node;
+        });
 
-      await ctx.db.patch(execution.canvasId, {
-        nodes: updatedNodes,
-        updatedAt: Date.now(),
-      });
+        await ctx.db.patch(execution.canvasId, {
+          nodes: updatedNodes,
+          updatedAt: Date.now(),
+        });
 
       // 2. Sync to Chat Tables (Conversations, Messages, ModelResponses)
       // Only proceed if the execution is completed successfully and has output
