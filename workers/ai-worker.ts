@@ -7,6 +7,24 @@ import { isInsufficientFundsError, INSUFFICIENT_FUNDS_MESSAGE } from "@/lib/ai-e
 import "dotenv/config";
 import { config } from "dotenv";
 import { resolve } from "path";
+import { SPECIALIZED_MODELS } from "@/shared/ai-models";
+
+interface NodeExecutionInputs {
+  prompt?: string;
+  text?: string;
+  modelId?: string;
+  provider?: string;
+  systemPrompt?: string;
+  temperature?: number;
+  context?: Array<{ type: string; content: string }>;
+  imageSize?: string;
+  imageQuality?: string;
+  imageBackground?: string;
+  imageOutputFormat?: string;
+  imageN?: number;
+  imageModeration?: string;
+  query?: string;
+}
 
 // Load environment variables
 config({ path: resolve(process.cwd(), ".env.local") });
@@ -88,7 +106,7 @@ async function processNodeExecution(data: {
   nodeId: string;
   nodeType: string;
   canvasId: string;
-  inputs: Record<string, unknown>;
+  inputs: NodeExecutionInputs;
   apiKey?: string;
 }, message: Message, queueUrl: string) {
   const { executionId, nodeId, nodeType, canvasId, inputs, apiKey } = data;
@@ -122,7 +140,7 @@ async function processNodeExecution(data: {
       case "aiModel":
       case "display":
       case "response": {
-        const { prompt, text, modelId, provider, systemPrompt, temperature, context } = inputs as any;
+        const { prompt, text, modelId, provider, systemPrompt, temperature, context } = inputs;
         
         // Fallback to environment variables if apiKey is not provided in the message
         let effectiveApiKey = apiKey;
@@ -157,7 +175,7 @@ async function processNodeExecution(data: {
              imageOutputFormat, 
              imageN,
              imageModeration
-           } = inputs as any;
+           } = inputs;
 
            const response = await service.generateImage({
              model: targetModel,
@@ -208,8 +226,7 @@ async function processNodeExecution(data: {
               prompt: (prompt as string) || (text as string) || "",
             });
 
-            // const markdownVideo = `![Generated Video](${response.mediaUrl})`;
-            
+            // Video generation result formatting
             await convex.mutation(api.canvas.updateNodeDataInternal, {
               canvasId: canvasId as Id<"canvas">,
               nodeId,
@@ -223,7 +240,7 @@ async function processNodeExecution(data: {
             result = {
               text: response.mediaUrl,
               tokens: 0,
-              cost: 0
+              cost: 0 // TODO: Calculate cost
             };
             break;
         }
@@ -281,8 +298,27 @@ async function processNodeExecution(data: {
         let lastUpdateTime = Date.now();
         let hasStartedStreaming = false;
 
-        for await (const chunk of stream) {
-          const content = chunk.choices?.[0]?.delta?.content || "";
+        const providerLower = ((provider as string) || "openai").toLowerCase();
+        
+        // Normalize the stream to yield only text content
+        const normalizedStream = (async function* () {
+          for await (const chunk of stream) {
+            if (providerLower === "google" || providerLower === "gemini") {
+              yield chunk.text() || "";
+            } else if (providerLower === "anthropic" || providerLower === "claude") {
+              if (chunk.type === 'content_block_delta' && chunk.delta?.type === 'text_delta') {
+                yield chunk.delta.text || "";
+              } else if (chunk.type === 'message_start') {
+                // Initial message metadata if needed
+              }
+            } else {
+              // OpenAI, XAI, DeepSeek
+              yield chunk.choices?.[0]?.delta?.content || "";
+            }
+          }
+        })();
+
+        for await (const content of normalizedStream) {
           if (content) {
             fullText += content;
             // Estimate tokens based on characters (~4 chars per token for English)
@@ -383,7 +419,7 @@ async function processNodeExecution(data: {
         error: isInsufficientFunds ? INSUFFICIENT_FUNDS_MESSAGE : errorMessage 
       },
     });
-    // TODO: Implementar mejor la sección de configuración y manejo de errores de API
+    // TODO: Better implement the configuration section and API error handling
 
 
     // Delete even on failure to prevent loops
