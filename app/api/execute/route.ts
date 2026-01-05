@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { sendToQueue } from "@/lib/sqs";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
 
 function getRequiredEnv(key: string): string {
   const value = process.env[key];
@@ -23,7 +24,21 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { canvasId, executionId: propExecutionId, prompt, models, newNodeId, parentNodeId } = body;
+    const { 
+      canvasId, 
+      executionId: propExecutionId, 
+      prompt, 
+      models, 
+      newNodeId, 
+      parentNodeId, 
+      targetNodeId,
+      imageSize,
+      imageQuality,
+      imageBackground,
+      imageOutputFormat,
+      imageN,
+      imageModeration
+    } = body;
 
     // 1. Get user record
     const user = await convex.query(api.users.getUserByClerkId, { clerkId });
@@ -52,11 +67,14 @@ export async function POST(req: Request) {
 
       executionId = await convex.mutation(api.canvasExecutions.createCanvasExecutionByClerkId, { canvasId, clerkId });
 
-      // Calculate position based on parent node
+      // Calculate position based on parent node or use passed position
       let startX = 100;
       let startY = canvas.nodes.length * 200 + 100;
       
-      if (parentNodeId) {
+      if (body.position) {
+        startX = body.position.x;
+        startY = body.position.y;
+      } else if (parentNodeId) {
         const parentNode = canvas.nodes.find(n => n.id === parentNodeId);
         if (parentNode) {
           startX = parentNode.position.x;
@@ -75,20 +93,27 @@ export async function POST(req: Request) {
         }
       };
 
-      const responseNodes = modelsToProcess.map((model, i) => ({
-        id: `response-${newNodeId}-${i}`,
-        type: "response",
-        position: { 
-          x: startX + (i * 420), 
-          y: startY + 250 
-        },
-        data: {
-          text: "",
-          modelId: model.modelId,
-          status: "pending",
-          createdAt: Date.now(),
-        }
-      }));
+      const responseNodes = modelsToProcess.map((model, i) => {
+        const modelInfo = SPECIALIZED_MODELS.find(m => m.id === model.modelId);
+        const isImageModel = modelInfo?.category === "image";
+
+        return {
+          id: `response-${newNodeId}-${i}`,
+          type: isImageModel ? "display" : "response",
+          position: { 
+            x: startX + (i * 420), 
+            y: startY + 250 
+          },
+          data: {
+            text: "",
+            modelId: model.modelId,
+            status: "pending",
+            createdAt: Date.now(),
+            isImageNode: isImageModel,
+            type: isImageModel ? "image" : undefined,
+          }
+        };
+      });
 
       const newEdges = responseNodes.map(node => ({
         id: `edge-${inputNodeId}-${node.id}`,
@@ -127,8 +152,18 @@ export async function POST(req: Request) {
       // Standard execution flow with context collection
       const nodes = canvas.nodes;
       
-      // Find nodes that need execution (e.g., pending response nodes)
-      nodesToQueue = nodes.filter(n => n.data?.status === "pending");
+      if (targetNodeId) {
+        // Prioritize specific node if requested (e.g. regeneration)
+        const targetNode = nodes.find(n => n.id === targetNodeId);
+        if (targetNode) {
+          nodesToQueue = [targetNode];
+        } else {
+           console.warn(`Target node ${targetNodeId} not found in canvas`);
+        }
+      } else {
+        // Find nodes that need execution (e.g., pending response nodes)
+        nodesToQueue = nodes.filter(n => n.data?.status === "pending");
+      }
       
       if (nodesToQueue.length === 0 && nodes.length > 0) {
         // Fallback or manual trigger logic
@@ -179,8 +214,20 @@ export async function POST(req: Request) {
 
         const inputs = { 
           ...node.data,
-          input: node.data?.text || node.data?.prompt || prompt || "", // Ensure 'input' is present for the worker
+          // Fix: Explicitly map 'prompt' and 'text' for the worker
+          // The worker expects 'prompt' or 'text' to be populated.
+          // We prioritize the explicit 'prompt' from the request body if available (for new executions),
+          // otherwise fallback to node data (for regenerations).
+          prompt: prompt || node.data?.prompt || node.data?.text || "",
+          text: prompt || node.data?.text || node.data?.prompt || "",
+          input: prompt || node.data?.text || node.data?.prompt || "", // Keep 'input' for backward compatibility if needed
           context: parentNodes.reverse(), // Order from root to parent
+          imageSize,
+          imageQuality,
+          imageBackground,
+          imageOutputFormat,
+          imageN,
+          imageModeration,
         };
         
         const messageBody = {

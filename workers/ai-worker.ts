@@ -88,7 +88,7 @@ async function processNodeExecution(data: {
   nodeId: string;
   nodeType: string;
   canvasId: string;
-  inputs: Record<string, any>;
+  inputs: Record<string, unknown>;
   apiKey?: string;
 }, message: Message, queueUrl: string) {
   const { executionId, nodeId, nodeType, canvasId, inputs, apiKey } = data;
@@ -120,17 +120,118 @@ async function processNodeExecution(data: {
     switch (nodeType) {
       case "chatInput":
       case "aiModel":
+      case "display":
       case "response": {
-        const { prompt, text, modelId, provider, systemPrompt, temperature, context } = inputs;
+        const { prompt, text, modelId, provider, systemPrompt, temperature, context } = inputs as any;
         
         // Fallback to environment variables if apiKey is not provided in the message
         let effectiveApiKey = apiKey;
         if (!effectiveApiKey) {
-          const providerUpper = (provider || "openai").toUpperCase();
+          const providerUpper = ((provider as string) || "openai").toUpperCase();
           effectiveApiKey = process.env[`${providerUpper}_API_KEY`];
         }
 
-        const service = getAIService(provider || "openai", effectiveApiKey || "");
+        const service = getAIService((provider as string) || "openai", effectiveApiKey || "");
+        
+        // Find model definition to check category
+        const { SPECIALIZED_MODELS } = await import("@/shared/AiModelList");
+        const modelDef = SPECIALIZED_MODELS.find(m => m.id === modelId);
+        const isImageModel = modelDef?.category === "image";
+        const isVideoModel = modelDef?.category === "video";
+
+        // Handle Image Generation
+        if (isImageModel) {
+           // Use providerModelId if available, otherwise modelId
+           const targetModel = modelDef?.providerModelId || modelId || "dall-e-3";
+           const isGptImage = targetModel.includes("gpt-image");
+           
+           log("INFO", `Generating image with model ${targetModel}`);
+           
+           await convex.mutation(api.canvas.updateNodeDataInternal, {
+              canvasId: canvasId as Id<"canvas">,
+              nodeId,
+              data: { status: "thinking" }, // Use thinking state while generating
+            });
+
+           const { 
+             imageSize, 
+             imageQuality, 
+             imageBackground, 
+             imageOutputFormat, 
+             imageN,
+             imageModeration
+           } = inputs as any;
+
+           const response = await service.generateImage({
+             model: targetModel,
+             prompt: (prompt as string) || (text as string) || "",
+             size: (imageSize as string) || "1024x1024",
+             quality: (imageQuality as string) || (isGptImage ? undefined : "standard"),
+             background: imageBackground as any,
+             outputFormat: imageOutputFormat as any,
+             n: imageN as number,
+             moderation: imageModeration as any,
+           });
+
+           const markdownImage = `![Generated Image](${response.mediaUrl})`;
+           
+           await convex.mutation(api.canvas.updateNodeDataInternal, {
+              canvasId: canvasId as Id<"canvas">,
+              nodeId,
+              data: { 
+                text: markdownImage, 
+                mediaUrl: response.mediaUrl,
+                status: "complete",
+                type: "image",
+              },
+            });
+
+            result = {
+              text: markdownImage,
+              tokens: 0,
+              cost: 0 // TODO: Calculate cost
+            };
+            break;
+        }
+
+        // Handle Video Generation
+        if (isVideoModel) {
+            const targetModel = modelDef?.providerModelId || modelId || "sora-2";
+            
+            log("INFO", `Generating video with model ${targetModel}`);
+
+            await convex.mutation(api.canvas.updateNodeDataInternal, {
+              canvasId: canvasId as Id<"canvas">,
+              nodeId,
+              data: { status: "thinking" },
+            });
+
+            const response = await service.generateVideo({
+              model: targetModel,
+              prompt: (prompt as string) || (text as string) || "",
+            });
+
+            // const markdownVideo = `![Generated Video](${response.mediaUrl})`;
+            
+            await convex.mutation(api.canvas.updateNodeDataInternal, {
+              canvasId: canvasId as Id<"canvas">,
+              nodeId,
+              data: { 
+                text: `### Generated Video\n\n[Click to watch video](${response.mediaUrl})`, 
+                mediaUrl: response.mediaUrl,
+                status: "complete" 
+              },
+            });
+
+            result = {
+              text: response.mediaUrl,
+              tokens: 0,
+              cost: 0
+            };
+            break;
+        }
+
+        // Handle Text/Chat Generation (Default)
         
         // Build messages from context
         const messages = [];
@@ -165,8 +266,11 @@ async function processNodeExecution(data: {
 
         let stream;
         try {
+          // Use providerModelId if available for text models too, to be safe
+          const targetModel = modelDef?.providerModelId || modelId || "gpt-4o";
+          
           stream = await service.generateStreamResponse({
-            model: modelId || "gpt-4o",
+            model: targetModel,
             messages: messages as any[],
             temperature: temperature || 0.7,
             signal: controller.signal,
@@ -181,7 +285,7 @@ async function processNodeExecution(data: {
         let hasStartedStreaming = false;
 
         for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || "";
+          const content = chunk.choices?.[0]?.delta?.content || "";
           if (content) {
             fullText += content;
             // Estimate tokens based on characters (~4 chars per token for English)

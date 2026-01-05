@@ -49,6 +49,10 @@ export interface ImageGenerationRequest {
     size?: string;
     quality?: string;
     aspectRatio?: string;
+    background?: string;
+    outputFormat?: string;
+    n?: number;
+    moderation?: string;
 }
 
 export interface VideoGenerationRequest {

@@ -89,7 +89,11 @@ export interface OpenAIMetadata {
   // For image generation models
   imageGenerationOptions?: {
     sizes?: string[];                 // e.g., ["1024x1024", "1024x1792"]
-    quality?: ("standard" | "hd")[];
+    quality?: ("low" | "medium" | "high" | "auto")[];
+    background?: ("transparent" | "opaque" | "auto")[];
+    output_format?: ("png" | "jpeg" | "webp")[];
+    n?: number[];                     // e.g., [1, 2, 3, 4]
+    moderation?: ("low" | "auto")[];
   };
   
   // For video generation models (Sora)

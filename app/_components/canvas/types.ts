@@ -1,6 +1,7 @@
 export interface BaseNodeData {
   id?: string;
   createdAt?: number;
+  color?: string;
 }
 
 export interface InputNodeData extends BaseNodeData {
@@ -14,12 +15,17 @@ export interface ResponseNodeData extends BaseNodeData {
   reasoning?: string;
   isProModel?: boolean;
   isUserFree?: boolean;
+  error?: string;
+  errorType?: string;
 }
 
 export interface DisplayNodeData extends BaseNodeData {
   type: "text" | "image" | "video";
   content?: string;
+  text?: string;
   mediaUrl?: string;
+  status?: "pending" | "thinking" | "streaming" | "complete" | "error";
+  modelId?: string;
 }
 
 export type NodeData = 

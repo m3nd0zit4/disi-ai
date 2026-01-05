@@ -11,7 +11,7 @@ export const NodeHandle = memo(({ className, ...props }: NodeHandleProps) => {
     <Handle
       {...props}
       className={cn(
-        "!bg-primary/30 !border-none !w-3 !h-3 transition-all hover:!bg-primary/50 hover:scale-125",
+        "!bg-foreground/10 !border-none !w-2 !h-2 transition-all duration-300 hover:!bg-primary/40 hover:scale-150",
         className
       )}
     />

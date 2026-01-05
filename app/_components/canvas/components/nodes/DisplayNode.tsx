@@ -1,95 +1,134 @@
 import { memo } from "react";
 import { Position, NodeProps } from "@xyflow/react";
-import { Card } from "@/components/ui/card";
-import { DisplayNodeData } from "../../types";
-import { Eye, Download, Maximize2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import Image from "next/image";
 import { NodeHandle } from "./NodeHandle";
+import { NodeToolbar } from "./NodeToolbar";
+import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
+import Image from "next/image";
+import { useTheme } from "next-themes";
+import { DisplayNodeData } from "../../types";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
+import { formatDistanceToNow } from "date-fns";
 
-export const DisplayNode = memo(({ data, selected }: NodeProps) => {
-  const { type, content, mediaUrl } = data as unknown as DisplayNodeData;
+export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) => {
+  const { type, content, text, mediaUrl, status, modelId, createdAt, color } = data as unknown as DisplayNodeData;
+  const modelInfo = SPECIALIZED_MODELS.find(m => m.id === modelId);
+  const { theme } = useTheme();
+  const modelIcon = modelInfo?.icon;
+
+  const displayContent = content || text;
+  const isPending = status === "pending" || status === "thinking";
+  const isStreaming = status === "streaming";
+
+  // Determine the effective type if missing
+  const effectiveType = type || (mediaUrl ? "image" : (displayContent ? "text" : undefined));
 
   return (
-    <Card className={cn(
-      "min-w-[300px] max-w-[450px] border border-primary/10 bg-secondary/50 dark:bg-card/90 backdrop-blur-xl transition-all duration-300 rounded-2xl overflow-hidden",
-      selected ? "ring-2 ring-primary/50 border-primary/50 shadow-2xl shadow-primary/30 z-50" : "shadow-sm hover:border-primary/20"
-    )}>
-      <NodeHandle type="target" position={Position.Top} />
-      
-      <div className="relative group">
-        {!content && !mediaUrl ? (
-          <div className="flex flex-col items-center justify-center py-10 text-muted-foreground/30">
-            <Eye className="w-6 h-6 mb-2 opacity-20" />
-            <span className="text-[9px] font-bold uppercase tracking-widest opacity-50">Awaiting Content</span>
-          </div>
-        ) : (
-          <div className="space-y-0">
-            {type === "text" && content && (
-              <div className="p-4 text-[13px] leading-relaxed text-foreground/90 font-medium whitespace-pre-wrap">
-                {content}
-              </div>
-            )}
-            {type === "image" && mediaUrl && (
-              <div className="relative aspect-video bg-primary/10 overflow-hidden">
-                <Image 
-                  src={mediaUrl} 
-                  alt="Generated content" 
-                  fill
-                  className="object-cover transition-transform duration-500 group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 gap-2">
-                  {/* TODO: Implement maximize handler to open image in modal/lightbox */}
-                  <Button variant="secondary" size="icon" className="h-7 w-7 bg-white/10 backdrop-blur-md border-white/10 hover:bg-white/20 text-white rounded-lg">
-                    <Maximize2 className="w-3 h-3" />
-                  </Button>
-                  {/* TODO: Implement download handler to save media to user's device */}
-                  <Button variant="secondary" size="icon" className="h-7 w-7 bg-white/10 backdrop-blur-md border-white/10 hover:bg-white/20 text-white rounded-lg">
-                    <Download className="w-3 h-3" />
-                  </Button>
-                </div>
-              </div>
-            )}
-            {type === "video" && mediaUrl && (
-              <div className="relative aspect-video bg-primary/10 overflow-hidden">
-                <video 
-                  src={mediaUrl} 
-                  controls
-                  muted
-                  playsInline
-                  loop
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  aria-label="Generated video content"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 gap-2 pointer-events-none">
-                  <Button variant="secondary" size="icon" className="h-7 w-7 bg-white/10 backdrop-blur-md border-white/10 hover:bg-white/20 text-white rounded-lg pointer-events-auto">
-                    <Maximize2 className="w-3 h-3" />
-                  </Button>
-                  <Button variant="secondary" size="icon" className="h-7 w-7 bg-white/10 backdrop-blur-md border-white/10 hover:bg-white/20 text-white rounded-lg pointer-events-auto">
-                    <Download className="w-3 h-3" />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
+    <div className="group relative select-none">
+      {/* Node Toolbar Overlay - Floating above */}
+      <NodeToolbar nodeId={id} isVisible={selected && !dragging} data={data} />
+
+      {/* Main Node Content - The "Image" IS the Node */}
+      <div 
+        className={cn(
+          "relative min-w-[200px] transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5",
+          (!color || color === 'transparent') && "bg-white/80 dark:bg-white/[0.05]",
+          selected ? "ring-2 ring-primary/30 shadow-[0_30px_60px_rgba(0,0,0,0.2)] z-50 scale-[1.02]" : "shadow-lg hover:border-primary/10",
+          dragging && "opacity-80"
         )}
-      </div>
+        style={{ 
+          backgroundColor: color && color !== 'transparent' ? color : undefined,
+          borderColor: color && color !== 'transparent' ? color.replace('0.15', '0.3') : undefined
+        }}
+      >
+        {/* Top Handle Overlay */}
+        <NodeHandle type="target" position={Position.Top} className="opacity-0 group-hover:opacity-100 transition-opacity z-10" />
+        
+        {/* Content Area */}
+        <div className="relative w-full h-full">
+          {/* Loading States Overlay */}
+          {(isPending || (isStreaming && !mediaUrl)) && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/40 backdrop-blur-md py-12">
+              <div className="relative">
+                <Sparkles className="w-8 h-8 text-primary/20 animate-spin duration-[3000ms]" />
+                <Sparkles className="absolute inset-0 w-8 h-8 text-primary/40 animate-pulse" />
+              </div>
+              <p className="mt-3 text-[9px] font-bold uppercase tracking-widest text-primary/40 animate-pulse">
+                {status === "streaming" ? "Generating..." : "Thinking..."}
+              </p>
+            </div>
+          )}
 
-      <div className="px-4 py-2.5 border-t border-primary/10 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="size-5 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-500/70">
-            <Eye className="w-2.5 h-2.5" />
-          </div>
-          <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/50">Display</span>
-        </div>
-        <div className="text-[9px] text-muted-foreground/40 font-medium">
-          Just now
-        </div>
-      </div>
+          {/* Image Content - The Core Visual */}
+          {effectiveType === "image" && mediaUrl && (
+            <div className="relative w-full bg-black/5">
+              <img 
+                src={mediaUrl} 
+                alt="Generated content" 
+                className="w-full h-auto block transition-transform duration-1000 group-hover:scale-105"
+              />
+              {/* Subtle Inner Shadow Overlay */}
+              <div className="absolute inset-0 shadow-[inset_0_0_40px_rgba(0,0,0,0.1)] pointer-events-none" />
+            </div>
+          )}
 
-      <NodeHandle type="source" position={Position.Bottom} />
-    </Card>
+          {/* Video Content */}
+          {effectiveType === "video" && mediaUrl && (
+            <div className="relative w-full bg-black/5">
+              <video 
+                src={mediaUrl} 
+                controls
+                muted
+                playsInline
+                loop
+                className="w-full h-auto block"
+              />
+            </div>
+          )}
+
+          {/* Text Content Overlay (if any) */}
+          {effectiveType === "text" && displayContent && (
+            <div className="p-8 text-[15px] leading-relaxed text-foreground/90 font-medium whitespace-pre-wrap selection:bg-primary/20">
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                {displayContent}
+              </ReactMarkdown>
+            </div>
+          )}
+
+          {/* Model Info Overlay - Bottom Minimal */}
+          {modelId && (
+            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+              <div className="flex items-center gap-2 bg-black/20 backdrop-blur-md px-2 py-1 rounded-full border border-white/10">
+                {modelIcon && (
+                  <Image 
+                    src={theme === 'dark' ? modelIcon.light : modelIcon.dark} 
+                    alt={modelId} 
+                    width={12} 
+                    height={12}
+                    className="opacity-80"
+                  />
+                )}
+                <span className="text-[9px] font-medium text-white/70 tracking-tight">
+                  {modelId}
+                </span>
+              </div>
+              
+              {createdAt && (
+                <div className="text-[9px] text-white/50 font-medium bg-black/20 backdrop-blur-md px-2 py-1 rounded-full border border-white/10">
+                  {formatDistanceToNow(createdAt, { addSuffix: true })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Bottom Handle Overlay */}
+        <NodeHandle type="source" position={Position.Bottom} className="opacity-0 group-hover:opacity-100 transition-opacity z-10" />
+      </div>
+    </div>
   );
 });
 

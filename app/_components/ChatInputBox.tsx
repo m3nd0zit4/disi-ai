@@ -16,9 +16,13 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useRouter, useParams } from "next/navigation";
 import ModelSelector from "./chat/ModelSelector";
+import ConfigImageSelector from "./chat/ConfigImageSelector";
 import { ToolActionsBar } from "./tools-actions/ToolActionsBar";
 import { useDialog } from "@/hooks/useDialog";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
+
+import { useNodePreview } from "@/hooks/useNodePreview";
+import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
 
 interface ChatInputBoxProps {
   canvasId?: Id<"canvas">;
@@ -34,12 +38,21 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   const [prompt, setPrompt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [imageSize, setImageSize] = useState<string>("");
+  const [imageQuality, setImageQuality] = useState<string>("");
+  const [imageBackground, setImageBackground] = useState<string>("");
+  const [imageOutputFormat, setImageOutputFormat] = useState<string>("");
+  const [imageN, setImageN] = useState<number>(1);
+  const [imageModeration, setImageModeration] = useState<string>("");
 
   const addMenuRef = useRef<HTMLDivElement>(null);
   const { showDialog } = useDialog();
 
   // Convex mutations
   const createCanvas = useMutation(api.canvas.createCanvas);
+
+  // Use custom hook for preview logic
+  const { handlePromptChange, cleanupPreview, previewNodeIdRef } = useNodePreview(prompt, setPrompt);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -54,147 +67,36 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
     };
   }, []);
 
-  // Get nodes to determine parent
-  // Get nodes and actions from store
-  const nodes = useCanvasStore(state => state.nodes);
-  const addNode = useCanvasStore(state => state.addNode);
-  const updateNodeData = useCanvasStore(state => state.updateNodeData);
-  const removeNode = useCanvasStore(state => state.removeNode);
-  const addEdge = useCanvasStore(state => state.addEdge);
-  const removeEdge = useCanvasStore(state => state.removeEdge);
-  const previewNodeIdRef = useRef<string | null>(null);
-  const previewEdgeIdRef = useRef<string | null>(null);
-  const isSyncingRef = useRef(false);
+  // Update defaults when model changes
+  useEffect(() => {
+    if (hasModelsSelected && selectedModels.length > 0) {
+      const currentModel = selectedModels[0];
+      const modelInfo = SPECIALIZED_MODELS.find(m => m.id === currentModel.modelId);
+      
+      if (modelInfo?.category === "image" && modelInfo.providerMetadata?.provider === "GPT") {
+        const options = modelInfo.providerMetadata.metadata.imageGenerationOptions;
+        if (!options) return;
+
+        if (options.sizes && options.sizes.length > 0 && !imageSize) {
+          setImageSize(options.sizes[0]);
+        }
+        if (options.quality && options.quality.length > 0 && !imageQuality) {
+          setImageQuality(options.quality[0]);
+        }
+        if (options.background && options.background.length > 0 && !imageBackground) {
+          setImageBackground(options.background[0]);
+        }
+        if (options.output_format && options.output_format.length > 0 && !imageOutputFormat) {
+          setImageOutputFormat(options.output_format[0]);
+        }
+        if (options.moderation && options.moderation.length > 0 && !imageModeration) {
+          setImageModeration(options.moderation[0]);
+        }
+      }
+    }
+  }, [selectedModels, hasModelsSelected, imageSize, imageQuality, imageBackground, imageOutputFormat, imageN, imageModeration]);
+
   const isSubmittingRef = useRef(false);
-
-  const handlePromptChange = (newPrompt: string) => {
-    setPrompt(newPrompt);
-
-    if (!newPrompt.trim()) {
-      if (previewNodeIdRef.current) {
-        removeNode(previewNodeIdRef.current);
-        previewNodeIdRef.current = null;
-      }
-      if (previewEdgeIdRef.current) {
-        removeEdge(previewEdgeIdRef.current);
-        previewEdgeIdRef.current = null;
-      }
-      return;
-    }
-
-    // Check if we are editing an existing node
-    const selectedInputNode = nodes.find(n => n.selected && n.type === 'input' && !n.id.startsWith('preview-'));
-    if (selectedInputNode) return;
-
-    // Creation logic ONLY if it doesn't exist
-    if (!previewNodeIdRef.current) {
-      const newNodeId = `preview-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-      previewNodeIdRef.current = newNodeId;
-
-      const selectedNode = nodes.find(n => n.selected && !n.id.startsWith('preview-'));
-      const position = selectedNode 
-        ? { x: selectedNode.position.x, y: selectedNode.position.y + 400 } 
-        : nodes.length > 0
-          ? { x: nodes[nodes.length - 1].position.x, y: nodes[nodes.length - 1].position.y + 200 }
-          : { x: 100, y: 100 };
-
-      addNode({
-        id: newNodeId,
-        type: "input",
-        position,
-        data: { 
-          text: newPrompt,
-          createdAt: new Date().toISOString()
-        }
-      });
-
-      if (selectedNode) {
-        const newEdgeId = `edge-preview-${Date.now()}`;
-        previewEdgeIdRef.current = newEdgeId;
-        addEdge({
-          id: newEdgeId,
-          source: selectedNode.id,
-          target: newNodeId,
-          animated: true,
-        });
-      }
-    }
-  };
-
-  // Targeted selector for the selected input node
-  const selectedInputNode = useCanvasStore(state => 
-    state.nodes.find(n => n.selected && n.type === 'input' && !n.id.startsWith('preview-'))
-  );
-
-  // Selection to Prompt Sync
-  useEffect(() => {
-    if (selectedInputNode) {
-      isSyncingRef.current = true;
-      setPrompt((selectedInputNode.data.text as string) || "");
-      
-      // Clear any preview if we just selected an existing node
-      if (previewNodeIdRef.current) {
-        removeNode(previewNodeIdRef.current);
-        previewNodeIdRef.current = null;
-      }
-      if (previewEdgeIdRef.current) {
-        removeEdge(previewEdgeIdRef.current);
-        previewEdgeIdRef.current = null;
-      }
-      
-      const timer = setTimeout(() => { isSyncingRef.current = false; }, 0);
-      return () => clearTimeout(timer);
-    } else if (!previewNodeIdRef.current && prompt !== "") {
-      // Clear prompt immediately when selection is lost and no preview is active
-      setPrompt("");
-    }
-  }, [selectedInputNode?.id, removeNode, removeEdge]);
-
-  // Real-time update ONLY effect
-  useEffect(() => {
-    if (isSyncingRef.current || !prompt.trim()) return;
-
-    const currentNodes = useCanvasStore.getState().nodes;
-    const selectedInputNode = currentNodes.find(n => n.selected && n.type === 'input' && !n.id.startsWith('preview-'));
-
-    // If editing an existing node
-    if (selectedInputNode) {
-      if (prompt !== selectedInputNode.data.text) {
-        updateNodeData(selectedInputNode.id, { text: prompt });
-      }
-      return;
-    }
-
-    // Update existing preview node
-    if (previewNodeIdRef.current) {
-      updateNodeData(previewNodeIdRef.current, { text: prompt });
-      
-      const selectedNode = currentNodes.find(n => n.selected && !n.id.startsWith('preview-'));
-      const previewNode = currentNodes.find(n => n.id === previewNodeIdRef.current);
-
-      if (previewNode && selectedNode) {
-        const currentEdges = useCanvasStore.getState().edges;
-        const existingEdge = currentEdges.find(e => e.target === previewNodeIdRef.current);
-        
-        if (!existingEdge || existingEdge.source !== selectedNode.id) {
-          if (previewEdgeIdRef.current) {
-            removeEdge(previewEdgeIdRef.current);
-          }
-          const newEdgeId = `edge-preview-${Date.now()}`;
-          previewEdgeIdRef.current = newEdgeId;
-          addEdge({
-            id: newEdgeId,
-            source: selectedNode.id,
-            target: previewNodeIdRef.current,
-            animated: true,
-          });
-        }
-      } else if (previewNode && !selectedNode && previewEdgeIdRef.current) {
-        removeEdge(previewEdgeIdRef.current);
-        previewEdgeIdRef.current = null;
-      }
-    }
-  }, [prompt, updateNodeData, addEdge, removeEdge]);
 
   const handleSubmit = async () => {
     if (!prompt.trim() || isLoading || isSubmittingRef.current) return;
@@ -230,6 +132,10 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
       const selectedNode = currentNodes.find(n => n.selected && n.id !== previewNodeIdRef.current);
       const parentNodeId = selectedNode ? selectedNode.id : undefined;
 
+      // Capture preview node position if it exists
+      const previewNode = currentNodes.find(n => n.id === previewNodeIdRef.current);
+      const previewPosition = previewNode?.position;
+
       // Create a new node ID for this message
       // Use the preview ID if it exists to maintain continuity, but strip the prefix
       const previewId = previewNodeIdRef.current;
@@ -248,6 +154,13 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           models: modelsToUse,
           newNodeId: newNodeId,
           parentNodeId: parentNodeId, // Pass parent node ID
+          position: previewPosition, // Pass preview position
+          imageSize, // Pass selected image size
+          imageQuality, // Pass selected image quality
+          imageBackground,
+          imageOutputFormat,
+          imageN,
+          imageModeration,
         })
       });
 
@@ -257,15 +170,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
       }
 
       // Clean input
-      // Important: Explicitly remove the preview node from the store
-      if (previewNodeIdRef.current) {
-        removeNode(previewNodeIdRef.current);
-        previewNodeIdRef.current = null;
-      }
-      if (previewEdgeIdRef.current) {
-        removeEdge(previewEdgeIdRef.current);
-        previewEdgeIdRef.current = null;
-      }
+      cleanupPreview();
       
       // Clear local state
       setPrompt("");
@@ -287,6 +192,13 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
     }
   };
 
+  const selectedModel = hasModelsSelected ? selectedModels[0] : null;
+  const modelInfo = selectedModel ? SPECIALIZED_MODELS.find(m => m.id === selectedModel.modelId) : null;
+  const isImageModel = modelInfo?.category === "image";
+  const imageOptions = modelInfo?.providerMetadata?.provider === "GPT" 
+    ? modelInfo.providerMetadata.metadata.imageGenerationOptions 
+    : null;
+
   return (
     <div className="w-full relative z-50">
       <PromptInput
@@ -298,7 +210,26 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
       >
         <div className="flex flex-col">
           <div className="px-3 pt-1.5 flex items-center justify-between">
-            <ModelSelector />
+            <div className="flex items-center gap-2">
+              <ModelSelector />
+              
+              {isImageModel && imageOptions && (
+                <ConfigImageSelector 
+                  imageSize={imageSize}
+                  setImageSize={setImageSize}
+                  imageQuality={imageQuality}
+                  setImageQuality={setImageQuality}
+                  imageBackground={imageBackground}
+                  setImageBackground={setImageBackground}
+                  imageOutputFormat={imageOutputFormat}
+                  setImageOutputFormat={setImageOutputFormat}
+                  imageN={imageN}
+                  setImageN={setImageN}
+                  imageModeration={imageModeration}
+                  setImageModeration={setImageModeration}
+                />
+              )}
+            </div>
             <ToolActionsBar />
           </div>
 

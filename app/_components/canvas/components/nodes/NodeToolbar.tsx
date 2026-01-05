@@ -94,24 +94,24 @@ export const NodeToolbar = ({ nodeId, isVisible, data, showRegenerate }: NodeToo
       <RTNodeToolbar 
         isVisible={isVisible} 
         position={Position.Top}
-        className="flex items-center gap-1 p-1.5 bg-popover/90 backdrop-blur-xl border border-border rounded-xl shadow-2xl mb-2"
+        className="flex items-center gap-1 p-1 bg-background/60 backdrop-blur-2xl border border-primary/5 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.12)] mb-3 animate-in fade-in duration-300"
       >
-        <div className="flex items-center gap-1.5 px-1 border-r border-border mr-1">
+        <div className="flex items-center gap-1 px-1.5 border-r border-primary/5 mr-1">
           {COLORS.map((c) => (
             <Tooltip key={c.name}>
               <TooltipTrigger asChild>
                 <button
                   onClick={() => handleColorChange(c.value)}
                   className={cn(
-                    "size-5 rounded-full border-2 transition-all hover:scale-110 active:scale-95 flex items-center justify-center",
-                    data.color === c.value ? "border-foreground" : "border-transparent"
+                    "size-4 rounded-full border transition-all hover:scale-110 active:scale-95 flex items-center justify-center",
+                    data.color === c.value ? "border-foreground/40" : "border-transparent"
                   )}
                   style={{ 
-                    backgroundColor: c.value === "transparent" ? "rgba(128,128,128,0.1)" : c.value,
-                    borderColor: data.color === c.value ? undefined : c.border
+                    backgroundColor: c.value === "transparent" ? "rgba(128,128,128,0.08)" : c.value,
+                    borderColor: data.color === c.value ? undefined : "transparent"
                   }}
                 >
-                  {data.color === c.value && <Check size={10} className="text-foreground" />}
+                  {data.color === c.value && <div className="size-1 rounded-full bg-foreground/60" />}
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-[10px] py-1 px-2">
@@ -121,34 +121,34 @@ export const NodeToolbar = ({ nodeId, isVisible, data, showRegenerate }: NodeToo
           ))}
         </div>
 
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-0.5 pr-1">
           {showRegenerate && (
             <ToolbarButton 
-              icon={<RotateCcw size={15} />} 
+              icon={<RotateCcw size={13} />} 
               tooltip="Regenerate" 
               onClick={handleReturn} 
             />
           )}
           <ToolbarButton 
-            icon={<Plus size={15} />} 
+            icon={<Plus size={13} />} 
             tooltip="Duplicate" 
             onClick={() => duplicateNode(nodeId)} 
           />
           <ToolbarButton 
-            icon={isCopied ? <Check size={15} className="text-green-500" /> : <Copy size={15} />} 
+            icon={isCopied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />} 
             tooltip={isCopied ? "Copied!" : "Copy Content"} 
             onClick={handleCopy} 
           />
           <ToolbarButton 
-            icon={<Maximize2 size={15} />} 
+            icon={<Maximize2 size={13} />} 
             tooltip="View and Edit" 
             onClick={() => {}} 
           />
           <ToolbarButton 
-            icon={<Trash2 size={15} />} 
+            icon={<Trash2 size={13} />} 
             tooltip="Delete" 
             onClick={handleDelete}
-            className="hover:bg-destructive/20 hover:text-destructive" 
+            className="hover:bg-destructive/10 hover:text-destructive" 
           />
         </div>
       </RTNodeToolbar>

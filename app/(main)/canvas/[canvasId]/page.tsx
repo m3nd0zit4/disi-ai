@@ -11,6 +11,8 @@ import { Loader2 } from "lucide-react";
 import ChatInputBox from "@/app/_components/ChatInputBox";
 import { CanvasToolbar } from "@/app/_components/canvas/CanvasToolbar";
 
+import { ReactFlowProvider } from "@xyflow/react";
+
 export default function CanvasPage() {
   const params = useParams();
   const canvasId = params.canvasId as Id<"canvas">;
@@ -42,19 +44,21 @@ export default function CanvasPage() {
           </div>
         </div>
         
-        <EditorProvider>
-          <ConnectionsProvider canvasId={canvasId}>
-            <EditorCanvas 
-              initialNodes={canvas.nodes} 
-              initialEdges={canvas.edges} 
-            />
-          </ConnectionsProvider>
-        </EditorProvider>
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl z-50 px-4 pointer-events-none">
-          <div className="pointer-events-auto">
-            <ChatInputBox canvasId={canvasId} />
+        <ReactFlowProvider>
+          <EditorProvider>
+            <ConnectionsProvider canvasId={canvasId}>
+              <EditorCanvas 
+                initialNodes={canvas.nodes} 
+                initialEdges={canvas.edges} 
+              />
+            </ConnectionsProvider>
+          </EditorProvider>
+          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl z-50 px-4 pointer-events-none">
+            <div className="pointer-events-auto">
+              <ChatInputBox canvasId={canvasId} />
+            </div>
           </div>
-        </div>
+        </ReactFlowProvider>
       </main>
     </div>
   );
