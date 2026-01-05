@@ -17,7 +17,7 @@ import Link from "next/link";
 
 import { ResponseNodeData } from "../../types";
 
-export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
+export const ResponseNode = memo(({ id, data, selected, dragging }: NodeProps) => {
   const { text, modelId, createdAt, reasoning, isProModel, isUserFree, status, color, error, errorType } = data as unknown as ResponseNodeData;
   const [showReasoning, setShowReasoning] = useState(false);
   const { theme } = useTheme();
@@ -28,7 +28,7 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
 
   return (
     <div className="group relative select-none">
-      <NodeToolbar nodeId={id} isVisible={selected} data={data} showRegenerate={true} />
+      <NodeToolbar nodeId={id} isVisible={selected && !dragging} data={data} showRegenerate={true} />
       <div 
         className={cn(
           "min-w-[300px] max-w-[550px] backdrop-blur-2xl transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5",

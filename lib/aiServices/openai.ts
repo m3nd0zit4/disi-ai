@@ -240,11 +240,18 @@ RULES:
       throw new Error("No image generated");
     }
 
+    const imageData = response.data[0];
+    const mediaUrl = imageData.url ?? (imageData.b64_json ? `data:image/png;base64,${imageData.b64_json}` : null);
+    
+    if (!mediaUrl) {
+      throw new Error("No image URL or base64 data returned");
+    }
+
     return {
-      mediaUrl: response.data[0].url!,
+      mediaUrl,
       mediaType: "image",
       metadata: {
-        revised_prompt: response.data[0].revised_prompt,
+        revised_prompt: imageData.revised_prompt,
       },
     };
   }

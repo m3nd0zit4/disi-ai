@@ -68,33 +68,18 @@ export interface OpenAIMetadata {
     };
     // For image generation - detailed pricing by quality and resolution
     imageGenerationPerImage?: {
-      Low?: {
-        "1024x1024"?: number;         // e.g., 0.009
-        "1024x1536"?: number;         // e.g., 0.013
-        "1536x1024"?: number;         // e.g., 0.013
-      };
-      Medium?: {
-        "1024x1024"?: number;         // e.g., 0.034
-        "1024x1536"?: number;         // e.g., 0.05
-        "1536x1024"?: number;         // e.g., 0.05
-      };
-      High?: {
-        "1024x1024"?: number;         // e.g., 0.133
-        "1024x1536"?: number;         // e.g., 0.20
-        "1536x1024"?: number;         // e.g., 0.20
-      };
+      Low?: Record<string, number>;
+      Medium?: Record<string, number>;
+      High?: Record<string, number>;
+      Standard?: Record<string, number>;
+      HD?: Record<string, number>;
     };
   };
   
   // For image generation models
-  imageGenerationOptions?: {
-    sizes?: string[];                 // e.g., ["1024x1024", "1024x1792"]
-    quality?: ("low" | "medium" | "high" | "auto")[];
-    background?: ("transparent" | "opaque" | "auto")[];
-    output_format?: ("png" | "jpeg" | "webp")[];
-    n?: number[];                     // e.g., [1, 2, 3, 4]
-    moderation?: ("low" | "auto")[];
-  };
+  imageGenerationOptions?: 
+    | ({ modelType: "dalle" } & DalleImageOptions)
+    | ({ modelType: "gpt-image" } & GptImageOptions);
   
   // For video generation models (Sora)
   videoGenerationOptions?: {
@@ -104,4 +89,19 @@ export interface OpenAIMetadata {
     audioGeneration: boolean;         // Sora 2/2 Pro generates synced audio
     snapshots?: string[];             // Available model snapshots
   };
+}
+
+export interface DalleImageOptions {
+  sizes?: string[];                 // e.g., ["1024x1024", "1024x1792"]
+  quality?: ("standard" | "hd")[];
+  n?: [1];                          // DALL-E 3 only supports n=1
+}
+
+export interface GptImageOptions {
+  sizes?: string[];                 // e.g., ["1024x1024", "1024x1536"]
+  quality?: ("low" | "medium" | "high" | "auto")[];
+  background?: ("transparent" | "opaque" | "auto")[];
+  output_format?: ("png" | "jpeg" | "webp")[];
+  n?: number[];                     // e.g., [1, 2, 3, 4]
+  moderation?: ("low" | "auto")[];
 }

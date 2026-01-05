@@ -80,7 +80,7 @@ export async function POST(req: Request) {
 
       const responseNodes = modelsToProcess.map((model, i) => {
         const modelInfo = SPECIALIZED_MODELS.find(m => m.id === model.modelId);
-        const isImageModel = modelInfo?.category === "image";
+        const isImageModel = !!modelInfo && modelInfo.category === "image";
 
         return {
           id: `response-${newNodeId}-${i}`,

@@ -11,7 +11,7 @@ import { NodeToolbar } from "./NodeToolbar";
 import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
 
-export const InputNode = memo(({ id, data, selected }: NodeProps) => {
+export const InputNode = memo(({ id, data, selected, dragging }: NodeProps) => {
   const { text, createdAt, color } = data as any;
   console.log(`[InputNode ${id}] data:`, JSON.stringify(data));
   console.log(`[InputNode ${id}] text type:`, typeof text);
@@ -20,7 +20,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps) => {
 
   return (
     <div className="group relative select-none">
-      <NodeToolbar nodeId={id} isVisible={selected} data={data} />
+      <NodeToolbar nodeId={id} isVisible={selected && !dragging} data={data} />
       <div 
         className={cn(
           "min-w-[280px] max-w-[420px] backdrop-blur-2xl transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5 !border-0",

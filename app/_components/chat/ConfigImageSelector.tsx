@@ -69,10 +69,10 @@ export default function ConfigImageSelector({
 
   if (!imageOptions) return null;
 
-  const renderOption = (
-    currentValue: string | number, 
-    options: (string | number)[] | undefined, 
-    onSelect: (val: string | number) => void,
+  const renderOption = <T extends string | number>(
+    currentValue: T, 
+    options: T[] | undefined, 
+    onSelect: (val: T) => void,
     label: string,
     Icon: LucideIcon
   ) => {
@@ -106,6 +106,9 @@ export default function ConfigImageSelector({
     );
   };
 
+  const isDalle = imageOptions.modelType === "dalle";
+  const isGptImage = imageOptions.modelType === "gpt-image";
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -125,10 +128,21 @@ export default function ConfigImageSelector({
         
         {renderOption(imageSize, imageOptions.sizes, setImageSize, "Dimensions", Maximize2)}
         {renderOption(imageQuality, imageOptions.quality, setImageQuality, "Quality", Highlighter)}
-        {renderOption(imageBackground, imageOptions.background, setImageBackground, "Background", Layers)}
-        {renderOption(imageOutputFormat, imageOptions.output_format, setImageOutputFormat, "Format", FileImage)}
-        {renderOption(imageN, imageOptions.n, setImageN, "Images (N)", Hash)}
-        {renderOption(imageModeration, imageOptions.moderation, setImageModeration, "Moderation", ShieldCheck)}
+        
+        {isGptImage && (
+          <>
+            {renderOption(imageBackground, imageOptions.background, setImageBackground, "Background", Layers)}
+            {renderOption(imageOutputFormat, imageOptions.output_format, setImageOutputFormat, "Format", FileImage)}
+            {renderOption(imageN, imageOptions.n, setImageN, "Images (N)", Hash)}
+            {renderOption(imageModeration, imageOptions.moderation, setImageModeration, "Moderation", ShieldCheck)}
+          </>
+        )}
+
+        {isDalle && (
+          <>
+            {renderOption(imageN, imageOptions.n, setImageN, "Images (N)", Hash)}
+          </>
+        )}
 
         <DropdownMenuSeparator className="bg-primary/5 my-1" />
         

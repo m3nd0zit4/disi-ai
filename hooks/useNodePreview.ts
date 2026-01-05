@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
 
 export function useNodePreview(
@@ -19,7 +19,7 @@ export function useNodePreview(
   // Targeted selector for the selected input node
   const selectedInputNode = nodes.find(n => n.selected && n.type === 'input' && !n.id.startsWith('preview-'));
 
-  const cleanupPreview = () => {
+  const cleanupPreview = useCallback(() => {
     if (previewNodeIdRef.current) {
       removeNode(previewNodeIdRef.current);
       previewNodeIdRef.current = null;
@@ -28,7 +28,7 @@ export function useNodePreview(
       removeEdge(previewEdgeIdRef.current);
       previewEdgeIdRef.current = null;
     }
-  };
+  }, [removeNode, removeEdge]);
 
   const handlePromptChange = (newPrompt: string) => {
     console.log("[useNodePreview] handlePromptChange:", newPrompt);
@@ -61,7 +61,7 @@ export function useNodePreview(
         position,
         data: { 
           text: newPrompt,
-          createdAt: new Date().toISOString()
+          createdAt: Date.now()
         }
       });
 

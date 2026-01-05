@@ -83,14 +83,17 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
         if (options.quality && options.quality.length > 0 && !imageQuality) {
           setImageQuality(options.quality[0]);
         }
-        if (options.background && options.background.length > 0 && !imageBackground) {
-          setImageBackground(options.background[0]);
-        }
-        if (options.output_format && options.output_format.length > 0 && !imageOutputFormat) {
-          setImageOutputFormat(options.output_format[0]);
-        }
-        if (options.moderation && options.moderation.length > 0 && !imageModeration) {
-          setImageModeration(options.moderation[0]);
+
+        if (options.modelType === "gpt-image") {
+          if (options.background && options.background.length > 0 && !imageBackground) {
+            setImageBackground(options.background[0]);
+          }
+          if (options.output_format && options.output_format.length > 0 && !imageOutputFormat) {
+            setImageOutputFormat(options.output_format[0]);
+          }
+          if (options.moderation && options.moderation.length > 0 && !imageModeration) {
+            setImageModeration(options.moderation[0]);
+          }
         }
       }
     }

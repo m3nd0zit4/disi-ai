@@ -36,7 +36,9 @@ export interface GrokMetadata {
     inputPerMillion: number;
     cachedInputPerMillion?: number;
     outputPerMillion: number;
-    imageGenerationPerImage?: number;
+    imageGenerationPerImage?: {
+      Standard?: Record<string, number>;
+    };
   };
 
   // Image Generation Options
