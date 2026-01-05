@@ -94,7 +94,7 @@ export function useNodePreview(
       setPrompt("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedInputNode?.id, cleanupPreview, setPrompt]);
+  }, [selectedInputNode?.id, cleanupPreview, setPrompt, prompt]);
 
   // Real-time update ONLY effect
   useEffect(() => {
