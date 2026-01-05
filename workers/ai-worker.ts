@@ -133,12 +133,9 @@ async function processNodeExecution(data: {
 
         const service = getAIService((provider as string) || "openai", effectiveApiKey || "");
         
-        // Find model definition to check category
-        const { SPECIALIZED_MODELS } = await import("@/shared/AiModelList");
         const modelDef = SPECIALIZED_MODELS.find(m => m.id === modelId);
         const isImageModel = modelDef?.category === "image";
         const isVideoModel = modelDef?.category === "video";
-
         // Handle Image Generation
         if (isImageModel) {
            // Use providerModelId if available, otherwise modelId
