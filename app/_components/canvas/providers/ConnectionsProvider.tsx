@@ -170,7 +170,7 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     // 2. Update local state
     useCanvasStore.getState().updateNodeData(nodeId, { 
       text: "", 
-      status: "pending", 
+      status: "thinking", 
       error: undefined, 
       reasoning: undefined,
       prompt // Pass parent text as prompt
@@ -200,7 +200,8 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
         body: JSON.stringify({
           canvasId,
           executionId,
-          prompt // Pass prompt directly to avoid DB race conditions
+          prompt, // Pass prompt directly to avoid DB race conditions
+          targetNodeId: nodeId // Explicitly target this node
         }),
       }).then(res => {
         if (!res.ok) {

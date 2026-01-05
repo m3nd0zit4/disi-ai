@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { sendToQueue } from "@/lib/sqs";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
@@ -77,20 +78,27 @@ export async function POST(req: Request) {
         }
       };
 
-      const responseNodes = modelsToProcess.map((model, i) => ({
-        id: `response-${newNodeId}-${i}`,
-        type: "response",
-        position: { 
-          x: 100 + (i * 420), 
-          y: (canvas.nodes.length + 1) * 200 + 150 
-        },
-        data: {
-          text: "",
-          modelId: model.modelId,
-          status: "pending",
-          createdAt: Date.now(),
-        }
-      }));
+      const responseNodes = modelsToProcess.map((model, i) => {
+        const modelInfo = SPECIALIZED_MODELS.find(m => m.id === model.modelId);
+        const isImageModel = !!modelInfo && modelInfo.category === "image";
+
+        return {
+          id: `response-${newNodeId}-${i}`,
+          type: isImageModel ? "display" : "response",
+          position: { 
+            x: 100 + (i * 420), 
+            y: (canvas.nodes.length + 1) * 200 + 150 
+          },
+          data: {
+            text: "",
+            modelId: model.modelId,
+            status: "pending",
+            createdAt: Date.now(),
+            isImageNode: isImageModel,
+            type: isImageModel ? "image" : undefined,
+          }
+        };
+      });
 
       const edges = responseNodes.map(node => ({
         id: `edge-${inputNodeId}-${node.id}`,

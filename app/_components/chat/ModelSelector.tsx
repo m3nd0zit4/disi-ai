@@ -29,19 +29,19 @@ import { useTheme } from "next-themes";
 import { SpecializedModel } from "@/types/AiModel";
 
 const modes = [
-  { id: "regular", name: "Regular", icon: Sparkles, color: "text-primary" },
-  { id: "webpage", name: "Webpage", icon: Globe, color: "text-blue-500" },
-  { id: "image", name: "Image", icon: ImageIcon, color: "text-purple-500" },
-  { id: "video", name: "Video", icon: Video, color: "text-pink-500" },
-  { id: "prompt_enhance", name: "Prompt Enhance", icon: Wand2, color: "text-orange-500" },
-  { id: "agent_mode", name: "Agent Mode", icon: Zap, color: "text-yellow-500" },
+  { id: "regular", name: "Regular", icon: Sparkles },
+  { id: "webpage", name: "Webpage", icon: Globe },
+  { id: "image", name: "Image", icon: ImageIcon },
+  { id: "video", name: "Video", icon: Video },
+  { id: "prompt_enhance", name: "Prompt Enhance", icon: Wand2 },
+  { id: "agent_mode", name: "Agent Mode", icon: Zap },
 ];
 
 export default function ModelSelector() {
   const { selectedModels, toggleModel, isModelSelected, reorderModels } = useAIContext();
   const [mode, setMode] = useState("regular");
   const [search, setSearch] = useState("");
-  const [isMultiSelect, setIsMultiSelect] = useState(true);
+  const [isMultiSelect, setIsMultiSelect] = useState(false);
   const { theme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -98,8 +98,7 @@ export default function ModelSelector() {
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="h-7 gap-1.5 rounded-full bg-muted/40 hover:bg-muted/60 px-2.5 text-[11px] font-semibold transition-all border border-transparent hover:border-primary/10">
             <div className="flex items-center gap-1">
-              <CurrentIcon className={cn("w-3 h-3", modes.find(m => m.id === mode)?.color)} />
-              <span className="capitalize">{mode.replace('_', ' ')}</span>
+              <CurrentIcon className="w-3.5 h-3.5 text-muted-foreground/80" />
             </div>
             <div className="w-px h-2.5 bg-border/50 mx-0.5" />
             <div className="flex items-center gap-1">
@@ -122,7 +121,7 @@ export default function ModelSelector() {
                     mode === m.id ? "bg-primary/10 text-primary" : "hover:bg-primary/5 text-muted-foreground/80"
                   )}
                 >
-                  <m.icon className={cn("w-3.5 h-3.5", mode === m.id ? m.color : "opacity-40")} />
+                  <m.icon className={cn("w-3.5 h-3.5", mode === m.id ? "opacity-100" : "opacity-40")} />
                   {m.name}
                 </button>
               ))}

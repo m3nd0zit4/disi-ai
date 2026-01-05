@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   ReactFlow,
   Controls,
   Background,
   BackgroundVariant,
   MiniMap,
+  useReactFlow,
+  Node,
+  Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useTheme } from "next-themes";
@@ -32,6 +35,9 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
     onNodeDragStop
   } = useConnections();
 
+  const { setCenter } = useReactFlow();
+  const prevNodeIdsRef = useRef<Set<string>>(new Set());
+
   // Initialize store and sync with DB updates
   useEffect(() => {
     if (initialNodes) {
@@ -39,7 +45,7 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
       
       // Merge incoming nodes with local selection state to avoid race conditions
       // where a DB update overwrites a local deselection
-      const mergedNodes = (initialNodes as any[]).map(incomingNode => {
+      const mergedNodes = (initialNodes as Node[]).map(incomingNode => {
         const localNode = currentNodes.find(n => n.id === incomingNode.id);
         if (localNode) {
           return {
@@ -62,8 +68,25 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
 
       setNodes(mergedNodes);
     }
-    if (initialEdges) setEdges(initialEdges as any[]);
+    if (initialEdges) setEdges(initialEdges as Edge[]);
   }, [initialNodes, initialEdges, setNodes, setEdges]);
+
+  // Auto-pan logic: detect any new node (preview or real)
+  useEffect(() => {
+    const currentNodeIds = new Set(nodes.map(n => n.id));
+    const newNodeIds = Array.from(currentNodeIds).filter(id => !prevNodeIdsRef.current.has(id));
+
+    if (newNodeIds.length > 0) {
+      // Find the first new node to center on
+      const firstNewNode = nodes.find(n => n.id === newNodeIds[0]);
+      if (firstNewNode) {
+        // Smoothly pan to the new node
+        setCenter(firstNewNode.position.x + 150, firstNewNode.position.y + 100, { zoom: 1, duration: 800 });
+      }
+    }
+
+    prevNodeIdsRef.current = currentNodeIds;
+  }, [nodes, setCenter]);
 
   return (
     <div className="w-full h-full bg-background relative overflow-hidden">
