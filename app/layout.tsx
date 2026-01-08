@@ -22,6 +22,8 @@ export const metadata: Metadata = {
   description: "Chat con múltiples modelos de IA al mismo tiempo",
 };
 
+import { TooltipProvider } from "@/components/ui/tooltip";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -36,8 +38,10 @@ export default function RootLayout({
           <ClerkThemeProvider>
             <ConvexClientProvider>
               <AIContextProvider>
-                {children}
-                <GlobalDialog />
+                <TooltipProvider>
+                  {children}
+                  <GlobalDialog />
+                </TooltipProvider>
               </AIContextProvider>
             </ConvexClientProvider>
           </ClerkThemeProvider>

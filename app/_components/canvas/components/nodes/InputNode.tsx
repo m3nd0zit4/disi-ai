@@ -1,26 +1,47 @@
-import { memo } from "react";
+import React, { memo } from "react";
 import { Position, NodeProps } from "@xyflow/react";
 import { User } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
 import { cn } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
 import { NodeToolbar } from "./NodeToolbar";
 import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
+import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
+import { SemanticRole } from "@/lib/reasoning/types";
 
-export const InputNode = memo(({ id, data, selected, dragging }: NodeProps) => {
-  const { text, createdAt, color } = data as any;
-  console.log(`[InputNode ${id}] data:`, JSON.stringify(data));
-  console.log(`[InputNode ${id}] text type:`, typeof text);
-  console.log(`[InputNode ${id}] text value:`, text);
+interface InputNodeData {
+  text: string;
+  createdAt?: number;
+  color?: string;
+  attachments?: { url?: string; storageId?: string; type?: string; name?: string }[];
+  role?: SemanticRole;
+  importance?: number;
+}
+
+export const InputNode = memo(({ id, data, selected }: NodeProps) => {
+  const nodeData = data as unknown as InputNodeData;
+  const { text, createdAt, color, attachments, role, importance } = nodeData;
+  const selectedNodeIdForToolbar = useCanvasStore((state: CanvasState) => state.selectedNodeIdForToolbar);
+  const edges = useCanvasStore((state: CanvasState) => state.edges);
   const { user } = useUser();
+
+  const incomingEdges = edges.filter(edge => edge.target === id);
+  const hasIncoming = incomingEdges.length > 0;
 
   return (
     <div className="group relative select-none">
-      <NodeToolbar nodeId={id} isVisible={selected && !dragging} data={data} />
+      <NodeToolbar nodeId={id} isVisible={selectedNodeIdForToolbar === id} data={data} />
+      
+      {hasIncoming && (
+        <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 bg-primary/5 backdrop-blur-xl border border-primary/10 rounded-full animate-in fade-in slide-in-from-bottom-1 duration-500">
+          <div className="size-1 rounded-full bg-primary/60 animate-pulse" />
+          <span className="text-[9px] font-bold text-primary/60 uppercase tracking-wider">
+            {incomingEdges.length}
+          </span>
+        </div>
+      )}
+
       <div 
         className={cn(
           "min-w-[280px] max-w-[420px] backdrop-blur-2xl transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5 !border-0",
@@ -38,6 +59,17 @@ export const InputNode = memo(({ id, data, selected, dragging }: NodeProps) => {
           <div className="prose prose-sm dark:prose-invert max-w-none text-[14px] leading-relaxed text-foreground/90 font-medium whitespace-pre-wrap selection:bg-primary/20">
             {text}
           </div>
+
+          {/* Attachments */}
+          {attachments && attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-2">
+              {attachments?.map((file: { url?: string; storageId?: string; type?: string; name?: string }, i: number) => {
+                return (
+                  <AttachmentPreview key={i} file={file} />
+                );
+              })}
+            </div>
+          )}
           
           <div className="flex items-center justify-between pt-2 opacity-40 group-hover:opacity-100 transition-opacity duration-300">
             <div className="flex items-center gap-2">
@@ -54,11 +86,25 @@ export const InputNode = memo(({ id, data, selected, dragging }: NodeProps) => {
                   <User className="w-2.5 h-2.5 text-primary/70" />
                 )}
               </div>
-              <span className="text-[10px] font-medium tracking-tight text-muted-foreground">
-                {user?.firstName || "Me"}
-              </span>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-medium tracking-tight text-foreground/70">
+                  {user?.firstName || "Me"}
+                </span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  {role && role !== 'context' && (
+                    <span className="text-[8px] px-1 py-0.5 rounded-md bg-primary/5 text-primary/50 font-bold uppercase tracking-tighter border border-primary/5">
+                      {role as string}
+                    </span>
+                  )}
+                  {importance && importance !== 3 && (
+                    <span className="text-[8px] px-1 py-0.5 rounded-md bg-amber-500/5 text-amber-600/50 font-bold border border-amber-500/5">
+                      IMP: {importance as number}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="text-[10px] text-muted-foreground/60 font-medium">
+            <div className="text-[10px] text-muted-foreground/60 font-medium self-end pb-1">
               {createdAt ? formatDistanceToNow(createdAt, { addSuffix: true }) : 'Just now'}
             </div>
           </div>
@@ -71,3 +117,40 @@ export const InputNode = memo(({ id, data, selected, dragging }: NodeProps) => {
 });
 
 InputNode.displayName = "InputNode";
+
+function AttachmentPreview({ file }: { file: { url?: string; storageId?: string; type?: string; name?: string } }) {
+  const [signedUrl, setSignedUrl] = React.useState<string | null>(file.url || null);
+
+  React.useEffect(() => {
+    if (!signedUrl && file.storageId) {
+      // Fetch signed URL
+      fetch(`/api/file?key=${encodeURIComponent(file.storageId)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.url) setSignedUrl(data.url);
+        })
+        .catch(err => console.error("Failed to load attachment URL", err));
+    }
+  }, [file.storageId, signedUrl]);
+
+  if (!signedUrl) return <div className="h-20 w-20 bg-muted animate-pulse rounded-lg" />;
+
+  return (
+    <div className="relative group overflow-hidden rounded-lg border border-primary/10">
+      {file.type === "image" ? (
+        <div className="relative h-20 w-20">
+          <Image 
+            src={signedUrl} 
+            alt={file.name || "Attachment"} 
+            fill
+            className="object-cover"
+          />
+        </div>
+      ) : (
+        <div className="h-20 w-20 flex items-center justify-center bg-muted text-xs p-2 text-center break-all">
+          {file.name}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -10,6 +10,7 @@ import { EditorCanvas } from "@/app/_components/canvas/components/Editor-Canvas"
 import { Loader2 } from "lucide-react";
 import ChatInputBox from "@/app/_components/ChatInputBox";
 import { CanvasToolbar } from "@/app/_components/canvas/CanvasToolbar";
+
 export default function CanvasPage() {
   const params = useParams();
   const canvasId = params.canvasId as Id<"canvas">;
@@ -43,6 +44,7 @@ export default function CanvasPage() {
         <EditorProvider>
           <ConnectionsProvider canvasId={canvasId}>
             <EditorCanvas 
+              canvasId={canvasId}
               initialNodes={canvas.nodes} 
               initialEdges={canvas.edges} 
             />

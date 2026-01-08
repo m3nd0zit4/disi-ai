@@ -1,4 +1,6 @@
 import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand, Message } from "@aws-sdk/client-sqs";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { v4 as uuidv4 } from "uuid";
 import { getAIService } from "@/lib/aiServices";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
@@ -8,6 +10,9 @@ import "dotenv/config";
 import { config } from "dotenv";
 import { resolve } from "path";
 import { SPECIALIZED_MODELS } from "@/shared/ai-models";
+import { buildReasoningPrompt } from "@/lib/reasoning/prompt";
+import { distillContext } from "@/lib/reasoning/distillation";
+import { ReasoningContext, ReasoningContextItem } from "@/lib/reasoning/types";
 
 interface NodeExecutionInputs {
   prompt?: string;
@@ -16,7 +21,8 @@ interface NodeExecutionInputs {
   provider?: string;
   systemPrompt?: string;
   temperature?: number;
-  context?: Array<{ type: string; content: string }>;
+  context?: Array<unknown>;
+  reasoningContext?: unknown;
   imageSize?: string;
   imageQuality?: string;
   imageBackground?: string;
@@ -31,6 +37,14 @@ config({ path: resolve(process.cwd(), ".env.local") });
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 const sqsClient = new SQSClient({
+  region: process.env.AWS_REGION || "us-east-1",
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
+const s3Client = new S3Client({
   region: process.env.AWS_REGION || "us-east-1",
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
@@ -101,6 +115,25 @@ async function processMessage(message: Message, queueUrl: string) {
   }));
 }
 
+async function withRetry<T>(fn: () => Promise<T>, name: string, retries = 3, delay = 1000): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const isFetchError = error instanceof Error && (error.message.includes("fetch failed") || error.message.includes("ETIMEDOUT"));
+      if (isFetchError && i < retries - 1) {
+        log("WARN", `Retrying ${name} (${i + 1}/${retries}) due to network error: ${error instanceof Error ? error.message : String(error)}`);
+        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i))); // Exponential backoff
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
 async function processNodeExecution(data: {
   executionId: string;
   nodeId: string;
@@ -115,18 +148,18 @@ async function processNodeExecution(data: {
 
   try {
     // 1. Update node status to "running" in execution record
-    await convex.mutation(api.canvasExecutions.updateNodeExecution, {
+    await withRetry(() => convex.mutation(api.canvasExecutions.updateNodeExecution, {
       executionId: executionId as Id<"canvasExecutions">,
       nodeId,
       status: "running",
-    });
+    }), "updateNodeExecution (running)");
 
     // Update node data status to "thinking" on the canvas
-    await convex.mutation(api.canvas.updateNodeDataInternal, {
+    await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
       canvasId: canvasId as Id<"canvas">,
       nodeId,
       data: { status: "thinking" },
-    });
+    }), "updateNodeDataInternal (thinking)");
 
     let result: {
       text: string;
@@ -140,7 +173,7 @@ async function processNodeExecution(data: {
       case "aiModel":
       case "display":
       case "response": {
-        const { prompt, text, modelId, provider, systemPrompt, temperature, context } = inputs;
+        const { prompt, text, modelId, provider, systemPrompt, temperature } = inputs;
         
         // Fallback to environment variables if apiKey is not provided in the message
         let effectiveApiKey = apiKey;
@@ -162,11 +195,11 @@ async function processNodeExecution(data: {
            
            log("INFO", `Generating image with model ${targetModel}`);
            
-           await convex.mutation(api.canvas.updateNodeDataInternal, {
+           await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
               canvasId: canvasId as Id<"canvas">,
               nodeId,
               data: { status: "thinking" }, // Use thinking state while generating
-            });
+            }), "updateNodeDataInternal (image thinking)");
 
            const { 
              imageSize, 
@@ -182,24 +215,53 @@ async function processNodeExecution(data: {
              prompt: (prompt as string) || (text as string) || "",
              size: (imageSize as string) || "1024x1024",
              quality: (imageQuality as string) || (isGptImage ? undefined : "standard"),
-             background: imageBackground as any,
-             outputFormat: imageOutputFormat as any,
+             background: imageBackground as string | undefined,
+             outputFormat: imageOutputFormat as string | undefined,
              n: imageN as number,
-             moderation: imageModeration as any,
+             moderation: imageModeration as string | undefined,
            });
 
-           const markdownImage = `![Generated Image](${response.mediaUrl})`;
+           // Upload to S3
+           let mediaStorageId = "";
+           if (response.mediaUrl) {
+             try {
+               const imageRes = await fetch(response.mediaUrl);
+               const arrayBuffer = await imageRes.arrayBuffer();
+               const buffer = Buffer.from(arrayBuffer);
+               const contentType = imageRes.headers.get("content-type") || "image/png";
+               
+               const fileName = `${uuidv4()}.png`; // Assuming PNG for now or derive from content-type
+               const key = `generated/${fileName}`;
+               
+               await s3Client.send(new PutObjectCommand({
+                 Bucket: process.env.AWS_S3_BUCKET_NAME,
+                 Key: key,
+                 Body: buffer,
+                 ContentType: contentType,
+               }));
+               
+               mediaStorageId = key;
+               log("INFO", `Uploaded generated image to S3: ${key}`);
+             } catch (uploadError) {
+               log("ERROR", "Failed to upload generated image to S3", { error: uploadError });
+               // Throw error to prevent falling back to saving large data in Convex
+               throw new Error(`Failed to upload generated image to S3: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`);
+             }
+           }
+
+           const markdownImage = `![Generated Image](${mediaStorageId ? "s3://" + mediaStorageId : response.mediaUrl})`;
            
-           await convex.mutation(api.canvas.updateNodeDataInternal, {
+           await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
               canvasId: canvasId as Id<"canvas">,
               nodeId,
               data: { 
                 text: markdownImage, 
-                mediaUrl: response.mediaUrl,
+                mediaUrl: null, // Don't save the large URL/base64
+                mediaStorageId: mediaStorageId,
                 status: "complete",
                 type: "image",
               },
-            });
+            }), "updateNodeDataInternal (image complete)");
 
             result = {
               text: markdownImage,
@@ -215,11 +277,11 @@ async function processNodeExecution(data: {
             
             log("INFO", `Generating video with model ${targetModel}`);
 
-            await convex.mutation(api.canvas.updateNodeDataInternal, {
+            await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
               canvasId: canvasId as Id<"canvas">,
               nodeId,
               data: { status: "thinking" },
-            });
+            }), "updateNodeDataInternal (video thinking)");
 
             const response = await service.generateVideo({
               model: targetModel,
@@ -227,7 +289,7 @@ async function processNodeExecution(data: {
             });
 
             // Video generation result formatting
-            await convex.mutation(api.canvas.updateNodeDataInternal, {
+            await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
               canvasId: canvasId as Id<"canvas">,
               nodeId,
               data: { 
@@ -235,7 +297,7 @@ async function processNodeExecution(data: {
                 mediaUrl: response.mediaUrl,
                 status: "complete" 
               },
-            });
+            }), "updateNodeDataInternal (video complete)");
 
             result = {
               text: response.mediaUrl,
@@ -247,24 +309,24 @@ async function processNodeExecution(data: {
 
         // Handle Text/Chat Generation (Default)
         
-        // Build messages from context
-        const messages = [];
-        if (systemPrompt) {
-          messages.push({ role: "system", content: systemPrompt });
-        }
+        // Build messages from context using the new reasoning logic
+        const rawContext: ReasoningContext = (inputs.reasoningContext as ReasoningContext) || {
+            targetNodeId: nodeId,
+            items: (inputs.context as ReasoningContextItem[]) || []
+        };
 
-        if (context && Array.isArray(context)) {
-          for (const ctxNode of context) {
-            const role = ctxNode.type === "input" ? "user" : "assistant";
-            messages.push({ role, content: ctxNode.content });
-          }
-        }
+        // Apply 3-layer distillation
+        const contextBudget = 4000; // TODO: Make this dynamic based on model
+        const distilledContext = distillContext(rawContext, { maxTokens: contextBudget });
+
+        log("INFO", `Context distilled: ${rawContext.items.length} -> ${distilledContext.items.length} items (${distilledContext.totalTokens} tokens)`);
+
+        const messages = buildReasoningPrompt(systemPrompt, distilledContext, prompt || text || "");
+
 
         // Add the current prompt/text
-        const currentPrompt = prompt || text;
-        if (currentPrompt) {
-          messages.push({ role: "user", content: currentPrompt });
-        }
+        // Message construction is now handled by buildReasoningPrompt
+
 
         if (messages.length === 0) {
           throw new Error("No messages to send to AI");
@@ -285,7 +347,7 @@ async function processNodeExecution(data: {
           
           stream = await service.generateStreamResponse({
             model: targetModel,
-            messages: messages as any[],
+            messages: messages as { role: "system" | "user" | "assistant"; content: string }[],
             temperature: temperature || 0.7,
             signal: controller.signal,
           });
@@ -326,32 +388,32 @@ async function processNodeExecution(data: {
 
             if (!hasStartedStreaming) {
               hasStartedStreaming = true;
-              await convex.mutation(api.canvas.updateNodeDataInternal, {
+              await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
                 canvasId: canvasId as Id<"canvas">,
                 nodeId,
                 data: { status: "streaming" },
-              });
+              }), "updateNodeDataInternal (start streaming)");
             }
 
             // Update Convex every 10 tokens or 500ms
             const now = Date.now();
             if (tokenCount % 10 === 0 || now - lastUpdateTime > 500) {
-              await convex.mutation(api.canvas.updateNodeDataInternal, {
+              await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
                 canvasId: canvasId as Id<"canvas">,
                 nodeId,
                 data: { text: fullText },
-              });
+              }), "updateNodeDataInternal (streaming update)");
               lastUpdateTime = now;
             }
           }
         }
 
         // Final update to ensure text is complete and status is set
-        await convex.mutation(api.canvas.updateNodeDataInternal, {
+        await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
           canvasId: canvasId as Id<"canvas">,
           nodeId,
           data: { text: fullText, status: "complete" },
-        });
+        }), "updateNodeDataInternal (text complete)");
 
         result = {
           text: fullText,
@@ -376,12 +438,12 @@ async function processNodeExecution(data: {
     }
 
     // 3. Update node status to "completed" in execution record
-    await convex.mutation(api.canvasExecutions.updateNodeExecution, {
+    await withRetry(() => convex.mutation(api.canvasExecutions.updateNodeExecution, {
       executionId: executionId as Id<"canvasExecutions">,
       nodeId,
       status: "completed",
       output: result,
-    });
+    }), "updateNodeExecution (completed)");
 
     // 4. Delete message from SQS
     await sqsClient.send(new DeleteMessageCommand({
@@ -401,16 +463,16 @@ async function processNodeExecution(data: {
       log("ERROR", `Node ${nodeId} failed`, { error: errorMessage });
     }
 
-    await convex.mutation(api.canvasExecutions.updateNodeExecution, {
+    await withRetry(() => convex.mutation(api.canvasExecutions.updateNodeExecution, {
       executionId: executionId as Id<"canvasExecutions">,
       nodeId,
       status: "failed",
       error: isAbortError ? "Execution timed out" : errorMessage,
-    });
+    }), "updateNodeExecution (failed)");
 
     // Update node data with error status and message
     const isInsufficientFunds = isInsufficientFundsError(error);
-    await convex.mutation(api.canvas.updateNodeDataInternal, {
+    await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
       canvasId: canvasId as Id<"canvas">,
       nodeId,
       data: { 
@@ -418,7 +480,7 @@ async function processNodeExecution(data: {
         errorType: isInsufficientFunds ? "insufficient_funds" : "generic",
         error: isInsufficientFunds ? INSUFFICIENT_FUNDS_MESSAGE : errorMessage 
       },
-    });
+    }), "updateNodeDataInternal (error)");
     // TODO: Better implement the configuration section and API error handling
 
 
@@ -439,9 +501,46 @@ async function pollQueues() {
     queues: QUEUE_URLS.map(url => url.split('/').pop()) 
   });
   
+  const useConvexQueue = process.env.USE_CONVEX_QUEUE === "true";
+  if (useConvexQueue) {
+    log("INFO", "Convex Queue fallback is ENABLED");
+  }
+
   while (!isShuttingDown) {
     let messageReceived = false;
 
+    // 1. Poll Convex Queue (Local Fallback)
+    if (useConvexQueue) {
+      try {
+        const task = await convex.mutation(api.worker.dequeueTask, {});
+        if (task) {
+          messageReceived = true;
+          log("INFO", `Processing task from Convex queue: ${task._id}`);
+          
+          // Adapt Convex task to SQS message format for processMessage
+          const mockMessage: Message = {
+            MessageId: task._id,
+            Body: task.messageBody,
+            ReceiptHandle: "convex-mock-handle",
+          };
+
+          try {
+            await processMessage(mockMessage, task.queueUrl);
+            await convex.mutation(api.worker.completeTask, { taskId: task._id, status: "completed" });
+          } catch (error) {
+            log("ERROR", `Failed to process Convex task ${task._id}`, { error });
+            await convex.mutation(api.worker.completeTask, { taskId: task._id, status: "failed" });
+          }
+          
+          // Continue to next iteration immediately if we got a message
+          continue;
+        }
+      } catch (error) {
+        log("ERROR", "Error polling Convex queue", { error });
+      }
+    }
+
+    // 2. Poll SQS Queues
     for (const queueUrl of QUEUE_URLS) {
       try {
         const response = await sqsClient.send(new ReceiveMessageCommand({
@@ -458,8 +557,11 @@ async function pollQueues() {
           break; 
         }
       } catch (error) {
-        log("ERROR", `Error polling queue ${queueUrl.split('/').pop()}`, { error });
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        // Only log SQS errors if we are NOT using Convex queue as primary
+        if (!useConvexQueue) {
+          log("ERROR", `Error polling queue ${queueUrl.split('/').pop()}`, { error });
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
       }
     }
 

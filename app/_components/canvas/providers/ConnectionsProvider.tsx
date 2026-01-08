@@ -5,7 +5,8 @@ import {
   Connection, 
   EdgeChange, 
   NodeChange, 
-  OnConnectStartParams
+  OnConnectStartParams,
+  Viewport
 } from "@xyflow/react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -21,6 +22,9 @@ interface ConnectionsContextType {
   onEdgesChange: (changes: EdgeChange[]) => void;
   onNodeDragStart: (event: any, node: any) => void;
   onNodeDragStop: (event: any, node: any) => void;
+  onNodeClick: (event: any, node: any) => void;
+  onPaneClick: (event: any) => void;
+  onViewportChange: (viewport: Viewport) => void;
   handleQuickAction: () => void;
   deleteNode: (nodeId: string) => void;
   updateNode: (nodeId: string, data: Record<string, any>) => void;
@@ -80,8 +84,10 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     if (!hasRealChanges) return;
 
     const latestNodes = useCanvasStore.getState().nodes;
-    // Filter out preview nodes before syncing to DB
-    const nodesToSync = latestNodes.filter(n => !n.id.startsWith('preview-'));
+    // Filter out preview nodes and STRIP selection state before syncing to DB
+    const nodesToSync = latestNodes
+      .filter(n => !n.id.startsWith('preview-'))
+      .map(({ selected: _, ...rest }) => rest);
     
     debouncedUpdateCanvas({ canvasId, nodes: nodesToSync });
   }, [canvasId, debouncedUpdateCanvas, storeOnNodesChange]);
@@ -220,11 +226,24 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
 
   const onNodeDragStart = useCallback((_: any, node: any) => {
     useCanvasStore.getState().setDraggedNodeId(node.id);
+    useCanvasStore.getState().setSelectedNodeIdForToolbar(null);
   }, []);
 
   const onNodeDragStop = useCallback(() => {
     useCanvasStore.getState().setDraggedNodeId(null);
   }, []);
+
+  const onNodeClick = useCallback((_: any, node: any) => {
+    useCanvasStore.getState().setSelectedNodeIdForToolbar(node.id);
+  }, []);
+
+  const onPaneClick = useCallback(() => {
+    useCanvasStore.getState().setSelectedNodeIdForToolbar(null);
+  }, []);
+
+  const onViewportChange = useCallback((viewport: Viewport) => {
+    useCanvasStore.getState().setViewport(canvasId, viewport);
+  }, [canvasId]);
 
   return (
     <ConnectionsContext.Provider value={{
@@ -235,6 +254,9 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
       onEdgesChange: handleEdgesChange,
       onNodeDragStart,
       onNodeDragStop,
+      onNodeClick,
+      onPaneClick,
+      onViewportChange,
       handleQuickAction,
       deleteNode,
       updateNode,

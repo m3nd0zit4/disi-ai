@@ -1,7 +1,11 @@
+import { SemanticRole } from "@/lib/reasoning/types";
+
 export interface BaseNodeData {
   id?: string;
   createdAt?: number;
   color?: string;
+  role?: SemanticRole;
+  importance?: number;
 }
 
 export interface InputNodeData extends BaseNodeData {
@@ -9,10 +13,18 @@ export interface InputNodeData extends BaseNodeData {
 }
 
 export interface ResponseNodeData extends BaseNodeData {
-  text: string;
+  text: string; // Kept for backward compatibility (maps to content.markdown)
   modelId: string;
   status: "pending" | "thinking" | "streaming" | "complete" | "error";
-  reasoning?: string;
+  reasoning?: string; // Kept for backward compatibility
+  structuredReasoning?: {
+    text: string;
+    durationMs?: number;
+  };
+  content?: {
+    markdown?: string;
+    imageUrl?: string;
+  };
   isProModel?: boolean;
   isUserFree?: boolean;
   error?: string;
@@ -24,6 +36,7 @@ export interface DisplayNodeData extends BaseNodeData {
   content?: string;
   text?: string;
   mediaUrl?: string;
+  mediaStorageId?: string;
   status?: "pending" | "thinking" | "streaming" | "complete" | "error";
   modelId?: string;
 }
