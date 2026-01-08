@@ -214,6 +214,8 @@ export const updateNodeExecution = mutation({
             userId: execution.userId,
             role: "user",
             content: promptContent,
+            hasAttachments: args.input?.attachments?.length > 0,
+            attachments: args.input?.attachments,
             createdAt: Date.now(),
           });
 
@@ -242,11 +244,13 @@ export const updateNodeExecution = mutation({
             category: "text", // Defaulting to text
             providerModelId: modelId,
             content: responseContent,
+            mediaUrl: args.output?.mediaStorageId ? await ctx.storage.getUrl(args.output.mediaStorageId) : args.output?.mediaUrl,
+            mediaStorageId: args.output?.mediaStorageId,
             status: "completed",
             createdAt: Date.now(),
             completedAt: Date.now(),
-            tokens: args.output?.usage?.totalTokens,
-            cost: args.output?.usage?.cost,
+            tokens: args.output?.tokens,
+            cost: args.output?.cost,
           });
 
           // Update conversation stats

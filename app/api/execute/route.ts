@@ -1,3 +1,4 @@
+// Main API route for node execution
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { sendToQueue } from "@/lib/sqs";
@@ -15,6 +16,15 @@ function getRequiredEnv(key: string): string {
 
 const convex = new ConvexHttpClient(getRequiredEnv("NEXT_PUBLIC_CONVEX_URL"));
 
+// Default model configuration
+const DEFAULT_MODEL = {
+  category: "reasoning" as const,
+  modelId: "gpt-5.2",
+  provider: "GPT",
+  providerModelId: "gpt-5.2",
+  isEnabled: true,
+};
+
 export async function POST(req: Request) {
   try {
     const { userId: clerkId } = await auth();
@@ -30,14 +40,17 @@ export async function POST(req: Request) {
       prompt, 
       models, 
       newNodeId, 
-      parentNodeId, 
+      inputNodeId: providedInputNodeId,
+      parentNodeId, // Legacy support
+      parentNodeIds, // New array support
       targetNodeId,
       imageSize,
       imageQuality,
       imageBackground,
       imageOutputFormat,
       imageN,
-      imageModeration
+      imageModeration,
+      attachments, // Array of { storageId, type, name, size }
     } = body;
 
     // 1. Get user record
@@ -53,19 +66,17 @@ export async function POST(req: Request) {
     }
 
     let executionId = propExecutionId;
-    let nodesToQueue = [];
+    let nodesToQueue: NodeData[] = [];
+    let canvasForContext = canvas; // Declare in outer scope
 
-    if (!executionId && prompt && newNodeId) {
+    if (!executionId && prompt && (newNodeId || providedInputNodeId)) {
       // Flowith-style dynamic creation: 1 Input Node -> N Response Nodes
-      const modelsToProcess = Array.isArray(models) && models.length > 0 ? models : [{
-        category: "reasoning",
-        modelId: "gpt-5.2",
-        provider: "GPT",
-        providerModelId: "gpt-5.2",
-        isEnabled: true,
-      }];
+      const modelsToProcess = Array.isArray(models) && models.length > 0 ? models : [DEFAULT_MODEL];
 
       executionId = await convex.mutation(api.canvasExecutions.createCanvasExecutionByClerkId, { canvasId, clerkId });
+
+      // Consolidate parent IDs once
+      const parents = parentNodeIds || (parentNodeId ? [parentNodeId] : []);
 
       // Calculate position based on parent node or use passed position
       let startX = 100;
@@ -74,24 +85,80 @@ export async function POST(req: Request) {
       if (body.position) {
         startX = body.position.x;
         startY = body.position.y;
-      } else if (parentNodeId) {
-        const parentNode = canvas.nodes.find(n => n.id === parentNodeId);
-        if (parentNode) {
-          startX = parentNode.position.x;
-          startY = parentNode.position.y + 400; // Place below parent
+      } else {
+        if (parents.length > 0) {
+            const parentNodes = canvas.nodes.filter(n => parents.includes(n.id));
+            if (parentNodes.length > 0) {
+                const avgX = parentNodes.reduce((sum, n) => sum + n.position.x, 0) / parentNodes.length;
+                const maxY = Math.max(...parentNodes.map(n => n.position.y));
+                
+                startX = avgX;
+                startY = maxY + 400;
+            }
         }
       }
 
-      const inputNodeId = `input-${newNodeId}`;
-      const inputNode = {
-        id: inputNodeId,
-        type: "input",
-        position: { x: startX, y: startY },
-        data: {
-          text: prompt,
-          createdAt: Date.now(),
+      const RESPONSE_WIDTH = 500;
+      const SPACING = 40;
+      const totalResponseWidth = modelsToProcess.length * RESPONSE_WIDTH + (modelsToProcess.length - 1) * SPACING;
+      
+      const inputNodeX = startX + (totalResponseWidth / 2) - (350 / 2);
+      const inputNodeY = startY;
+
+      const inputNodeId = providedInputNodeId || `input-${newNodeId}`;
+      const nodesToAdd = [];
+      const newEdges = [];
+
+      if (!providedInputNodeId) {
+        // Create new input node
+        nodesToAdd.push({
+          id: inputNodeId,
+          type: "input",
+          position: { x: inputNodeX, y: inputNodeY },
+          data: {
+            text: prompt,
+            attachments,
+            createdAt: Date.now(),
+          }
+        });
+
+        // Create edges from all parent nodes to the NEW input node
+        parents.forEach((pid: string) => {
+          newEdges.push({
+            id: `edge-${pid}-${inputNodeId}`,
+            source: pid,
+            target: inputNodeId,
+            animated: true,
+          });
+        });
+      } else {
+        // Update existing input node's text and attachments if they changed
+        // This ensures the DB is consistent with the prompt sent
+        try {
+          await convex.mutation(api.canvas.updateNodeDataByClerkId, {
+            canvasId,
+            clerkId,
+            nodeId: providedInputNodeId,
+            data: {
+              text: prompt,
+              attachments,
+            }
+          });
+        } catch (updateError) {
+          console.error(
+            `[Execute] Failed to update input node data:`,
+            {
+              canvasId,
+              clerkId,
+              nodeId: providedInputNodeId,
+              prompt: prompt.substring(0, 100),
+              attachmentsCount: attachments?.length || 0,
+              error: updateError
+            }
+          );
+          throw updateError;
         }
-      };
+      }
 
       const responseNodes = modelsToProcess.map((model, i) => {
         const modelInfo = SPECIALIZED_MODELS.find(m => m.id === model.modelId);
@@ -101,8 +168,8 @@ export async function POST(req: Request) {
           id: `response-${newNodeId}-${i}`,
           type: isImageModel ? "display" : "response",
           position: { 
-            x: startX + (i * 420), 
-            y: startY + 250 
+            x: startX + i * (RESPONSE_WIDTH + SPACING), 
+            y: inputNodeY + 300 
           },
           data: {
             text: "",
@@ -115,70 +182,54 @@ export async function POST(req: Request) {
         };
       });
 
-      const newEdges = responseNodes.map(node => ({
-        id: `edge-${inputNodeId}-${node.id}`,
-        source: inputNodeId,
-        target: node.id,
-        animated: true,
-      }));
+      nodesToAdd.push(...responseNodes);
 
-      // Create edge from parent to new input node if parent exists
-      if (parentNodeId) {
+      // Create edges from the input node (new or existing) to response nodes
+      responseNodes.forEach(node => {
         newEdges.push({
-          id: `edge-${parentNodeId}-${inputNodeId}`,
-          source: parentNodeId,
-          target: inputNodeId,
+          id: `edge-${inputNodeId}-${node.id}`,
+          source: inputNodeId,
+          target: node.id,
           animated: true,
         });
-      }
+      });
 
-      // Add all at once
-      await convex.mutation(api.canvas.addNodesAndEdgesByClerkId, { 
-        canvasId, 
+      // 3. Persist nodes and edges to DB
+      await convex.mutation(api.canvas.addNodesAndEdgesByClerkId, {
+        canvasId,
         clerkId,
-        nodes: [inputNode, ...responseNodes],
-        edges: newEdges 
+        nodes: nodesToAdd,
+        edges: newEdges,
       });
       
       // Re-query canvas to get the latest state with new nodes for context collection
       const updatedCanvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId });
-      if (updatedCanvas) {
-        canvas.nodes = updatedCanvas.nodes;
-        canvas.edges = updatedCanvas.edges;
-      }
+      canvasForContext = updatedCanvas ?? canvas;
 
       nodesToQueue = responseNodes;
     } else if (executionId) {
-      // Standard execution flow with context collection
-      const nodes = canvas.nodes;
-      
-      if (targetNodeId) {
-        // Prioritize specific node if requested (e.g. regeneration)
-        const targetNode = nodes.find(n => n.id === targetNodeId);
-        if (targetNode) {
-          nodesToQueue = [targetNode];
-        } else {
-           console.warn(`Target node ${targetNodeId} not found in canvas`);
-        }
-      } else {
-        // Find nodes that need execution (e.g., pending response nodes)
-        nodesToQueue = nodes.filter(n => n.data?.status === "pending");
-      }
-      
-      if (nodesToQueue.length === 0 && nodes.length > 0) {
-        // Fallback or manual trigger logic
-        nodesToQueue = [nodes[nodes.length - 1]];
+      // Resume existing execution
+      const execution = await convex.query(api.canvasExecutions.getCanvasExecutionByClerkId, { executionId, clerkId });
+      if (!execution) {
+        return NextResponse.json({ error: "Execution not found" }, { status: 404 });
       }
 
-      // If prompt is provided in body (e.g. from regenerateNode), inject it into the node data
-      if (prompt && nodesToQueue.length === 1) {
-        nodesToQueue[0].data = {
-          ...nodesToQueue[0].data,
-          prompt: prompt
-        };
+      // Re-query canvas to ensure we have the latest state
+      const updatedCanvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId });
+      canvasForContext = updatedCanvas ?? canvas;
+
+      // Find pending nodes from this execution
+      const pendingNodes = canvas.nodes.filter(
+        (n: NodeData) => n.data.executionId === executionId && n.data.status === "pending"
+      );
+
+      if (pendingNodes.length === 0) {
+        return NextResponse.json({ error: "No pending nodes found for this execution" }, { status: 400 });
       }
+
+      nodesToQueue = pendingNodes;
     } else {
-      return NextResponse.json({ error: "Invalid request parameters" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid request: must provide either prompt or executionId" }, { status: 400 });
     }
 
     // 4. Queue nodes in SQS with context
@@ -186,31 +237,17 @@ export async function POST(req: Request) {
       ? getRequiredEnv("SQS_QUEUE_URL_PRO")
       : getRequiredEnv("SQS_QUEUE_URL_FREE");
 
+    // Import context resolution once before processing nodes
+    const { resolveNodeContext } = await import("@/lib/reasoning/context");
+
     const jobs = await Promise.all(
       nodesToQueue.map(async (node) => {
-        // Collect context from parent nodes
-        const parentNodes = [];
-        const visited = new Set();
-        const queue = [node.id];
+        // Collect context using the reasoning logic
+        const reasoningContext = resolveNodeContext(node.id, canvasForContext.nodes, canvasForContext.edges);
         
-        while (queue.length > 0) {
-          const currentId = queue.shift();
-          if (visited.has(currentId)) continue;
-          visited.add(currentId);
-          
-          const incomingEdges = canvas.edges.filter(e => e.target === currentId);
-          for (const edge of incomingEdges) {
-            const parent = canvas.nodes.find(n => n.id === edge.source);
-            if (parent) {
-              parentNodes.push({
-                id: parent.id,
-                type: parent.type,
-                content: parent.data?.text || parent.data?.userInput || parent.data?.output?.text || "",
-              });
-              queue.push(parent.id);
-            }
-          }
-        }
+        // Map to the format expected by the worker (or update worker to handle ReasoningContext)
+        // For now, we'll pass the structured context in the inputs.
+
 
         const inputs = { 
           ...node.data,
@@ -221,13 +258,16 @@ export async function POST(req: Request) {
           prompt: prompt || node.data?.prompt || node.data?.text || "",
           text: prompt || node.data?.text || node.data?.prompt || "",
           input: prompt || node.data?.text || node.data?.prompt || "", // Keep 'input' for backward compatibility if needed
-          context: parentNodes.reverse(), // Order from root to parent
+
+          context: reasoningContext.items, // Pass the structured items
+          reasoningContext, // Pass the full object for future proofing
           imageSize,
           imageQuality,
           imageBackground,
           imageOutputFormat,
           imageN,
           imageModeration,
+          attachments,
         };
         
         const messageBody = {
@@ -245,7 +285,7 @@ export async function POST(req: Request) {
         
         return {
           nodeId: node.id,
-          jobId: sqsResponse.MessageId,
+          jobId: sqsResponse.messageId,
         };
       })
     );

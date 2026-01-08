@@ -107,6 +107,7 @@ export default defineSchema({
       v.array(
         v.object({
           type: v.string(), // "image", "file", "code"
+          storageId: v.optional(v.string()), // ID de Convex Storage
           url: v.optional(v.string()),
           name: v.optional(v.string()),
           size: v.optional(v.number()),
@@ -135,6 +136,7 @@ export default defineSchema({
     // Contenido
     content: v.string(),
     mediaUrl: v.optional(v.string()),
+    mediaStorageId: v.optional(v.string()), // ID de Convex Storage para media generada
 
     // Estado
     status: v.union(
@@ -267,6 +269,7 @@ export default defineSchema({
     
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
+    viewport: v.optional(v.any()),
   })
     .index("by_user", ["userId"])
     .index("by_user_and_updated", ["userId", "updatedAt"])
@@ -318,4 +321,16 @@ export default defineSchema({
     .index("by_canvas", ["canvasId"])
     .index("by_user", ["userId"])
     .index("by_canvas_and_created", ["canvasId", "createdAt"]),
+
+  // ===== WORKER QUEUE (Local Fallback for SQS) =====
+  workerQueue: defineTable({
+    queueUrl: v.string(),
+    messageBody: v.string(), // JSON string
+    messageGroupId: v.optional(v.string()),
+    status: v.union(v.literal("pending"), v.literal("processing"), v.literal("completed"), v.literal("failed")),
+    createdAt: v.number(),
+    processedAt: v.optional(v.number()),
+  })
+    .index("by_status", ["status"])
+    .index("by_status_created", ["status", "createdAt"]),
 });

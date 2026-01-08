@@ -18,11 +18,12 @@ import { nodeTypes, edgeTypes, defaultEdgeOptions } from "./Flow-Instance";
 import { useConnections } from "../providers/ConnectionsProvider";
 
 interface EditorCanvasProps {
+  canvasId: string;
   initialNodes?: unknown[];
   initialEdges?: unknown[];
 }
 
-export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) => {
+export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCanvasProps) => {
   const { theme } = useTheme();
   const { nodes, edges, setNodes, setEdges } = useCanvasStore();
   const { 
@@ -32,7 +33,10 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
     onConnectStart, 
     onConnectEnd,
     onNodeDragStart,
-    onNodeDragStop
+    onNodeDragStop,
+    onNodeClick,
+    onPaneClick,
+    onViewportChange
   } = useConnections();
 
   const { setCenter } = useReactFlow();
@@ -45,7 +49,7 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
       
       // Merge incoming nodes with local selection state to avoid race conditions
       // where a DB update overwrites a local deselection
-      const mergedNodes = (initialNodes as Node[]).map(incomingNode => {
+      const mergedNodes: Node[] = (initialNodes as Node[]).map(incomingNode => {
         const localNode = currentNodes.find(n => n.id === incomingNode.id);
         if (localNode) {
           return {
@@ -53,7 +57,10 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
             selected: localNode.selected // Preserve local selection state
           };
         }
-        return incomingNode;
+        return {
+          ...incomingNode,
+          selected: false // Ensure nodes from DB start deselected
+        };
       });
 
       // Preserve local preview nodes that haven't been saved to DB yet
@@ -69,11 +76,20 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
       setNodes(mergedNodes);
     }
     if (initialEdges) setEdges(initialEdges as Edge[]);
-  }, [initialNodes, initialEdges, setNodes, setEdges]);
+    
+    // Load viewport from localStorage
+    useCanvasStore.getState().loadViewport(canvasId);
+  }, [initialNodes, initialEdges, canvasId, setNodes, setEdges]);
 
-  // Auto-pan logic: detect any new node (preview or real)
   useEffect(() => {
     const currentNodeIds = new Set(nodes.map(n => n.id));
+    
+    // Skip the first run to avoid auto-panning to existing nodes on load
+    if (prevNodeIdsRef.current.size === 0 && currentNodeIds.size > 0) {
+      prevNodeIdsRef.current = currentNodeIds;
+      return;
+    }
+
     const newNodeIds = Array.from(currentNodeIds).filter(id => !prevNodeIdsRef.current.has(id));
 
     if (newNodeIds.length > 0) {
@@ -97,18 +113,24 @@ export const EditorCanvas = ({ initialNodes, initialEdges }: EditorCanvasProps) 
         onEdgesChange={onEdgesChange}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
         onConnect={onConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
+        onViewportChange={onViewportChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        fitView
+        fitView={false}
         colorMode={theme === 'dark' ? 'dark' : 'light'}
         snapToGrid
         snapGrid={[15, 15]}
         defaultEdgeOptions={defaultEdgeOptions}
         minZoom={0.1}
         maxZoom={2}
+        panOnScroll={true}
+        zoomOnScroll={false}
+        panOnDrag={[0, 1, 2]} // Allow panning with left, middle, and right mouse buttons
         fitViewOptions={{ padding: 0.2 }}
         deleteKeyCode={["Backspace", "Delete"]}
         selectionKeyCode={["Shift"]}

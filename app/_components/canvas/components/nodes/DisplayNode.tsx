@@ -1,6 +1,5 @@
-import { memo } from "react";
+import React, { memo, useState, useEffect } from "react";
 import { Position, NodeProps } from "@xyflow/react";
-import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
 import { NodeToolbar } from "./NodeToolbar";
@@ -12,24 +11,70 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { formatDistanceToNow } from "date-fns";
+import { ImageGeneration } from "@/components/ui/ai-chat-image-generation";
+import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
 
 export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) => {
-  const { type, content, text, mediaUrl, status, modelId, createdAt, color } = data as unknown as DisplayNodeData;
+  const displayData = data as DisplayNodeData;
+  const { type, content, text, mediaUrl, mediaStorageId, status, modelId, createdAt, color, role, importance } = displayData;
+  const selectedNodeIdForToolbar = useCanvasStore((state: CanvasState) => state.selectedNodeIdForToolbar);
+  const edges = useCanvasStore((state: CanvasState) => state.edges);
   const modelInfo = SPECIALIZED_MODELS.find(m => m.id === modelId);
   const { theme } = useTheme();
   const modelIcon = modelInfo?.icon;
 
+  const incomingEdges = edges.filter(edge => edge.target === id);
+  const hasIncoming = incomingEdges.length > 0;
+
+  const [signedUrl, setSignedUrl] = useState<string | null>(mediaUrl || null);
+
+  useEffect(() => {
+    // Fetch fresh signed URL whenever mediaStorageId is present
+    if (mediaStorageId) {
+      fetch(`/api/file?key=${encodeURIComponent(mediaStorageId)}`)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`Failed to fetch signed URL: ${res.status} ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          if (data.url) setSignedUrl(data.url);
+        })
+        .catch(err => console.error("Failed to load media URL", err));
+    } else {
+      // If no storageId, use mediaUrl directly
+      setSignedUrl(mediaUrl || null);
+    }
+  }, [mediaStorageId, mediaUrl]);
+
   const displayContent = content || text;
   const isPending = status === "pending" || status === "thinking";
   const isStreaming = status === "streaming";
+  const isResolvingUrl = !!mediaStorageId && !signedUrl;
+  const showLoading = isPending || (isStreaming && !signedUrl) || isResolvingUrl;
 
   // Determine the effective type if missing
-  const effectiveType = type || (mediaUrl ? "image" : (displayContent ? "text" : undefined));
+  const effectiveType = type || (mediaUrl || mediaStorageId ? "image" : (displayContent ? "text" : undefined));
 
   return (
     <div className="group relative select-none">
       {/* Node Toolbar Overlay - Floating above */}
-      <NodeToolbar nodeId={id} isVisible={selected && !dragging} data={data} />
+      <NodeToolbar 
+        nodeId={id} 
+        isVisible={selectedNodeIdForToolbar === id} 
+        data={data} 
+        hideColors={effectiveType === 'image'} 
+      />
+
+      {hasIncoming && (
+        <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 bg-primary/5 backdrop-blur-xl border border-primary/10 rounded-full animate-in fade-in slide-in-from-bottom-1 duration-500 z-30">
+          <div className="size-1 rounded-full bg-primary/60 animate-pulse" />
+          <span className="text-[9px] font-bold text-primary/60 uppercase tracking-wider">
+            {incomingEdges.length}
+          </span>
+        </div>
+      )}
 
       {/* Main Node Content - The "Image" IS the Node */}
       <div 
@@ -49,37 +94,43 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
         
         {/* Content Area */}
         <div className="relative w-full h-full">
-          {/* Loading States Overlay */}
-          {(isPending || (isStreaming && !mediaUrl)) && (
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/40 backdrop-blur-md py-12">
-              <div className="relative">
-                <Sparkles className="w-8 h-8 text-primary/20 animate-spin duration-[3000ms]" />
-                <Sparkles className="absolute inset-0 w-8 h-8 text-primary/40 animate-pulse" />
-              </div>
-              <p className="mt-3 text-[9px] font-bold uppercase tracking-widest text-primary/40 animate-pulse">
-                {status === "streaming" ? "Generating..." : "Thinking..."}
-              </p>
-            </div>
-          )}
-
           {/* Image Content - The Core Visual */}
-          {effectiveType === "image" && mediaUrl && (
-            <div className="relative w-full bg-black/5">
-              <img 
-                src={mediaUrl} 
-                alt="Generated content" 
-                className="w-full h-auto block transition-transform duration-1000 group-hover:scale-105"
-              />
-              {/* Subtle Inner Shadow Overlay */}
-              <div className="absolute inset-0 shadow-[inset_0_0_40px_rgba(0,0,0,0.1)] pointer-events-none" />
+          {effectiveType === "image" && (
+            <div className="relative w-full h-full">
+              {/* If we have a signedUrl, we show the image. 
+                  If it's loading/streaming, we wrap it in ImageGeneration with appropriate state.
+                  If it's completed, we just show the image (or wrap in completed ImageGeneration if we want the effect).
+                  For now, let's wrap it if it's new or loading. */}
+              
+              {showLoading ? (
+                 <ImageGeneration loadingState={status === "streaming" ? "generating" : "starting"}>
+                    {signedUrl ? (
+                      <img 
+                        src={signedUrl} 
+                        alt="Generated content" 
+                        className="w-full h-auto block rounded-xl"
+                      />
+                    ) : (
+                      <div className="w-full aspect-square bg-muted/20 rounded-xl" /> // Placeholder while waiting for URL
+                    )}
+                 </ImageGeneration>
+              ) : (
+                signedUrl && (
+                  <img 
+                    src={signedUrl} 
+                    alt="Generated content" 
+                    className="w-full h-auto block transition-transform duration-1000 group-hover:scale-105 rounded-[2rem]"
+                  />
+                )
+              )}
             </div>
           )}
 
           {/* Video Content */}
-          {effectiveType === "video" && mediaUrl && (
+          {effectiveType === "video" && signedUrl && (
             <div className="relative w-full bg-black/5">
               <video 
-                src={mediaUrl} 
+                src={signedUrl} 
                 controls
                 muted
                 playsInline
@@ -100,24 +151,38 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
 
           {/* Model Info Overlay - Bottom Minimal */}
           {modelId && (
-            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
-              <div className="flex items-center gap-2 bg-black/20 backdrop-blur-md px-2 py-1 rounded-full border border-white/10">
-                {modelIcon && (
-                  <Image 
-                    src={theme === 'dark' ? modelIcon.light : modelIcon.dark} 
-                    alt={modelId} 
-                    width={12} 
-                    height={12}
-                    className="opacity-80"
-                  />
-                )}
-                <span className="text-[9px] font-medium text-white/70 tracking-tight">
-                  {modelId}
-                </span>
+            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-20">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-2 py-1 rounded-full border border-white/10">
+                  {modelIcon && (
+                    <Image 
+                      src={theme === 'dark' ? modelIcon.light : modelIcon.dark} 
+                      alt={modelId} 
+                      width={12} 
+                      height={12}
+                      className="opacity-80"
+                    />
+                  )}
+                  <span className="text-[9px] font-medium text-white/70 tracking-tight">
+                    {modelId}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {role && role !== 'context' && (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/80 font-semibold uppercase tracking-wider border border-white/10 backdrop-blur-md">
+                      {role}
+                    </span>
+                  )}
+                  {importance && importance !== 3 && (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-200/90 font-semibold border border-amber-500/20 backdrop-blur-md">
+                      Imp: {importance}
+                    </span>
+                  )}
+                </div>
               </div>
               
               {createdAt && (
-                <div className="text-[9px] text-white/50 font-medium bg-black/20 backdrop-blur-md px-2 py-1 rounded-full border border-white/10">
+                <div className="text-[9px] text-white/50 font-medium bg-black/20 backdrop-blur-md px-2 py-1 rounded-full border border-white/10 self-end">
                   {formatDistanceToNow(createdAt, { addSuffix: true })}
                 </div>
               )}

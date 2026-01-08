@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { Markdown } from "./markdown"
+import { useAnimatedText } from "./animated-text"
 
 export type MessageProps = {
   children: React.ReactNode
@@ -62,9 +63,12 @@ const MessageContent = ({
     className
   )
 
+  const text = typeof children === "string" ? children : "";
+  const animatedText = useAnimatedText(text, "");
+
   return markdown ? (
     <Markdown className={classNames} {...props}>
-      {children as string}
+      {animatedText}
     </Markdown>
   ) : (
     <div className={classNames} {...props}>

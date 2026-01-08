@@ -7,7 +7,7 @@ import {
   Copy, 
   Maximize2, 
   Trash2, 
-  Check
+  Check,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -17,15 +17,17 @@ import { useConnections } from "../../providers/ConnectionsProvider";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { SemanticRole } from "@/lib/reasoning/types";
 
 interface NodeData {
   text?: string;
   userInput?: string;
   color?: string;
-  [key: string]: unknown; // for extensibility
+  role?: SemanticRole;
+  importance?: number;
+  [key: string]: unknown;
 }
 
 interface NodeToolbarProps {
@@ -42,7 +44,16 @@ const COLORS = [
   { name: "yellow", value: "rgba(234, 179, 8, 0.15)", border: "#eab308" },
 ];
 
-export const NodeToolbar = ({ nodeId, isVisible, data, showRegenerate }: NodeToolbarProps & { showRegenerate?: boolean }) => {
+export const NodeToolbar = ({ 
+  nodeId, 
+  isVisible, 
+  data, 
+  showRegenerate,
+  hideColors 
+}: NodeToolbarProps & { 
+  showRegenerate?: boolean;
+  hideColors?: boolean;
+}) => {
   const updateNodeData = useCanvasStore(state => state.updateNodeData);
   const duplicateNode = useCanvasStore(state => state.duplicateNode);
   const { deleteNode, regenerateNode } = useConnections();
@@ -90,12 +101,12 @@ export const NodeToolbar = ({ nodeId, isVisible, data, showRegenerate }: NodeToo
   };
 
   return (
-    <TooltipProvider>
-      <RTNodeToolbar 
-        isVisible={isVisible} 
-        position={Position.Top}
-        className="flex items-center gap-1 p-1 bg-background/60 backdrop-blur-2xl border border-primary/5 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.12)] mb-3 animate-in fade-in duration-300"
-      >
+    <RTNodeToolbar 
+      isVisible={isVisible} 
+      position={Position.Top}
+      className="flex items-center gap-1 p-1 bg-background/60 backdrop-blur-2xl border border-primary/5 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.12)] mb-3 animate-in fade-in duration-300"
+    >
+      {!hideColors && (
         <div className="flex items-center gap-1 px-1.5 border-r border-primary/5 mr-1">
           {COLORS.map((c) => (
             <Tooltip key={c.name}>
@@ -120,39 +131,39 @@ export const NodeToolbar = ({ nodeId, isVisible, data, showRegenerate }: NodeToo
             </Tooltip>
           ))}
         </div>
+      )}
 
-        <div className="flex items-center gap-0.5 pr-1">
-          {showRegenerate && (
-            <ToolbarButton 
-              icon={<RotateCcw size={13} />} 
-              tooltip="Regenerate" 
-              onClick={handleReturn} 
-            />
-          )}
+      <div className="flex items-center gap-0.5 pr-1">
+        {showRegenerate && (
           <ToolbarButton 
-            icon={<Plus size={13} />} 
-            tooltip="Duplicate" 
-            onClick={() => duplicateNode(nodeId)} 
+            icon={<RotateCcw size={13} />} 
+            tooltip="Regenerate" 
+            onClick={handleReturn} 
           />
-          <ToolbarButton 
-            icon={isCopied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />} 
-            tooltip={isCopied ? "Copied!" : "Copy Content"} 
-            onClick={handleCopy} 
-          />
-          <ToolbarButton 
-            icon={<Maximize2 size={13} />} 
-            tooltip="View and Edit" 
-            onClick={() => {}} 
-          />
-          <ToolbarButton 
-            icon={<Trash2 size={13} />} 
-            tooltip="Delete" 
-            onClick={handleDelete}
-            className="hover:bg-destructive/10 hover:text-destructive" 
-          />
-        </div>
-      </RTNodeToolbar>
-    </TooltipProvider>
+        )}
+        <ToolbarButton 
+          icon={<Plus size={13} />} 
+          tooltip="Duplicate" 
+          onClick={() => duplicateNode(nodeId)} 
+        />
+        <ToolbarButton 
+          icon={isCopied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />} 
+          tooltip={isCopied ? "Copied!" : "Copy Content"} 
+          onClick={handleCopy} 
+        />
+        <ToolbarButton 
+          icon={<Maximize2 size={13} />} 
+          tooltip="View and Edit" 
+          onClick={() => {}} 
+        />
+        <ToolbarButton 
+          icon={<Trash2 size={13} />} 
+          tooltip="Delete" 
+          onClick={handleDelete}
+          className="hover:bg-destructive/10 hover:text-destructive" 
+        />
+      </div>
+    </RTNodeToolbar>
   );
 };
 

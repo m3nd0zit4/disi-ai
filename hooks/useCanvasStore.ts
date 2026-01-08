@@ -10,9 +10,10 @@ import {
   OnEdgesChange,
   applyNodeChanges,
   applyEdgeChanges,
+  Viewport,
 } from "@xyflow/react";
 
-interface CanvasState {
+export interface CanvasState {
   nodes: Node[];
   edges: Edge[];
   onNodesChange: OnNodesChange;
@@ -28,6 +29,11 @@ interface CanvasState {
   duplicateNode: (nodeId: string) => void;
   draggedNodeId: string | null;
   setDraggedNodeId: (id: string | null) => void;
+  selectedNodeIdForToolbar: string | null;
+  setSelectedNodeIdForToolbar: (id: string | null) => void;
+  viewport: Viewport | null;
+  setViewport: (canvasId: string, viewport: Viewport) => void;
+  loadViewport: (canvasId: string) => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
@@ -35,6 +41,27 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   edges: [],
   draggedNodeId: null as string | null,
   setDraggedNodeId: (id: string | null) => set({ draggedNodeId: id }),
+  selectedNodeIdForToolbar: null as string | null,
+  setSelectedNodeIdForToolbar: (id: string | null) => set({ selectedNodeIdForToolbar: id }),
+  viewport: null as Viewport | null,
+  setViewport: (canvasId: string, viewport: Viewport) => {
+    set({ viewport });
+    try {
+      localStorage.setItem(`canvas-viewport-${canvasId}`, JSON.stringify(viewport));
+    } catch (e) {
+      console.error("Failed to save viewport to localStorage", e);
+    }
+  },
+  loadViewport: (canvasId: string) => {
+    try {
+      const saved = localStorage.getItem(`canvas-viewport-${canvasId}`);
+      if (saved) {
+        set({ viewport: JSON.parse(saved) });
+      }
+    } catch (e) {
+      console.error("Failed to load viewport from localStorage", e);
+    }
+  },
   onNodesChange: (changes: NodeChange[]) => {
     const { nodes, edges, draggedNodeId } = get();
     

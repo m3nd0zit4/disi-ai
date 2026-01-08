@@ -1,11 +1,11 @@
-import { memo, useState } from "react";
+import { memo, useMemo } from "react";
 import { Position, NodeProps } from "@xyflow/react";
-import { Sparkles, ChevronRight, Lock } from "lucide-react";
+import { Sparkles, Lock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
 import { Button } from "@/components/ui/button";
+import AIThinkingBlock from "@/components/ui/ai-thinking-block";
+import { ShiningText } from "@/components/ui/shining-text";
+import { Markdown } from "@/components/ui/markdown";
 import Image from "next/image";
 import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
 import { useTheme } from "next-themes";
@@ -14,21 +14,60 @@ import { NodeHandle } from "./NodeHandle";
 import { NodeToolbar } from "./NodeToolbar";
 import { AlertCircle, Settings } from "lucide-react";
 import Link from "next/link";
+import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
 
 import { ResponseNodeData } from "../../types";
 
-export const ResponseNode = memo(({ id, data, selected, dragging }: NodeProps) => {
-  const { text, modelId, createdAt, reasoning, isProModel, isUserFree, status, color, error, errorType } = data as unknown as ResponseNodeData;
-  const [showReasoning, setShowReasoning] = useState(false);
+export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
+  const responseData = data as ResponseNodeData;
+  const { 
+    text, 
+    modelId, 
+    createdAt, 
+    reasoning, 
+    structuredReasoning,
+    content,
+    isProModel, 
+    isUserFree, 
+    status, 
+    color, 
+    error, 
+    errorType,
+    role,
+    importance
+  } = responseData;
+  
+  const selectedNodeIdForToolbar = useCanvasStore((state: CanvasState) => state.selectedNodeIdForToolbar);
+  const edges = useCanvasStore((state: CanvasState) => state.edges);
   const { theme } = useTheme();
   const isLocked = isProModel && isUserFree;
+
+  const incomingEdges = useMemo(
+    () => edges.filter(edge => edge.target === id),
+    [edges, id]
+  );
+  const hasIncoming = incomingEdges.length > 0;
 
   const modelInfo = SPECIALIZED_MODELS.find(m => m.id === modelId);
   const modelIcon = modelInfo?.icon;
 
+  // Normalize data
+  const displayMarkdown = content?.markdown || text || "";
+  const displayReasoning = structuredReasoning?.text || reasoning || "";
+  
   return (
     <div className="group relative select-none">
-      <NodeToolbar nodeId={id} isVisible={selected && !dragging} data={data} showRegenerate={true} />
+      <NodeToolbar nodeId={id} isVisible={selectedNodeIdForToolbar === id} data={data} showRegenerate={true} />
+      
+      {hasIncoming && (
+        <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 bg-primary/5 backdrop-blur-xl border border-primary/10 rounded-full animate-in fade-in slide-in-from-bottom-1 duration-500">
+          <div className="size-1 rounded-full bg-primary/60 animate-pulse" />
+          <span className="text-[9px] font-bold text-primary/60 uppercase tracking-wider">
+            {incomingEdges.length}
+          </span>
+        </div>
+      )}
+
       <div 
         className={cn(
           "min-w-[300px] max-w-[550px] backdrop-blur-2xl transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5",
@@ -60,35 +99,24 @@ export const ResponseNode = memo(({ id, data, selected, dragging }: NodeProps) =
             </div>
           ) : (
             <>
-              {reasoning && (
-                <div className="space-y-3">
-                  <button 
-                    onClick={() => setShowReasoning(!showReasoning)}
-                    className="flex items-center gap-2 text-muted-foreground/50 hover:text-primary transition-all group/btn"
-                  >
-                    <div className="size-5 rounded-full bg-primary/5 flex items-center justify-center group-hover/btn:bg-primary/10 transition-colors">
-                      <Sparkles className="w-2.5 h-2.5" />
-                    </div>
-                    <span className="text-[10px] font-bold tracking-tight uppercase">Reasoning</span>
-                    <ChevronRight className={cn("w-2.5 h-2.5 transition-transform duration-300", showReasoning ? 'rotate-90' : '')} />
-                  </button>
+              {/* Reasoning Block or Shining Text */}
+              {displayReasoning ? (
+                <AIThinkingBlock reasoning={displayReasoning} modelName={modelInfo?.name || modelId} />
+              ) : status === "thinking" ? (
+                // If we have structuredReasoning object (even if empty text), it's a reasoning model -> AIThinkingBlock
+                // Otherwise -> ShiningText
+                structuredReasoning ? (
+                   <AIThinkingBlock modelName={modelInfo?.name || modelId} />
+                ) : (
+                   <div className="flex items-center gap-2 p-4">
+                      <ShiningText text={`${modelInfo?.name || modelId} is thinking...`} />
+                   </div>
+                )
+              ) : null}
 
-                  {showReasoning && (
-                    <div className="p-4 rounded-2xl bg-primary/[0.03] border border-primary/5 text-[12px] text-muted-foreground/80 italic leading-relaxed animate-in fade-in slide-in-from-top-2 duration-300">
-                      {reasoning}
-                    </div>
-                  )}
-                </div>
-              )}
-
+              {/* Main Content */}
               <div className="prose prose-sm dark:prose-invert max-w-none text-[14px] leading-relaxed text-foreground/90 font-medium selection:bg-primary/20">
-                {status === "thinking" && !text && (
-                  <div className="flex items-center gap-2 text-muted-foreground/40 animate-pulse py-2">
-                    <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                    <span className="text-xs font-medium">Thinking...</span>
-                  </div>
-                )}
-                {status === "streaming" && !text && (
+                {status === "streaming" && !displayMarkdown && (
                   <div className="flex items-center gap-2 text-muted-foreground/40 animate-pulse py-2">
                     <div className="size-1.5 rounded-full bg-primary animate-bounce" />
                     <span className="text-xs font-medium">Generating...</span>
@@ -118,12 +146,10 @@ export const ResponseNode = memo(({ id, data, selected, dragging }: NodeProps) =
                   </div>
                 ) : (
                   <>
-                    {text ? (
+                    {displayMarkdown ? (
                       <div className="relative">
-                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                          {text}
-                        </ReactMarkdown>
-                        {status === "streaming" && text && (
+                        <Markdown>{displayMarkdown}</Markdown>
+                        {status === "streaming" && (
                           <span className="inline-block w-1.5 h-4 ml-1 bg-primary/40 animate-pulse align-middle rounded-full" />
                         )}
                       </div>
@@ -149,9 +175,23 @@ export const ResponseNode = memo(({ id, data, selected, dragging }: NodeProps) =
                   <Sparkles className="w-2.5 h-2.5 text-primary/70" />
                 )}
               </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">{modelId}</span>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 leading-none">{modelId}</span>
+                <div className="flex items-center gap-1.5 mt-1">
+                  {role && role !== 'context' && (
+                    <span className="text-[8px] px-1 py-0.5 rounded-md bg-primary/5 text-primary/50 font-bold uppercase tracking-tighter border border-primary/5">
+                      {role as string}
+                    </span>
+                  )}
+                  {importance && importance !== 3 && (
+                    <span className="text-[8px] px-1 py-0.5 rounded-md bg-amber-500/5 text-amber-600/50 font-bold border border-amber-500/5">
+                      IMP: {importance as number}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="text-[10px] text-muted-foreground/40 font-medium">
+            <div className="text-[10px] text-muted-foreground/40 font-medium self-end pb-1">
               {createdAt ? formatDistanceToNow(createdAt, { addSuffix: true }) : 'Just now'}
             </div>
           </div>
