@@ -121,6 +121,9 @@ function AttachmentPreview({ file }: { file: { url?: string; storageId?: string;
           if (data.url) setSignedUrl(data.url);
         })
         .catch(err => console.error("Failed to load attachment URL", err));
+    } else {
+      // If no storageId, use url directly
+      setSignedUrl(file.url || null);
     }
   }, [file.storageId, file.url]);
 

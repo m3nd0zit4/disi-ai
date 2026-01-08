@@ -37,6 +37,9 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
           if (data.url) setSignedUrl(data.url);
         })
         .catch(err => console.error("Failed to load media URL", err));
+    } else {
+      // If no storageId, use mediaUrl directly
+      setSignedUrl(mediaUrl || null);
     }
   }, [mediaStorageId, mediaUrl]);
 

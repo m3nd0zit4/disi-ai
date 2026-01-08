@@ -66,7 +66,8 @@ export async function POST(req: Request) {
     }
 
     let executionId = propExecutionId;
-    let nodesToQueue = [];
+    let nodesToQueue: NodeData[] = [];
+    let canvasForContext = canvas; // Declare in outer scope
 
     if (!executionId && prompt && (newNodeId || providedInputNodeId)) {
       // Flowith-style dynamic creation: 1 Input Node -> N Response Nodes
@@ -193,50 +194,42 @@ export async function POST(req: Request) {
         });
       });
 
-      // Add all at once
-      await convex.mutation(api.canvas.addNodesAndEdgesByClerkId, { 
-        canvasId, 
+      // 3. Persist nodes and edges to DB
+      await convex.mutation(api.canvas.addNodesAndEdgesByClerkId, {
+        canvasId,
         clerkId,
         nodes: nodesToAdd,
-        edges: newEdges 
+        edges: newEdges,
       });
       
       // Re-query canvas to get the latest state with new nodes for context collection
       const updatedCanvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId });
-      const canvasForContext = updatedCanvas ?? canvas;
+      canvasForContext = updatedCanvas ?? canvas;
 
       nodesToQueue = responseNodes;
     } else if (executionId) {
-      // Standard execution flow with context collection
-      const nodes = canvas.nodes;
-      
-      if (targetNodeId) {
-        // Prioritize specific node if requested (e.g. regeneration)
-        const targetNode = nodes.find(n => n.id === targetNodeId);
-        if (targetNode) {
-          nodesToQueue = [targetNode];
-        } else {
-           console.warn(`Target node ${targetNodeId} not found in canvas`);
-        }
-      } else {
-        // Find nodes that need execution (e.g., pending response nodes)
-        nodesToQueue = nodes.filter(n => n.data?.status === "pending");
-      }
-      
-      if (nodesToQueue.length === 0 && nodes.length > 0) {
-        // Fallback or manual trigger logic
-        nodesToQueue = [nodes[nodes.length - 1]];
+      // Resume existing execution
+      const execution = await convex.query(api.canvasExecutions.getCanvasExecutionByClerkId, { executionId, clerkId });
+      if (!execution) {
+        return NextResponse.json({ error: "Execution not found" }, { status: 404 });
       }
 
-      // If prompt is provided in body (e.g. from regenerateNode), inject it into the node data
-      if (prompt && nodesToQueue.length === 1) {
-        nodesToQueue[0].data = {
-          ...nodesToQueue[0].data,
-          prompt: prompt
-        };
+      // Re-query canvas to ensure we have the latest state
+      const updatedCanvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId });
+      canvasForContext = updatedCanvas ?? canvas;
+
+      // Find pending nodes from this execution
+      const pendingNodes = canvas.nodes.filter(
+        (n: NodeData) => n.data.executionId === executionId && n.data.status === "pending"
+      );
+
+      if (pendingNodes.length === 0) {
+        return NextResponse.json({ error: "No pending nodes found for this execution" }, { status: 400 });
       }
+
+      nodesToQueue = pendingNodes;
     } else {
-      return NextResponse.json({ error: "Invalid request parameters" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid request: must provide either prompt or executionId" }, { status: 400 });
     }
 
     // 4. Queue nodes in SQS with context
