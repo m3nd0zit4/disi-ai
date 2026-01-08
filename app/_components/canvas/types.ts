@@ -8,9 +8,16 @@ export interface BaseNodeData {
   importance?: number;
 }
 
-export interface InputNodeData extends BaseNodeData {
+export interface InputNodeData {
   text: string;
+  id?: string; // Added from BaseNodeData
+  createdAt?: number; // Added from BaseNodeData
+  color?: string; // Added from BaseNodeData
   attachments?: { url?: string; storageId?: string; type?: string; name?: string }[];
+  role?: SemanticRole; // Added from BaseNodeData
+  importance?: number; // Added from BaseNodeData
+  executionId?: string;
+  status?: "pending" | "thinking" | "complete" | "error";
 }
 
 export interface ResponseNodeData extends BaseNodeData {
@@ -30,6 +37,7 @@ export interface ResponseNodeData extends BaseNodeData {
   isUserFree?: boolean;
   error?: string;
   errorType?: string;
+  executionId?: string;
 }
 
 export interface DisplayNodeData extends BaseNodeData {
@@ -40,6 +48,7 @@ export interface DisplayNodeData extends BaseNodeData {
   mediaStorageId?: string;
   status?: "pending" | "thinking" | "streaming" | "complete" | "error";
   modelId?: string;
+  executionId?: string;
 }
 
 export type NodeData = 
