@@ -375,7 +375,8 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   }, [selectedModels, hasModelsSelected, imageSize, imageQuality, imageBackground, imageOutputFormat, imageN, imageModeration]);
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement> | FileList) => {
-    const selectedFiles = e instanceof Event ? (e.target as HTMLInputElement).files : e as FileList;
+    // Use property check to discriminate between ChangeEvent and FileList
+    const selectedFiles = "target" in e ? (e.target as HTMLInputElement).files : e;
     if (!selectedFiles) return;
 
     const currentFileCount = files.length;
@@ -412,9 +413,14 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
     for (const fileObj of newFiles) {
       // Read text content if applicable
       if (isTextualFile(fileObj.file)) {
-        readFileAsText(fileObj.file).then(content => {
-          setFiles(prev => prev.map(f => f.id === fileObj.id ? { ...f, textContent: content } : f));
-        });
+        readFileAsText(fileObj.file)
+          .then(content => {
+            setFiles(prev => prev.map(f => f.id === fileObj.id ? { ...f, textContent: content } : f));
+          })
+          .catch(error => {
+            console.error(`Failed to read file ${fileObj.file.name}:`, error);
+            setFiles(prev => prev.map(f => f.id === fileObj.id ? { ...f, textContent: "" } : f));
+          });
       }
 
       // Upload to S3
@@ -509,8 +515,13 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   const handleSubmit = async () => {
     if (!prompt.trim() && files.length === 0 && pastedContent.length === 0) return;
     if (isLoading || isSubmittingRef.current) return;
-    if (files.some(f => f.uploadStatus === "uploading")) {
-      showDialog({ title: "Wait", description: "Please wait for files to finish uploading.", type: "info" });
+    if (files.some(f => f.uploadStatus === "uploading" || f.uploadStatus === "error")) {
+      const hasErrors = files.some(f => f.uploadStatus === "error");
+      showDialog({ 
+        title: hasErrors ? "Upload Failed" : "Wait", 
+        description: hasErrors ? "Some files failed to upload. Please remove them and try again." : "Please wait for files to finish uploading.", 
+        type: hasErrors ? "error" : "info" 
+      });
       return;
     }
 
@@ -600,12 +611,14 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           imageOutputFormat,
           imageN,
           imageModeration,
-          attachments: files.map(f => ({ 
-            storageId: f.storageId!, 
-            type: f.type.startsWith("image/") ? "image" : "file", 
-            name: f.file.name, 
-            size: f.file.size 
-          })),
+          attachments: files
+            .filter(f => f.uploadStatus === "complete" && f.storageId)
+            .map(f => ({ 
+              storageId: f.storageId as string, 
+              type: f.type.startsWith("image/") ? "image" : "file", 
+              name: f.file.name, 
+              size: f.file.size 
+            })),
         })
       });
 

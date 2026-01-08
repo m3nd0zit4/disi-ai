@@ -19,6 +19,7 @@ import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
 import { ResponseNodeData } from "../../types";
 
 export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
+  const responseData = data as ResponseNodeData;
   const { 
     text, 
     modelId, 
@@ -34,7 +35,7 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
     errorType,
     role,
     importance
-  } = data as unknown as ResponseNodeData;
+  } = responseData;
   
   const selectedNodeIdForToolbar = useCanvasStore((state: CanvasState) => state.selectedNodeIdForToolbar);
   const edges = useCanvasStore((state: CanvasState) => state.edges);

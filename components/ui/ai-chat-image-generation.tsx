@@ -21,12 +21,15 @@ export const ImageGeneration = (
     React.useEffect(() => {
       if (externalLoadingState) return; // Skip internal timer if external state is provided
 
-      const startingTimeout = setTimeout(() => {
+      let startingTimeout: NodeJS.Timeout | null = null;
+      let interval: NodeJS.Timeout | null = null;
+
+      startingTimeout = setTimeout(() => {
         setInternalLoadingState("generating");
 
         const startTime = Date.now();
 
-        const interval = setInterval(() => {
+        interval = setInterval(() => {
           const elapsedTime = Date.now() - startTime;
           const progressPercentage = Math.min(
             100,
@@ -36,15 +39,17 @@ export const ImageGeneration = (
           setProgress(progressPercentage);
 
           if (progressPercentage >= 100) {
-            clearInterval(interval);
+            if (interval) clearInterval(interval);
             setInternalLoadingState("completed");
           }
         }, 16);
-
-        return () => clearInterval(interval);
       }, 3000);
 
-      return () => clearTimeout(startingTimeout);
+      // Cleanup function that clears both timeout and interval
+      return () => {
+        if (startingTimeout) clearTimeout(startingTimeout);
+        if (interval) clearInterval(interval);
+      };
     }, [duration, externalLoadingState]);
 
     return (

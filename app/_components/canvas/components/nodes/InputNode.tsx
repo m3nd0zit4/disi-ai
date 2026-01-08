@@ -8,20 +8,11 @@ import { NodeToolbar } from "./NodeToolbar";
 import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
 import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
-import { SemanticRole } from "@/lib/reasoning/types";
-
-interface InputNodeData {
-  text: string;
-  createdAt?: number;
-  color?: string;
-  attachments?: { url?: string; storageId?: string; type?: string; name?: string }[];
-  role?: SemanticRole;
-  importance?: number;
-}
+import { InputNodeData } from "../../types";
 
 export const InputNode = memo(({ id, data, selected }: NodeProps) => {
-  const nodeData = data as unknown as InputNodeData;
-  const { text, createdAt, color, attachments, role, importance } = nodeData;
+  const inputData = data as InputNodeData;
+  const { text, createdAt, color, attachments, role, importance } = inputData;
   const selectedNodeIdForToolbar = useCanvasStore((state: CanvasState) => state.selectedNodeIdForToolbar);
   const edges = useCanvasStore((state: CanvasState) => state.edges);
   const { user } = useUser();

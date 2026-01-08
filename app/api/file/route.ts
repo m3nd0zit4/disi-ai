@@ -16,8 +16,16 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing key" }, { status: 400 });
     }
 
-    // Optional: Add logic to verify user has access to this key
-    // For now, we assume if they have the key and are logged in, they can read it.
+    // Verify ownership: S3 keys are formatted as userId/uuid-filename
+    const keyParts = key.split("/");
+    if (keyParts.length < 2) {
+      return NextResponse.json({ error: "Invalid key format" }, { status: 400 });
+    }
+
+    const fileOwnerId = keyParts[0];
+    if (fileOwnerId !== userId) {
+      return NextResponse.json({ error: "Unauthorized access to file" }, { status: 403 });
+    }
     
     const url = await generatePresignedDownloadUrl(key);
     

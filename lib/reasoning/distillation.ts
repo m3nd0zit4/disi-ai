@@ -14,6 +14,7 @@ const ROLE_PRIORITY: Record<SemanticRole, number> = {
 interface DistillationOptions {
   maxTokens?: number;
   preserveRoles?: SemanticRole[];
+  preservedItemOverage?: number; // Allow preserved items to exceed budget by this amount
 }
 
 /**
@@ -25,7 +26,8 @@ export function distillContext(
 ): ReasoningContext {
   const { 
     maxTokens = 4000, 
-    preserveRoles = ["instruction", "constraint"] 
+    preserveRoles = ["instruction", "constraint"],
+    preservedItemOverage = 500 
   } = options;
 
   // 1. Estimate tokens and check if distillation is needed
@@ -47,17 +49,39 @@ export function distillContext(
     return b.importance - a.importance;
   });
 
-  // 3. Layer 2: Filtering & Truncating
+  // 3. Layer 2: Filtering & Truncating with hard cap for preserved items
   const distilledItems: ReasoningContextItem[] = [];
   let tokenCount = 0;
+  let preservedTokenCount = 0;
+  const hardCap = maxTokens + preservedItemOverage;
 
   for (const item of rankedItems) {
     const itemTokens = estimateTokens([item]);
     
-    // If it's a preserved role, we try to keep it even if it exceeds budget (within reason)
+    // If it's a preserved role, we try to keep it but respect the hard cap
     const isPreserved = preserveRoles.includes(item.role);
     
-    if (tokenCount + itemTokens <= maxTokens || isPreserved) {
+    if (isPreserved) {
+      // Check if adding this preserved item would exceed the hard cap
+      if (tokenCount + itemTokens <= hardCap) {
+        distilledItems.push(item);
+        tokenCount += itemTokens;
+        preservedTokenCount += itemTokens;
+        
+        // Warn if we're exceeding the soft limit (maxTokens) due to preserved items
+        if (tokenCount > maxTokens) {
+          console.warn(
+            `[Distillation] Preserved item "${item.role}" caused token count (${tokenCount}) to exceed budget (${maxTokens}). ` +
+            `Hard cap: ${hardCap}. Preserved tokens: ${preservedTokenCount}.`
+          );
+        }
+      } else {
+        console.warn(
+          `[Distillation] Skipping preserved item "${item.role}" as it would exceed hard cap (${hardCap}). ` +
+          `Current: ${tokenCount}, Item: ${itemTokens}`
+        );
+      }
+    } else if (tokenCount + itemTokens <= maxTokens) {
       distilledItems.push(item);
       tokenCount += itemTokens;
     } else {

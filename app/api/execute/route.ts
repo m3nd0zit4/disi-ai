@@ -228,10 +228,12 @@ export async function POST(req: Request) {
       ? getRequiredEnv("SQS_QUEUE_URL_PRO")
       : getRequiredEnv("SQS_QUEUE_URL_FREE");
 
+    // Import context resolution once before processing nodes
+    const { resolveNodeContext } = await import("@/lib/reasoning/context");
+
     const jobs = await Promise.all(
       nodesToQueue.map(async (node) => {
-        // Collect context using the new reasoning logic
-        const { resolveNodeContext } = await import("@/lib/reasoning/context");
+        // Collect context using the reasoning logic
         const reasoningContext = resolveNodeContext(node.id, canvas.nodes, canvas.edges);
         
         // Map to the format expected by the worker (or update worker to handle ReasoningContext)

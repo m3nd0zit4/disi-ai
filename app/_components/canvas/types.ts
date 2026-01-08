@@ -10,6 +10,7 @@ export interface BaseNodeData {
 
 export interface InputNodeData extends BaseNodeData {
   text: string;
+  attachments?: { url?: string; storageId?: string; type?: string; name?: string }[];
 }
 
 export interface ResponseNodeData extends BaseNodeData {

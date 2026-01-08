@@ -15,7 +15,8 @@ import { ImageGeneration } from "@/components/ui/ai-chat-image-generation";
 import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
 
 export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) => {
-  const { type, content, text, mediaUrl, mediaStorageId, status, modelId, createdAt, color, role, importance } = data as unknown as DisplayNodeData;
+  const displayData = data as DisplayNodeData;
+  const { type, content, text, mediaUrl, mediaStorageId, status, modelId, createdAt, color, role, importance } = displayData;
   const selectedNodeIdForToolbar = useCanvasStore((state: CanvasState) => state.selectedNodeIdForToolbar);
   const edges = useCanvasStore((state: CanvasState) => state.edges);
   const modelInfo = SPECIALIZED_MODELS.find(m => m.id === modelId);
