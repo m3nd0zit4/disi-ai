@@ -37,6 +37,30 @@ export interface SendToQueueOptions {
   allowFallback?: boolean;
 }
 
+/**
+ * Helper function to send message to SQS
+ */
+async function sendToSQS(
+  queueUrl: string,
+  messageBody: { messageId: string; [key: string]: unknown },
+  messageGroupId?: string
+): Promise<string> {
+  const isFifo = queueUrl.endsWith(".fifo");
+  
+  const command = new SendMessageCommand({
+    QueueUrl: queueUrl,
+    MessageBody: JSON.stringify(messageBody),
+    ...(isFifo && {
+      MessageGroupId: messageGroupId || "default",
+      MessageDeduplicationId: `${messageBody.messageId}-${Date.now()}`,
+    }),
+  });
+
+  const response = await sqsClient.send(command);
+  console.log(`[SQS] Message sent to ${queueUrl}, ID: ${response.MessageId}`);
+  return response.MessageId!;
+}
+
 export async function sendToQueue(
   queueUrl: string, 
   messageBody: { messageId: string; [key: string]: unknown }, 
@@ -47,45 +71,60 @@ export async function sendToQueue(
 
   if (!useConvexQueue) {
     try {
-      const isFifo = queueUrl.endsWith(".fifo");
-      
-      const command = new SendMessageCommand({
-        QueueUrl: queueUrl,
-        MessageBody: JSON.stringify(messageBody),
-        ...(isFifo && {
-          MessageGroupId: messageGroupId || "default",
-          MessageDeduplicationId: `${messageBody.messageId}-${Date.now()}`,
-        }),
-      });
-
-      const response = await sqsClient.send(command);
-      console.log(`[SQS] Message sent to ${queueUrl}, ID: ${response.MessageId}`);
-      
+      const messageId = await sendToSQS(queueUrl, messageBody, messageGroupId);
       return {
-        messageId: response.MessageId!,
+        messageId,
         queueType: 'sqs'
       };
     } catch (error) {
       console.error("[SQS] Error sending message:", error);
+      
+      // Preserve the original error
+      const sqsError = error instanceof Error ? error : new Error(String(error));
       
       // Emit metric for SQS failure
       console.warn(`[SQS] SQS failure detected. Fallback allowed: ${options.allowFallback}`);
       
       // If fallback is disabled, rethrow the error
       if (!options.allowFallback) {
-        throw error;
+        throw sqsError;
       }
       
-      // Otherwise, fall through to Convex fallback
+      // Attempt Convex fallback
+      console.log(`[WorkerQueue] Attempting Convex fallback due to SQS error`);
+      const convex = getConvexClient();
+      
+      if (!convex) {
+        const fallbackError = new Error("Convex client unavailable and SQS failed");
+        console.error("[WorkerQueue]", fallbackError.message);
+        throw fallbackError;
+      }
+      
+      try {
+        const taskId = await convex.mutation(api.worker.enqueueTask, {
+          queueUrl,
+          messageBody: JSON.stringify(messageBody),
+          messageGroupId,
+        });
+        
+        return {
+          messageId: taskId,
+          queueType: 'convex',
+          error: sqsError // Preserve original SQS error
+        };
+      } catch (convexError) {
+        console.error("[WorkerQueue] Failed to enqueue to Convex fallback:", convexError);
+        throw convexError;
+      }
     }
   }
 
-  // Use Convex Queue Fallback
-  console.log(`[WorkerQueue] Enqueuing task to Convex fallback for ${queueUrl}`);
+  // Intentional Convex usage (not error-driven fallback)
+  console.log(`[WorkerQueue] Using Convex queue (intentional) for ${queueUrl}`);
   const convex = getConvexClient();
   
   if (!convex) {
-    const error = new Error("Convex client unavailable and SQS failed");
+    const error = new Error("Convex client unavailable");
     console.error("[WorkerQueue]", error.message);
     throw error;
   }
@@ -100,9 +139,10 @@ export async function sendToQueue(
     return {
       messageId: taskId,
       queueType: 'convex'
+      // No error field - this is intentional Convex usage
     };
   } catch (convexError) {
-    console.error("[WorkerQueue] Failed to enqueue to Convex fallback:", convexError);
+    console.error("[WorkerQueue] Failed to enqueue to Convex:", convexError);
     throw convexError;
   }
 }

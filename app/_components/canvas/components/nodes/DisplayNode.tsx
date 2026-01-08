@@ -29,7 +29,8 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
   const [signedUrl, setSignedUrl] = useState<string | null>(mediaUrl || null);
 
   useEffect(() => {
-    if (!signedUrl && mediaStorageId) {
+    // Fetch fresh signed URL whenever mediaStorageId is present
+    if (mediaStorageId) {
       fetch(`/api/file?key=${encodeURIComponent(mediaStorageId)}`)
         .then(res => res.json())
         .then(data => {
@@ -37,7 +38,7 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
         })
         .catch(err => console.error("Failed to load media URL", err));
     }
-  }, [mediaStorageId, signedUrl]);
+  }, [mediaStorageId, mediaUrl]);
 
   const displayContent = content || text;
   const isPending = status === "pending" || status === "thinking";
@@ -161,12 +162,12 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
                 <div className="flex items-center gap-1.5">
                   {role && role !== 'context' && (
                     <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/80 font-semibold uppercase tracking-wider border border-white/10 backdrop-blur-md">
-                      {role as string}
+                      {role}
                     </span>
                   )}
                   {importance && importance !== 3 && (
                     <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-200/90 font-semibold border border-amber-500/20 backdrop-blur-md">
-                      Imp: {importance as number}
+                      Imp: {importance}
                     </span>
                   )}
                 </div>

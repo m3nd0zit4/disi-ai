@@ -84,12 +84,12 @@ export const InputNode = memo(({ id, data, selected }: NodeProps) => {
                 <div className="flex items-center gap-1.5 mt-0.5">
                   {role && role !== 'context' && (
                     <span className="text-[8px] px-1 py-0.5 rounded-md bg-primary/5 text-primary/50 font-bold uppercase tracking-tighter border border-primary/5">
-                      {role as string}
+                      {role}
                     </span>
                   )}
                   {importance && importance !== 3 && (
                     <span className="text-[8px] px-1 py-0.5 rounded-md bg-amber-500/5 text-amber-600/50 font-bold border border-amber-500/5">
-                      IMP: {importance as number}
+                      IMP: {importance}
                     </span>
                   )}
                 </div>
@@ -113,8 +113,8 @@ function AttachmentPreview({ file }: { file: { url?: string; storageId?: string;
   const [signedUrl, setSignedUrl] = React.useState<string | null>(file.url || null);
 
   React.useEffect(() => {
-    if (!signedUrl && file.storageId) {
-      // Fetch signed URL
+    // Fetch fresh signed URL whenever storageId is present
+    if (file.storageId) {
       fetch(`/api/file?key=${encodeURIComponent(file.storageId)}`)
         .then(res => res.json())
         .then(data => {
@@ -122,7 +122,7 @@ function AttachmentPreview({ file }: { file: { url?: string; storageId?: string;
         })
         .catch(err => console.error("Failed to load attachment URL", err));
     }
-  }, [file.storageId, signedUrl]);
+  }, [file.storageId, file.url]);
 
   if (!signedUrl) return <div className="h-20 w-20 bg-muted animate-pulse rounded-lg" />;
 

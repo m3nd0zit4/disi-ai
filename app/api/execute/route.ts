@@ -16,6 +16,15 @@ function getRequiredEnv(key: string): string {
 
 const convex = new ConvexHttpClient(getRequiredEnv("NEXT_PUBLIC_CONVEX_URL"));
 
+// Default model configuration
+const DEFAULT_MODEL = {
+  category: "reasoning" as const,
+  modelId: "gpt-5.2",
+  provider: "GPT",
+  providerModelId: "gpt-5.2",
+  isEnabled: true,
+};
+
 export async function POST(req: Request) {
   try {
     const { userId: clerkId } = await auth();
@@ -61,15 +70,12 @@ export async function POST(req: Request) {
 
     if (!executionId && prompt && (newNodeId || providedInputNodeId)) {
       // Flowith-style dynamic creation: 1 Input Node -> N Response Nodes
-      const modelsToProcess = Array.isArray(models) && models.length > 0 ? models : [{
-        category: "reasoning",
-        modelId: "gpt-5.2",
-        provider: "GPT",
-        providerModelId: "gpt-5.2",
-        isEnabled: true,
-      }];
+      const modelsToProcess = Array.isArray(models) && models.length > 0 ? models : [DEFAULT_MODEL];
 
       executionId = await convex.mutation(api.canvasExecutions.createCanvasExecutionByClerkId, { canvasId, clerkId });
+
+      // Consolidate parent IDs once
+      const parents = parentNodeIds || (parentNodeId ? [parentNodeId] : []);
 
       // Calculate position based on parent node or use passed position
       let startX = 100;
@@ -79,7 +85,6 @@ export async function POST(req: Request) {
         startX = body.position.x;
         startY = body.position.y;
       } else {
-        const parents = parentNodeIds || (parentNodeId ? [parentNodeId] : []);
         if (parents.length > 0) {
             const parentNodes = canvas.nodes.filter(n => parents.includes(n.id));
             if (parentNodes.length > 0) {
@@ -117,7 +122,6 @@ export async function POST(req: Request) {
         });
 
         // Create edges from all parent nodes to the NEW input node
-        const parents = parentNodeIds || (parentNodeId ? [parentNodeId] : []);
         parents.forEach((pid: string) => {
           newEdges.push({
             id: `edge-${pid}-${inputNodeId}`,
@@ -129,15 +133,30 @@ export async function POST(req: Request) {
       } else {
         // Update existing input node's text and attachments if they changed
         // This ensures the DB is consistent with the prompt sent
-        await convex.mutation(api.canvas.updateNodeDataByClerkId, {
-          canvasId,
-          clerkId,
-          nodeId: providedInputNodeId,
-          data: {
-            text: prompt,
-            attachments,
-          }
-        });
+        try {
+          await convex.mutation(api.canvas.updateNodeDataByClerkId, {
+            canvasId,
+            clerkId,
+            nodeId: providedInputNodeId,
+            data: {
+              text: prompt,
+              attachments,
+            }
+          });
+        } catch (updateError) {
+          console.error(
+            `[Execute] Failed to update input node data:`,
+            {
+              canvasId,
+              clerkId,
+              nodeId: providedInputNodeId,
+              prompt: prompt.substring(0, 100),
+              attachmentsCount: attachments?.length || 0,
+              error: updateError
+            }
+          );
+          throw updateError;
+        }
       }
 
       const responseNodes = modelsToProcess.map((model, i) => {
@@ -184,10 +203,7 @@ export async function POST(req: Request) {
       
       // Re-query canvas to get the latest state with new nodes for context collection
       const updatedCanvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId });
-      if (updatedCanvas) {
-        canvas.nodes = updatedCanvas.nodes;
-        canvas.edges = updatedCanvas.edges;
-      }
+      const canvasForContext = updatedCanvas ?? canvas;
 
       nodesToQueue = responseNodes;
     } else if (executionId) {
@@ -234,7 +250,7 @@ export async function POST(req: Request) {
     const jobs = await Promise.all(
       nodesToQueue.map(async (node) => {
         // Collect context using the reasoning logic
-        const reasoningContext = resolveNodeContext(node.id, canvas.nodes, canvas.edges);
+        const reasoningContext = resolveNodeContext(node.id, canvasForContext.nodes, canvasForContext.edges);
         
         // Map to the format expected by the worker (or update worker to handle ReasoningContext)
         // For now, we'll pass the structured context in the inputs.
@@ -276,7 +292,7 @@ export async function POST(req: Request) {
         
         return {
           nodeId: node.id,
-          jobId: sqsResponse.MessageId,
+          jobId: sqsResponse.messageId,
         };
       })
     );

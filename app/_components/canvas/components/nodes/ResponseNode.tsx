@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { Position, NodeProps } from "@xyflow/react";
 import { Sparkles, Lock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -42,7 +42,10 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
   const { theme } = useTheme();
   const isLocked = isProModel && isUserFree;
 
-  const incomingEdges = edges.filter(edge => edge.target === id);
+  const incomingEdges = useMemo(
+    () => edges.filter(edge => edge.target === id),
+    [edges, id]
+  );
   const hasIncoming = incomingEdges.length > 0;
 
   const modelInfo = SPECIALIZED_MODELS.find(m => m.id === modelId);
