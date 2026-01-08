@@ -116,7 +116,12 @@ function AttachmentPreview({ file }: { file: { url?: string; storageId?: string;
     // Fetch fresh signed URL whenever storageId is present
     if (file.storageId) {
       fetch(`/api/file?key=${encodeURIComponent(file.storageId)}`)
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`Failed to fetch signed URL: ${res.status} ${res.statusText}`);
+          }
+          return res.json();
+        })
         .then(data => {
           if (data.url) setSignedUrl(data.url);
         })

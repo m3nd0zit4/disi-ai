@@ -32,7 +32,12 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
     // Fetch fresh signed URL whenever mediaStorageId is present
     if (mediaStorageId) {
       fetch(`/api/file?key=${encodeURIComponent(mediaStorageId)}`)
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`Failed to fetch signed URL: ${res.status} ${res.statusText}`);
+          }
+          return res.json();
+        })
         .then(data => {
           if (data.url) setSignedUrl(data.url);
         })
