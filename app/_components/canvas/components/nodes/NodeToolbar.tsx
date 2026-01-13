@@ -19,21 +19,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { SemanticRole } from "@/lib/reasoning/types";
 
-interface NodeData {
-  text?: string;
-  userInput?: string;
-  color?: string;
-  role?: SemanticRole;
-  importance?: number;
-  [key: string]: unknown;
-}
 
 interface NodeToolbarProps {
-  nodeId: string;
+  nodeIds: string[];
   isVisible?: boolean;
-  data: NodeData;
 }
 
 const COLORS = [
@@ -45,25 +35,44 @@ const COLORS = [
 ];
 
 export const NodeToolbar = ({ 
-  nodeId, 
+  nodeIds, 
   isVisible, 
-  data, 
   showRegenerate,
   hideColors 
 }: NodeToolbarProps & { 
   showRegenerate?: boolean;
   hideColors?: boolean;
 }) => {
+  const nodes = useCanvasStore(state => state.nodes);
   const updateNodeData = useCanvasStore(state => state.updateNodeData);
   const duplicateNode = useCanvasStore(state => state.duplicateNode);
   const { deleteNode, regenerateNode } = useConnections();
   const { showDialog } = useDialog();
   const [isCopied, setIsCopied] = useState(false);
 
+  if (!nodeIds || nodeIds.length === 0) {
+    return null;
+  }
+
+  // Use data from the first node for initial states (like color)
+  const firstId = nodeIds[0];
+  const firstNode = nodes.find(n => n.id === firstId);
+  
+  if (!firstNode) {
+    return null;
+  }
+
+  const data = firstNode.data || {};
+
+
   const handleCopy = async () => {
-    const text = data.text || data.userInput || "";
+    const texts = nodeIds.map((id: string) => {
+      const node = nodes.find(n => n.id === id);
+      return node?.data?.text || node?.data?.userInput || "";
+    }).filter(Boolean);
+    
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(texts.join("\n\n"));
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
@@ -74,34 +83,35 @@ export const NodeToolbar = ({
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     showDialog({
-      title: "Delete Node",
-      description: "Are you sure you want to delete this node? This action cannot be undone.",
+      title: nodeIds.length > 1 ? `Delete ${nodeIds.length} Nodes` : "Delete Node",
+      description: "Are you sure you want to delete the selected nodes? This action cannot be undone.",
       type: "warning",
       onConfirm: () => {
-        deleteNode(nodeId);
+        nodeIds.forEach((id: string) => deleteNode(id));
       }
     });
   };
 
   const handleReturn = async () => {
     try {
-      await regenerateNode(nodeId);
+      await Promise.all(nodeIds.map((id: string) => regenerateNode(id)));
     } catch (error) {
       console.error("Failed to regenerate node:", error);
       showDialog({
         title: "Regeneration Failed",
-        description: "An error occurred while trying to regenerate the node. Please try again.",
+        description: "An error occurred while trying to regenerate the nodes. Please try again.",
         type: "error"
       });
     }
   };
 
   const handleColorChange = (color: string) => {
-    updateNodeData(nodeId, { color });
+    nodeIds.forEach((id: string) => updateNodeData(id, { color }));
   };
 
   return (
     <RTNodeToolbar 
+      nodeId={nodeIds[0]}
       isVisible={isVisible} 
       position={Position.Top}
       className="flex items-center gap-1 p-1 bg-background/60 backdrop-blur-2xl border border-primary/5 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.12)] mb-3 animate-in fade-in duration-300"
@@ -144,7 +154,7 @@ export const NodeToolbar = ({
         <ToolbarButton 
           icon={<Plus size={13} />} 
           tooltip="Duplicate" 
-          onClick={() => duplicateNode(nodeId)} 
+          onClick={() => nodeIds.forEach((id: string) => duplicateNode(id))} 
         />
         <ToolbarButton 
           icon={isCopied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />} 

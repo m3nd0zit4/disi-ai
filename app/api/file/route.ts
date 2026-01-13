@@ -11,6 +11,7 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const key = searchParams.get("key");
+    const shouldRedirect = searchParams.get("redirect") === "true";
 
     if (!key) {
       return NextResponse.json({ error: "Missing key" }, { status: 400 });
@@ -23,12 +24,16 @@ export async function GET(req: Request) {
     }
 
     const fileOwnerId = keyParts[0];
-    if (fileOwnerId !== userId) {
+    if (fileOwnerId !== userId && fileOwnerId !== "generated") {
       return NextResponse.json({ error: "Unauthorized access to file" }, { status: 403 });
     }
     
     const url = await generatePresignedDownloadUrl(key);
     
+    if (shouldRedirect) {
+      return NextResponse.redirect(url);
+    }
+
     return NextResponse.json({ url });
   } catch (error) {
     console.error("Error generating download URL:", error);

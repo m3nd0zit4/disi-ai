@@ -14,8 +14,10 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useTheme } from "next-themes";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
+import { useDialog } from "@/hooks/useDialog";
 import { nodeTypes, edgeTypes, defaultEdgeOptions } from "./Flow-Instance";
 import { useConnections } from "../providers/ConnectionsProvider";
+import { NodeToolbar } from "./nodes/NodeToolbar";
 
 interface EditorCanvasProps {
   canvasId: string;
@@ -38,6 +40,7 @@ export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCan
     onPaneClick,
     onViewportChange
   } = useConnections();
+  const { showDialog } = useDialog();
 
   const { setCenter } = useReactFlow();
   const prevNodeIdsRef = useRef<Set<string>>(new Set());
@@ -75,7 +78,25 @@ export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCan
 
       setNodes(mergedNodes);
     }
-    if (initialEdges) setEdges(initialEdges as Edge[]);
+    if (initialEdges) {
+      const currentEdges = useCanvasStore.getState().edges;
+      const previewEdges = currentEdges.filter(e => 
+        e.id.startsWith('edge-preview-') || 
+        e.source.startsWith('preview-') || 
+        e.target.startsWith('preview-')
+      );
+
+      const mergedEdges = [...(initialEdges as Edge[])];
+      
+      // Add preview edges if they don't exist in the merged list
+      previewEdges.forEach(previewEdge => {
+        if (!mergedEdges.find(e => e.id === previewEdge.id)) {
+          mergedEdges.push(previewEdge);
+        }
+      });
+
+      setEdges(mergedEdges);
+    }
     
     // Load viewport from localStorage
     useCanvasStore.getState().loadViewport(canvasId);
@@ -119,6 +140,30 @@ export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCan
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         onViewportChange={onViewportChange}
+        onBeforeDelete={async ({ nodes: nodesToDelete, edges: edgesToDelete }) => {
+          const nodeCount = nodesToDelete.length;
+          const edgeCount = edgesToDelete.length;
+          
+          if (nodeCount === 0 && edgeCount === 0) return true;
+
+          const title = nodeCount > 0 
+            ? `Delete ${nodeCount} node${nodeCount > 1 ? 's' : ''}?` 
+            : `Delete ${edgeCount} connection${edgeCount > 1 ? 's' : ''}?`;
+          
+          const description = nodeCount > 0
+            ? "This will permanently remove the selected nodes and all their connections. This action cannot be undone."
+            : "This will permanently remove the selected connections. This action cannot be undone.";
+
+          return new Promise<boolean>((resolve) => {
+            showDialog({
+              title,
+              description,
+              type: "warning",
+              onConfirm: () => resolve(true),
+              onClose: () => resolve(false),
+            });
+          });
+        }}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView={false}
@@ -180,7 +225,16 @@ export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCan
           color={theme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.08)'} 
         />
 
-
+        {(() => {
+          const selectedRealNodes = nodes.filter(n => n.selected && !n.id.startsWith('preview-'));
+          if (selectedRealNodes.length === 0) return null;
+          return (
+            <NodeToolbar 
+              nodeIds={selectedRealNodes.map(n => n.id)} 
+              isVisible={true} 
+            />
+          );
+        })()}
       </ReactFlow>
     </div>
   );

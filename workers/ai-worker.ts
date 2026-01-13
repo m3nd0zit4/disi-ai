@@ -13,6 +13,7 @@ import { SPECIALIZED_MODELS } from "@/shared/ai-models";
 import { buildReasoningPrompt } from "@/lib/reasoning/prompt";
 import { distillContext } from "@/lib/reasoning/distillation";
 import { ReasoningContext, ReasoningContextItem } from "@/lib/reasoning/types";
+import { executeRLM, RLMMode } from "@/lib/rlm";
 
 interface NodeExecutionInputs {
   prompt?: string;
@@ -30,6 +31,9 @@ interface NodeExecutionInputs {
   imageN?: number;
   imageModeration?: string;
   query?: string;
+  // RLM options
+  rlmEnabled?: boolean;
+  rlmMode?: RLMMode;
 }
 
 // Load environment variables
@@ -309,24 +313,60 @@ async function processNodeExecution(data: {
 
         // Handle Text/Chat Generation (Default)
         
-        // Build messages from context using the new reasoning logic
+        // Build context using the reasoning logic
         const rawContext: ReasoningContext = (inputs.reasoningContext as ReasoningContext) || {
             targetNodeId: nodeId,
             items: (inputs.context as ReasoningContextItem[]) || []
         };
 
+        const userPrompt = prompt || text || "";
+
+        // ========== RLM EXECUTION PATH ==========
+        // RLM is the new default for text generation
+        const useRLM = inputs.rlmEnabled !== false; // Default to enabled
+        
+        if (useRLM) {
+          log("INFO", `Using RLM execution (mode: ${inputs.rlmMode || 'auto'})`);
+          
+          const rlmResult = await executeRLM(userPrompt, rawContext, {
+            config: {
+              mode: inputs.rlmMode || (rawContext.items.length <= 2 ? "simple" : "full"),
+              modelId: modelDef?.providerModelId || modelId || "gpt-4o",
+              provider: provider || "openai",
+              enableReasoning: false,
+            },
+            apiKey: effectiveApiKey,
+            systemPrompt,
+          });
+
+          const fullText = rlmResult.content.markdown;
+          const tokenCount = rlmResult.metadata?.tokensUsed || Math.ceil(fullText.length / 4);
+
+          log("INFO", `RLM completed: mode=${rlmResult.metadata?.mode}, depth=${rlmResult.metadata?.depthUsed}, subCalls=${rlmResult.metadata?.subCalls}`);
+
+          // Update node with RLM result
+          await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
+            canvasId: canvasId as Id<"canvas">,
+            nodeId,
+            data: { text: fullText, status: "complete" },
+          }), "updateNodeDataInternal (RLM complete)");
+
+          result = {
+            text: fullText,
+            tokens: tokenCount,
+            cost: 0,
+          };
+          break;
+        }
+
+        // ========== LEGACY STREAMING PATH (fallback) ==========
         // Apply 3-layer distillation
-        const contextBudget = 4000; // TODO: Make this dynamic based on model
+        const contextBudget = 4000;
         const distilledContext = distillContext(rawContext, { maxTokens: contextBudget });
 
         log("INFO", `Context distilled: ${rawContext.items.length} -> ${distilledContext.items.length} items (${distilledContext.totalTokens} tokens)`);
 
-        const messages = buildReasoningPrompt(systemPrompt, distilledContext, prompt || text || "");
-
-
-        // Add the current prompt/text
-        // Message construction is now handled by buildReasoningPrompt
-
+        const messages = buildReasoningPrompt(systemPrompt, distilledContext, userPrompt);
 
         if (messages.length === 0) {
           throw new Error("No messages to send to AI");

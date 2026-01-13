@@ -2,7 +2,6 @@ import React, { memo, useState, useEffect } from "react";
 import { Position, NodeProps } from "@xyflow/react";
 import { cn } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
-import { NodeToolbar } from "./NodeToolbar";
 import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
 import Image from "next/image";
 import { useTheme } from "next-themes";
@@ -11,13 +10,13 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { formatDistanceToNow } from "date-fns";
-import { ImageGeneration } from "@/components/ui/ai-chat-image-generation";
 import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
+import { Maximize2 } from "lucide-react";
+import { Dialog } from "../../../ui/Dialog";
 
 export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) => {
-  const displayData = data as DisplayNodeData;
+  const displayData = data as unknown as DisplayNodeData;
   const { type, content, text, mediaUrl, mediaStorageId, status, modelId, createdAt, color, role, importance } = displayData;
-  const selectedNodeIdForToolbar = useCanvasStore((state: CanvasState) => state.selectedNodeIdForToolbar);
   const edges = useCanvasStore((state: CanvasState) => state.edges);
   const modelInfo = SPECIALIZED_MODELS.find(m => m.id === modelId);
   const { theme } = useTheme();
@@ -26,12 +25,14 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
   const incomingEdges = edges.filter(edge => edge.target === id);
   const hasIncoming = incomingEdges.length > 0;
 
-  const [signedUrl, setSignedUrl] = useState<string | null>(mediaUrl || null);
+  const [fetchedUrl, setFetchedUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+
     // Fetch fresh signed URL whenever mediaStorageId is present
     if (mediaStorageId) {
-      fetch(`/api/file?key=${encodeURIComponent(mediaStorageId)}`)
+      fetch(`/api/file?key=${encodeURIComponent(mediaStorageId)}`, { signal: controller.signal })
         .then(res => {
           if (!res.ok) {
             throw new Error(`Failed to fetch signed URL: ${res.status} ${res.statusText}`);
@@ -39,14 +40,21 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
           return res.json();
         })
         .then(data => {
-          if (data.url) setSignedUrl(data.url);
+          if (!controller.signal.aborted && data.url) {
+            setFetchedUrl(data.url);
+          }
         })
-        .catch(err => console.error("Failed to load media URL", err));
-    } else {
-      // If no storageId, use mediaUrl directly
-      setSignedUrl(mediaUrl || null);
+        .catch(err => {
+          if (err.name !== 'AbortError') {
+            console.error("Failed to load media URL", err);
+          }
+        });
     }
-  }, [mediaStorageId, mediaUrl]);
+
+    return () => controller.abort();
+  }, [mediaStorageId]);
+
+  const signedUrl = mediaStorageId ? fetchedUrl : (mediaUrl || null);
 
   const displayContent = content || text;
   const isPending = status === "pending" || status === "thinking";
@@ -57,16 +65,43 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
   // Determine the effective type if missing
   const effectiveType = type || (mediaUrl || mediaStorageId ? "image" : (displayContent ? "text" : undefined));
 
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+
+  // Viewport dimensions for images
+  const VIEWPORT_WIDTH = 300;
+
+  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(
+    displayData.metadata?.width && displayData.metadata?.height 
+      ? { width: displayData.metadata.width, height: displayData.metadata.height }
+      : null
+  );
+
+  const updateNodeData = useCanvasStore((state: CanvasState) => state.updateNodeData);
+
+  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    const img = e.currentTarget;
+    const { naturalWidth, naturalHeight } = img;
+    
+    if (!dimensions || dimensions.width !== naturalWidth || dimensions.height !== naturalHeight) {
+      const newDimensions = { width: naturalWidth, height: naturalHeight };
+      setDimensions(newDimensions);
+      
+      // Persist to store/DB
+      updateNodeData(id, { 
+        metadata: { 
+          ...displayData.metadata,
+          width: naturalWidth, 
+          height: naturalHeight 
+        } 
+      });
+    }
+  };
+
+  const aspectRatio = (dimensions && dimensions.width > 0) ? dimensions.height / dimensions.width : 1;
+  const nodeHeight = (dimensions && dimensions.width > 0) ? VIEWPORT_WIDTH * aspectRatio : 200;
+
   return (
     <div className="group relative select-none">
-      {/* Node Toolbar Overlay - Floating above */}
-      <NodeToolbar 
-        nodeId={id} 
-        isVisible={selectedNodeIdForToolbar === id} 
-        data={data} 
-        hideColors={effectiveType === 'image'} 
-      />
-
       {hasIncoming && (
         <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 bg-primary/5 backdrop-blur-xl border border-primary/10 rounded-full animate-in fade-in slide-in-from-bottom-1 duration-500 z-30">
           <div className="size-1 rounded-full bg-primary/60 animate-pulse" />
@@ -76,17 +111,19 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
         </div>
       )}
 
-      {/* Main Node Content - The "Image" IS the Node */}
+      {/* Main Node Content */}
       <div 
         className={cn(
-          "relative min-w-[200px] transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5",
+          "relative transition-all duration-500 rounded-[1.5rem] overflow-hidden border border-primary/5",
           (!color || color === 'transparent') && "bg-white/80 dark:bg-white/[0.05]",
           selected ? "ring-2 ring-primary/30 shadow-[0_30px_60px_rgba(0,0,0,0.2)] z-50 scale-[1.02]" : "shadow-lg hover:border-primary/10",
           dragging && "opacity-80"
         )}
         style={{ 
           backgroundColor: color && color !== 'transparent' ? color : undefined,
-          borderColor: color && color !== 'transparent' ? color.replace('0.15', '0.3') : undefined
+          borderColor: color && color !== 'transparent' ? color.replace('0.15', '0.3') : undefined,
+          width: effectiveType === "image" ? VIEWPORT_WIDTH : "auto",
+          minWidth: effectiveType === "text" ? "200px" : undefined,
         }}
       >
         {/* Top Handle Overlay */}
@@ -96,34 +133,67 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
         <div className="relative w-full h-full">
           {/* Image Content - The Core Visual */}
           {effectiveType === "image" && (
-            <div className="relative w-full h-full">
-              {/* If we have a signedUrl, we show the image. 
-                  If it's loading/streaming, we wrap it in ImageGeneration with appropriate state.
-                  If it's completed, we just show the image (or wrap in completed ImageGeneration if we want the effect).
-                  For now, let's wrap it if it's new or loading. */}
-              
+            <div 
+              className="relative overflow-hidden bg-muted/5"
+              style={{ 
+                width: VIEWPORT_WIDTH, 
+                height: nodeHeight,
+              }}
+            >
               {showLoading ? (
-                 <ImageGeneration loadingState={status === "streaming" ? "generating" : "starting"}>
-                    {signedUrl ? (
-                      <img 
-                        src={signedUrl} 
-                        alt="Generated content" 
-                        className="w-full h-auto block rounded-xl"
-                      />
-                    ) : (
-                      <div className="w-full aspect-square bg-muted/20 rounded-xl" /> // Placeholder while waiting for URL
-                    )}
-                 </ImageGeneration>
+                 <div 
+                   className="w-full h-full flex items-center justify-center bg-muted/5 animate-pulse"
+                 >
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="size-8 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+                        <div className="size-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+                      </div>
+                      <span className="text-[8px] font-bold text-primary/40 uppercase tracking-[0.2em]">
+                        {status === "thinking" ? "Thinking..." : "Generating..."}
+                      </span>
+                    </div>
+                 </div>
               ) : (
                 signedUrl && (
-                  <img 
-                    src={signedUrl} 
-                    alt="Generated content" 
-                    className="w-full h-auto block transition-transform duration-1000 group-hover:scale-105 rounded-[2rem]"
-                  />
+                  <div className="relative group/img w-full h-full">
+                    <img 
+                      src={signedUrl} 
+                      alt="Generated content" 
+                      onLoad={handleImageLoad}
+                      className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-[1.02]"
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsLightboxOpen(true);
+                      }}
+                      className="absolute top-3 right-3 p-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white opacity-0 group-hover/img:opacity-100 transition-opacity duration-300 hover:bg-black/60"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 )
               )}
             </div>
+          )}
+
+          {/* Lightbox Dialog */}
+          {signedUrl && (
+            <Dialog
+              isOpen={isLightboxOpen}
+              onClose={() => setIsLightboxOpen(false)}
+              title="Image Preview"
+              description=""
+              type="info"
+            >
+              <div className="mt-4 relative rounded-xl overflow-hidden bg-black/5">
+                <img 
+                  src={signedUrl} 
+                  alt="Full size preview" 
+                  className="w-full h-auto block"
+                />
+              </div>
+            </Dialog>
           )}
 
           {/* Video Content */}
@@ -151,30 +221,33 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
 
           {/* Model Info Overlay - Bottom Minimal */}
           {modelId && (
-            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-20">
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-2 py-1 rounded-full border border-white/10">
+            <div className={cn(
+              "absolute bottom-3 left-3 right-3 flex items-center justify-between transition-opacity duration-300 pointer-events-none z-20",
+              effectiveType === "image" ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            )}>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 bg-black/40 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/10">
                   {modelIcon && (
                     <Image 
                       src={theme === 'dark' ? modelIcon.light : modelIcon.dark} 
                       alt={modelId} 
-                      width={12} 
-                      height={12}
+                      width={10} 
+                      height={10}
                       className="opacity-80"
                     />
                   )}
-                  <span className="text-[9px] font-medium text-white/70 tracking-tight">
+                  <span className="text-[8px] font-bold text-white/70 tracking-tight">
                     {modelId}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1">
                   {role && role !== 'context' && (
-                    <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/80 font-semibold uppercase tracking-wider border border-white/10 backdrop-blur-md">
+                    <span className="text-[7px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/80 font-bold uppercase tracking-wider border border-white/10 backdrop-blur-md">
                       {role}
                     </span>
                   )}
                   {importance && importance !== 3 && (
-                    <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-200/90 font-semibold border border-amber-500/20 backdrop-blur-md">
+                    <span className="text-[7px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-200/90 font-bold border border-amber-500/20 backdrop-blur-md">
                       Imp: {importance}
                     </span>
                   )}
@@ -182,7 +255,7 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
               </div>
               
               {createdAt && (
-                <div className="text-[9px] text-white/50 font-medium bg-black/20 backdrop-blur-md px-2 py-1 rounded-full border border-white/10 self-end">
+                <div className="text-[8px] text-white/50 font-bold bg-black/20 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/10 self-end">
                   {formatDistanceToNow(createdAt, { addSuffix: true })}
                 </div>
               )}

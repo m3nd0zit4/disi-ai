@@ -6,25 +6,19 @@ export interface BaseNodeData {
   color?: string;
   role?: SemanticRole;
   importance?: number;
+  executionId?: string;
+  status?: "pending" | "thinking" | "streaming" | "complete" | "error" | "uploading";
+  prompt?: string;
+  text?: string;
 }
 
-export interface InputNodeData {
-  text: string;
-  id?: string; // Added from BaseNodeData
-  createdAt?: number; // Added from BaseNodeData
-  color?: string; // Added from BaseNodeData
+
+export interface InputNodeData extends BaseNodeData {
   attachments?: { url?: string; storageId?: string; type?: string; name?: string }[];
-  role?: SemanticRole; // Added from BaseNodeData
-  importance?: number; // Added from BaseNodeData
-  executionId?: string;
-  status?: "pending" | "thinking" | "complete" | "error";
 }
 
 export interface ResponseNodeData extends BaseNodeData {
-  text: string; // Kept for backward compatibility (maps to content.markdown)
   modelId: string;
-  status: "pending" | "thinking" | "streaming" | "complete" | "error";
-  reasoning?: string; // Kept for backward compatibility
   structuredReasoning?: {
     text: string;
     durationMs?: number;
@@ -37,21 +31,34 @@ export interface ResponseNodeData extends BaseNodeData {
   isUserFree?: boolean;
   error?: string;
   errorType?: string;
-  executionId?: string;
+  reasoning?: string; // Kept for backward compatibility
 }
 
 export interface DisplayNodeData extends BaseNodeData {
   type: "text" | "image" | "video";
   content?: string;
-  text?: string;
   mediaUrl?: string;
   mediaStorageId?: string;
-  status?: "pending" | "thinking" | "streaming" | "complete" | "error";
   modelId?: string;
-  executionId?: string;
+  metadata?: {
+    width?: number;
+    height?: number;
+  };
+}
+
+export interface FileNodeData extends BaseNodeData {
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  storageId: string;
+  uploadStatus: "pending" | "uploading" | "complete" | "error";
+  textContent?: string;
+  previewUrl?: string;
 }
 
 export type NodeData = 
   | InputNodeData 
   | ResponseNodeData 
-  | DisplayNodeData;
+  | DisplayNodeData
+  | FileNodeData;
+

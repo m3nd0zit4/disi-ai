@@ -75,6 +75,26 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     }, 500);
   }, [updateCanvas]);
 
+  // Unified Sync Logic
+  const syncToDB = useCallback(() => {
+    const { nodes, edges } = useCanvasStore.getState();
+    
+    // Filter out preview nodes and edges
+    const nodesToSync = nodes
+      .filter(n => !n.id.startsWith('preview-') && n.type !== 'preview-input' && n.type !== 'preview-file')
+      .map(({ selected: _, ...rest }) => rest);
+    
+    const edgesToSync = edges.filter(
+      e => !e.id.startsWith('edge-preview-') && !e.target.startsWith('preview-') && !e.source.startsWith('preview-')
+    );
+
+    debouncedUpdateCanvas({ 
+      canvasId, 
+      nodes: nodesToSync, 
+      edges: edgesToSync 
+    });
+  }, [canvasId, debouncedUpdateCanvas]);
+
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
     storeOnNodesChange(changes);
     
@@ -83,30 +103,32 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     const hasRealChanges = changes.some(c => c.type !== 'select');
     if (!hasRealChanges) return;
 
-    const latestNodes = useCanvasStore.getState().nodes;
-    // Filter out preview nodes and STRIP selection state before syncing to DB
-    const nodesToSync = latestNodes
-      .filter(n => !n.id.startsWith('preview-'))
-      .map(({ selected: _, ...rest }) => rest);
-    
-    debouncedUpdateCanvas({ canvasId, nodes: nodesToSync });
-  }, [canvasId, debouncedUpdateCanvas, storeOnNodesChange]);
+    syncToDB();
+  }, [storeOnNodesChange, syncToDB]);
 
   const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
     storeOnEdgesChange(changes);
-    const latestEdges = useCanvasStore.getState().edges;
-    // Filter out preview edges before syncing to DB
-    const edgesToSync = latestEdges.filter(e => !e.id.startsWith('edge-preview-') && !e.target.startsWith('preview-'));
-    
-    debouncedUpdateCanvas({ canvasId, edges: edgesToSync });
-  }, [canvasId, debouncedUpdateCanvas, storeOnEdgesChange]);
+    syncToDB();
+  }, [storeOnEdgesChange, syncToDB]);
 
   const handleConnect = useCallback((connection: Connection) => {
+    const { source, target } = connection;
+    if (!source || !target) return;
+
+    const isSourcePreview = source.startsWith('preview-');
+    const isTargetPreview = target.startsWith('preview-');
+
+    // Block mixing real and preview nodes
+    if (isSourcePreview !== isTargetPreview) {
+      console.warn("Cannot connect real nodes with preview nodes.");
+      return;
+    }
+
     const latestEdges = useCanvasStore.getState().edges;
     const newEdges = handleWorkflowConnection(connection, latestEdges);
     setEdges(newEdges);
-    debouncedUpdateCanvas({ canvasId, edges: newEdges });
-  }, [canvasId, debouncedUpdateCanvas, setEdges]);
+    syncToDB();
+  }, [setEdges, syncToDB]);
 
   const onConnectStart = useCallback((_: MouseEvent | TouchEvent, { nodeId }: OnConnectStartParams) => {
     connectingNodeId.current = nodeId;
@@ -127,19 +149,13 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
 
   const deleteNode = useCallback((nodeId: string) => {
     useCanvasStore.getState().removeNode(nodeId);
-    const latestNodes = useCanvasStore.getState().nodes;
-    // Filter out preview nodes before syncing to DB
-    const nodesToSync = latestNodes.filter(n => !n.id.startsWith('preview-'));
-    debouncedUpdateCanvas({ canvasId, nodes: nodesToSync });
-  }, [canvasId, debouncedUpdateCanvas]);
+    syncToDB();
+  }, [syncToDB]);
 
   const updateNode = useCallback((nodeId: string, data: Record<string, any>) => {
     useCanvasStore.getState().updateNodeData(nodeId, data);
-    const latestNodes = useCanvasStore.getState().nodes;
-    // Filter out preview nodes before syncing to DB
-    const nodesToSync = latestNodes.filter(n => !n.id.startsWith('preview-'));
-    debouncedUpdateCanvas({ canvasId, nodes: nodesToSync });
-  }, [canvasId, debouncedUpdateCanvas]);
+    syncToDB();
+  }, [syncToDB]);
 
   const regenerateNode = useCallback(async (nodeId: string) => {
     const { nodes, edges } = useCanvasStore.getState();
@@ -187,8 +203,10 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     const latestNodes = useCanvasStore.getState().nodes;
     const latestEdges = useCanvasStore.getState().edges;
     
-    const nodesToSync = latestNodes.filter(n => !n.id.startsWith('preview-'));
-    const edgesToSync = latestEdges.filter(e => !e.id.startsWith('edge-preview-') && !e.target.startsWith('preview-'));
+    const nodesToSync = latestNodes.filter(n => !n.id.startsWith('preview-') && n.type !== 'preview-input' && n.type !== 'preview-file');
+    const edgesToSync = latestEdges.filter(
+      e => !e.id.startsWith('edge-preview-') && !e.target.startsWith('preview-') && !e.source.startsWith('preview-')
+    );
 
     await updateCanvas({ 
       canvasId, 
@@ -200,6 +218,9 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     try {
       const executionId = await createCanvasExecution({ canvasId });
       
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
       await fetch("/api/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -209,17 +230,23 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
           prompt, // Pass prompt directly to avoid DB race conditions
           targetNodeId: nodeId // Explicitly target this node
         }),
+        signal: controller.signal
       }).then(res => {
+        clearTimeout(timeoutId);
         if (!res.ok) {
           throw new Error(`Execution request failed: ${res.status}`);
         }
         return res;
+      }).catch(err => {
+        clearTimeout(timeoutId);
+        throw err;
       });
     } catch (error) {
+      const isAbort = error instanceof Error && error.name === 'AbortError';
       console.error("Failed to trigger regeneration:", error);
       useCanvasStore.getState().updateNodeData(nodeId, { 
         status: "error", 
-        error: "Failed to start generation" 
+        error: isAbort ? "Generation timed out" : "Failed to start generation" 
       });
     }
   }, [canvasId, updateCanvas, createCanvasExecution]);

@@ -62,6 +62,13 @@ export function resolveNodeContext(
         content = sourceNode.data.text;
     } else if (sourceNode.data.prompt) {
         content = sourceNode.data.prompt;
+    } else if (sourceNode.type === 'file') {
+        // Handle FileNode content
+        if (sourceNode.data.textContent) {
+            content = `[File: ${sourceNode.data.fileName}]\n${sourceNode.data.textContent}`;
+        } else {
+            content = `[File: ${sourceNode.data.fileName} (Binary/Image)]`;
+        }
     }
 
     // Determine role
@@ -72,7 +79,9 @@ export function resolveNodeContext(
     } else if (sourceNode.type === 'input') {
         role = "instruction"; 
     } else if (sourceNode.type === 'display' || sourceNode.type === 'image') {
-        role = "knowledge"; // Changed from evidence to knowledge
+        role = "knowledge"; 
+    } else if (sourceNode.type === 'file') {
+        role = "knowledge";
     } else if (sourceNode.type === 'response') {
         role = "history";
     }
