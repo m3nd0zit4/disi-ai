@@ -204,7 +204,10 @@ export class PromptEnvironment {
    * Split by section markers (e.g., "Chapter 1", "Chapter 2")
    */
   splitBySections(pattern: RegExp): PromptSlice[] {
-    const matches = [...this.prompt.matchAll(new RegExp(pattern, 'g'))];
+    const flags = pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g';
+    const regex = new RegExp(pattern.source, flags);
+    const matches = [...this.prompt.matchAll(regex)];
+
     const slices: PromptSlice[] = [];
     
     for (let i = 0; i < matches.length; i++) {
@@ -237,8 +240,10 @@ export class PromptEnvironment {
    * Find slices containing keyword
    */
   filter(keyword: string, contextChars: number = 500): PromptSlice[] {
-    const regex = new RegExp(keyword, 'gi');
+    const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedKeyword, 'gi');
     const matches = [...this.prompt.matchAll(regex)];
+
     
     return matches.map((match, i) => {
       const matchIndex = match.index!;
@@ -347,15 +352,25 @@ Answer concisely and accurately.`;
   }
 
   /**
-   * Query multiple slices in parallel
+   * Query multiple slices in parallel with concurrency limiting
    */
   async queryAll(
     queryTemplate: string,
-    slices: PromptSlice[]
+    slices: PromptSlice[],
+    concurrency: number = 3
   ): Promise<QueryResult[]> {
-    return Promise.all(
-      slices.map(slice => this.query(queryTemplate, slice))
-    );
+    const results: QueryResult[] = new Array(slices.length);
+    
+    for (let i = 0; i < slices.length; i += concurrency) {
+      const batch = slices.slice(i, i + concurrency);
+      const batchPromises = batch.map(async (slice, batchIndex) => {
+        const result = await this.query(queryTemplate, slice);
+        results[i + batchIndex] = result;
+      });
+      await Promise.all(batchPromises);
+    }
+    
+    return results;
   }
 
   /**

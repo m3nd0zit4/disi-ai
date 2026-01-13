@@ -50,9 +50,20 @@ export const NodeToolbar = ({
   const { showDialog } = useDialog();
   const [isCopied, setIsCopied] = useState(false);
 
+  if (!nodeIds || nodeIds.length === 0) {
+    return null;
+  }
+
   // Use data from the first node for initial states (like color)
-  const firstNode = nodes.find(n => n.id === nodeIds[0]);
-  const data = firstNode?.data || {};
+  const firstId = nodeIds[0];
+  const firstNode = nodes.find(n => n.id === firstId);
+  
+  if (!firstNode) {
+    return null;
+  }
+
+  const data = firstNode.data || {};
+
 
   const handleCopy = async () => {
     const texts = nodeIds.map((id: string) => {

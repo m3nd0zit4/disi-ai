@@ -9,19 +9,7 @@ import { FileNodeData } from "../../types";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
 
-const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-};
-
-const isImageType = (type: string) => type.startsWith("image/");
-const isTextualType = (type: string) => {
-  const textualTypes = ["text/", "application/json", "application/xml", "application/javascript"];
-  return textualTypes.some(t => type.startsWith(t));
-};
+import { formatFileSize, isImageType, isTextualType } from "@/lib/file-utils";
 
 // Render the appropriate icon based on file type
 const FileIconDisplay = ({ fileType, className }: { fileType: string; className?: string }) => {
@@ -40,15 +28,26 @@ export const FileNode = memo(({ id, data, selected }: NodeProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
+    const controller = new AbortController();
+    
     if (storageId && !signedUrl) {
-      fetch(`/api/file?key=${encodeURIComponent(storageId)}`)
+      fetch(`/api/file?key=${encodeURIComponent(storageId)}`, { signal: controller.signal })
         .then(res => res.json())
         .then(data => {
-          if (data.url) setSignedUrl(data.url);
+          if (!controller.signal.aborted && data.url) {
+            setSignedUrl(data.url);
+          }
         })
-        .catch(err => console.error("Failed to load file URL", err));
+        .catch(err => {
+          if (err.name !== 'AbortError') {
+            console.error("Failed to load file URL", err);
+          }
+        });
     }
+
+    return () => controller.abort();
   }, [storageId, signedUrl]);
+
 
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();

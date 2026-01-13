@@ -46,7 +46,7 @@ export async function aggregateResults(
 
   try {
     // Build sub-answers summary
-    const subAnswers = results
+    const subAnswers = [...validResults]
       .sort((a, b) => b.confidence - a.confidence)
       .map((r, i) => `[${i + 1}] Question: ${r.sourceQuery}
 Answer: ${r.answer}
@@ -55,10 +55,11 @@ Confidence: ${r.confidence}`)
 
     const userPrompt = `ORIGINAL QUERY: ${originalQuery}
 
-SUB-ANSWERS (${results.length} total):
+SUB-ANSWERS (${validResults.length} total):
 ${subAnswers}
 
 Synthesize these sub-answers into a cohesive markdown response for the original query.`;
+
 
     // Call LLM
     const provider = config.provider || "openai";
@@ -155,7 +156,7 @@ function createErrorOutput(results: WorkerResult[], config: RLMConfig): RLMOutpu
  * Fallback output by concatenating answers
  */
 function createFallbackOutput(results: WorkerResult[], config: RLMConfig): RLMOutput {
-  const sortedResults = results.sort((a, b) => b.confidence - a.confidence);
+  const sortedResults = [...results].sort((a, b) => b.confidence - a.confidence);
   const markdown = sortedResults
     .map(r => `### ${r.sourceQuery}\n\n${r.answer}`)
     .join('\n\n---\n\n');

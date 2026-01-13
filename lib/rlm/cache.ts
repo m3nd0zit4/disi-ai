@@ -10,32 +10,45 @@ import { CachedResult, WorkerResult } from "./types";
 export class RLMCache {
   private cache: Map<string, CachedResult> = new Map();
   private maxSize: number;
+  private ttl: number; // Time to live in milliseconds
 
-  constructor(maxSize: number = 100) {
+  constructor(maxSize: number = 100, ttl: number = 1000 * 60 * 60) { // Default 1 hour TTL
     this.maxSize = maxSize;
+    this.ttl = ttl;
   }
 
   /**
-   * Generate a deterministic hash for a query + context pair
+   * Generate a robust hash for a query + context pair
    */
   generateHash(query: string, contextSlice: string): string {
-    // Simple hash function (could use crypto for production)
     const str = `${query}::${contextSlice}`;
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32bit integer
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (let i = 0, ch; i < str.length; i++) {
+        ch = str.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
     }
-    return `rlm_${Math.abs(hash).toString(16)}`;
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return `rlm_${(4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)}`;
   }
 
   /**
-   * Get a cached result if it exists
+   * Get a cached result if it exists and is not expired
    */
   get(queryHash: string): WorkerResult | undefined {
     const cached = this.cache.get(queryHash);
     if (cached) {
+      const isExpired = Date.now() - cached.timestamp > this.ttl;
+      if (isExpired) {
+        this.cache.delete(queryHash);
+        return undefined;
+      }
+      
+      // LRU: Move to end of Map (most recently used)
+      this.cache.delete(queryHash);
+      this.cache.set(queryHash, cached);
+      
       return { ...cached.result, fromCache: true };
     }
     return undefined;
@@ -45,8 +58,11 @@ export class RLMCache {
    * Store a result in the cache
    */
   set(queryHash: string, result: WorkerResult): void {
-    // Evict oldest if at capacity
-    if (this.cache.size >= this.maxSize) {
+    // LRU: If exists, delete first to move to end
+    if (this.cache.has(queryHash)) {
+      this.cache.delete(queryHash);
+    } else if (this.cache.size >= this.maxSize) {
+      // Evict oldest (first item in Map)
       const oldestKey = this.cache.keys().next().value;
       if (oldestKey) {
         this.cache.delete(oldestKey);
@@ -61,10 +77,18 @@ export class RLMCache {
   }
 
   /**
-   * Check if a query is cached
+   * Check if a query is cached and not expired
    */
   has(queryHash: string): boolean {
-    return this.cache.has(queryHash);
+    const cached = this.cache.get(queryHash);
+    if (cached) {
+      if (Date.now() - cached.timestamp > this.ttl) {
+        this.cache.delete(queryHash);
+        return false;
+      }
+      return true;
+    }
+    return false;
   }
 
   /**

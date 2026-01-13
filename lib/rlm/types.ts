@@ -83,6 +83,8 @@ export interface PlannerResult {
   canAnswerDirectly: boolean;
   /** Direct answer if canAnswerDirectly */
   directAnswer?: string;
+  /** Tokens used for this call */
+  tokensUsed: number;
 }
 
 // =============================================================================

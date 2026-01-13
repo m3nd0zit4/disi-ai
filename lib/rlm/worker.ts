@@ -42,7 +42,8 @@ export async function executeWorker(
   const { config, cache, apiKey, depth } = options;
 
   // Generate cache hash
-  const contextHash = context.items.map(i => i.content.substring(0, 100)).join('|');
+  const contextHash = context.items.map(i => `${i.content.substring(0, 100)}|${i.content.length}`).join('|');
+
   const queryHash = cache?.generateHash(subQuery.query, contextHash) || '';
 
   // Check cache
@@ -133,9 +134,12 @@ function parseWorkerResponse(content: string): { answer: string; confidence: num
     } else if (trimmed.toUpperCase().startsWith('CONFIDENCE:')) {
       const confStr = trimmed.substring(11).trim();
       const parsed = parseFloat(confStr);
-      if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) {
-        confidence = parsed;
+      if (!isNaN(parsed)) {
+        confidence = Math.max(0, Math.min(1, parsed));
+      } else {
+        confidence = 0.5;
       }
+
     }
   }
 
@@ -144,9 +148,11 @@ function parseWorkerResponse(content: string): { answer: string; confidence: num
     // Extract confidence if present at end
     const confMatch = content.match(/confidence[:\s]+([0-9.]+)/i);
     if (confMatch) {
-      confidence = parseFloat(confMatch[1]) || 0.5;
+      const parsed = parseFloat(confMatch[1]);
+      confidence = !isNaN(parsed) ? Math.max(0, Math.min(1, parsed)) : 0.5;
       answer = content.replace(/confidence[:\s]+[0-9.]+/i, '').trim();
     }
+
   }
 
   return { answer, confidence };

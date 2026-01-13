@@ -47,41 +47,7 @@ export interface PastedContent {
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const PASTE_THRESHOLD = 200; // characters threshold for showing as pasted content
 
-// File type helpers
-const isTextualFile = (file: File): boolean => {
-  const textualTypes = [
-    "text/",
-    "application/json",
-    "application/xml",
-    "application/javascript",
-    "application/typescript",
-  ];
-  const textualExtensions = [
-    "txt", "md", "py", "js", "ts", "jsx", "tsx", "html", "htm", "css", "scss", "sass",
-    "json", "xml", "yaml", "yml", "csv", "sql", "sh", "bash", "php", "rb", "go", "java",
-    "c", "cpp", "h", "hpp", "cs", "rs", "swift", "kt", "scala", "r", "vue", "svelte",
-    "astro", "config", "conf", "ini", "toml", "log", "gitignore", "dockerfile", "makefile", "readme",
-  ];
-  const isTextualMimeType = textualTypes.some((type) =>
-    file.type.toLowerCase().startsWith(type)
-  );
-  const extension = file.name.split(".").pop()?.toLowerCase() || "";
-  const isTextualExtension =
-    textualExtensions.includes(extension) ||
-    file.name.toLowerCase().includes("readme") ||
-    file.name.toLowerCase().includes("dockerfile") ||
-    file.name.toLowerCase().includes("makefile");
-  return isTextualMimeType || isTextualExtension;
-};
-
-const readFileAsText = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve((e.target?.result as string) || "");
-    reader.onerror = (e) => reject(e);
-    reader.readAsText(file);
-  });
-};
+import { isTextualFile, readFileAsText } from "@/lib/file-utils";
 
 // Components
 
@@ -282,12 +248,14 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
       }]);
 
       // Upload to S3 (async, doesn't block UI)
+      const controller = new AbortController();
       (async () => {
         try {
           const response = await fetch("/api/upload", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ contentType: file.type, fileName: file.name }),
+            signal: controller.signal
           });
 
           if (!response.ok) throw new Error("Failed to get upload URL");
@@ -297,10 +265,13 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
             method: "PUT",
             headers: { "Content-Type": file.type },
             body: file,
+            signal: controller.signal
           });
 
           if (!uploadResult.ok) throw new Error("Upload to S3 failed");
           
+          if (controller.signal.aborted) return;
+
           // Update node with success status
           if (isDirect) {
             useCanvasStore.getState().updateNodeData(nodeId, { 
@@ -317,6 +288,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
             ));
           }
         } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') return;
           console.error("Upload error:", error);
           useCanvasStore.getState().updateNodeData(nodeId, { uploadStatus: "error" });
           showDialog({ title: "Upload Error", description: `Failed to upload ${file.name}`, type: "error" });
@@ -447,15 +419,18 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           newNodeId: newNodeId,
           inputNodeId: selectedInputNode?.id,
           parentNodeIds: parentNodeIds,
-          fileAttachments: pendingFiles.map(f => {
-            const node = currentNodes.find(n => n.id === f.nodeId);
-            return {
-              storageId: f.storageId,
-              name: f.fileName,
-              type: f.fileType,
-              position: node?.position || { x: 0, y: 0 }
-            };
-          }),
+          fileAttachments: pendingFiles
+            .filter(f => f.storageId && f.storageId !== "")
+            .map(f => {
+              const node = currentNodes.find(n => n.id === f.nodeId);
+              return {
+                storageId: f.storageId,
+                name: f.fileName,
+                type: f.fileType,
+                position: node?.position || { x: 0, y: 0 }
+              };
+            }),
+
           position: previewPosition,
           imageSize,
           imageQuality,

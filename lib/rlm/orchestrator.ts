@@ -173,12 +173,19 @@ export class RLMOrchestrator {
     }
 
     const plannerResult = await runPlanner(query, context, { config: this.config, apiKey: this.apiKey });
-    this.budget.consume(500);
+    this.budget.consume(plannerResult.tokensUsed);
+    this.state.tokensUsed += plannerResult.tokensUsed;
 
     if (plannerResult.canAnswerDirectly && plannerResult.directAnswer) {
       return {
         content: { markdown: plannerResult.directAnswer },
-        metadata: { mode: "full", depthUsed: depth, subCalls: 0, cacheHits: 0, tokensUsed: 500 },
+        metadata: { 
+          mode: "full", 
+          depthUsed: depth, 
+          subCalls: 0, 
+          cacheHits: 0, 
+          tokensUsed: this.state.tokensUsed 
+        },
       };
     }
 
@@ -195,7 +202,7 @@ export class RLMOrchestrator {
         break;
       }
 
-      const cacheHash = this.cache.generateHash(subQuery.query, JSON.stringify(context.items.map(i => i.content.substring(0, 50))));
+      const cacheHash = this.cache.generateHash(subQuery.query, JSON.stringify(context.items.map(i => i.content.substring(0, 100))));
       const cached = this.cache.get(cacheHash);
       
       if (cached) {

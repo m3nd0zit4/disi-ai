@@ -50,7 +50,13 @@ export const createCanvasExecutionByClerkId = mutation({
 
     if (!user) throw new Error("User not found");
 
+    // Verify canvas exists and is owned by the user
+    const canvas = await ctx.db.get(args.canvasId);
+    if (!canvas) throw new Error("Canvas not found");
+    if (canvas.userId !== user._id) throw new Error("Not authorized");
+
     const executionId = await ctx.db.insert("canvasExecutions", {
+
       canvasId: args.canvasId,
       userId: user._id,
       input: args.input,

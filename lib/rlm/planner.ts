@@ -77,7 +77,7 @@ Analyze this query and context. Respond with JSON only.`;
     const parsed = parseJsonResponse(response.content);
     
     // Validate and normalize
-    return normalizePlannerResult(parsed);
+    return normalizePlannerResult(parsed, response.tokens || 0);
 
   } catch (error) {
     console.error("[RLM Planner] Error:", error);
@@ -86,9 +86,11 @@ Analyze this query and context. Respond with JSON only.`;
     return {
       needsSubQueries: false,
       subQueries: [],
-      canAnswerDirectly: true,
+      canAnswerDirectly: false,
       directAnswer: undefined, // Will trigger simple fallback
+      tokensUsed: 0,
     };
+
   }
 }
 
@@ -99,7 +101,8 @@ function parseJsonResponse(content: string): unknown {
   // Remove markdown code blocks if present
   let cleaned = content.trim();
   
-  if (cleaned.startsWith("```json")) {
+  // Case-insensitive check for ```json
+  if (cleaned.toLowerCase().startsWith("```json")) {
     cleaned = cleaned.slice(7);
   } else if (cleaned.startsWith("```")) {
     cleaned = cleaned.slice(3);
@@ -115,7 +118,7 @@ function parseJsonResponse(content: string): unknown {
 /**
  * Normalize and validate planner output
  */
-function normalizePlannerResult(parsed: unknown): PlannerResult {
+function normalizePlannerResult(parsed: unknown, tokensUsed: number): PlannerResult {
   const obj = parsed as Record<string, unknown>;
   
   const subQueries: SubQueryProposal[] = [];
@@ -141,5 +144,6 @@ function normalizePlannerResult(parsed: unknown): PlannerResult {
     subQueries,
     canAnswerDirectly: Boolean(obj.canAnswerDirectly),
     directAnswer: typeof obj.directAnswer === 'string' ? obj.directAnswer : undefined,
+    tokensUsed,
   };
 }

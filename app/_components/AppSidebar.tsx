@@ -83,7 +83,7 @@ export function AppSidebar() {
         <Sidebar className="border-r border-primary/5 bg-card/30 backdrop-blur-xl">
             <SidebarHeader className="p-3">
                 <div className="flex justify-between items-center mb-4">
-                    <Link href="/" className="flex items-center gap-2 group">
+                    <Link href="/canvas" className="flex items-center gap-2 group">
                         <div className="p-1.5 rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-all">
                             <Image src={'/logo.svg'} alt='logo' width={20} height={20} className="w-5 h-5" />
                         </div>

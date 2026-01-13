@@ -14,23 +14,9 @@ import { Node } from "@xyflow/react";
 import { useRef } from "react";
 import { useDialog } from "@/hooks/useDialog";
 
-// File type helpers (reused from ChatInputBox or moved to shared)
-const isTextualFile = (file: File): boolean => {
-  const textualTypes = ["text/", "application/json", "application/xml", "application/javascript", "application/typescript"];
-  const textualExtensions = ["txt", "md", "py", "js", "ts", "jsx", "tsx", "html", "htm", "css", "scss", "sass", "json", "xml", "yaml", "yml", "csv", "sql", "sh", "bash", "php", "rb", "go", "java", "c", "cpp", "h", "hpp", "cs", "rs", "swift", "kt", "scala", "r", "vue", "svelte", "astro", "config", "conf", "ini", "toml", "log", "gitignore", "dockerfile", "makefile", "readme"];
-  const isTextualMimeType = textualTypes.some((type) => file.type.toLowerCase().startsWith(type));
-  const extension = file.name.split(".").pop()?.toLowerCase() || "";
-  return isTextualMimeType || textualExtensions.includes(extension);
-};
+import { isTextualFile, readFileAsText } from "@/lib/file-utils";
 
-const readFileAsText = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve((e.target?.result as string) || "");
-    reader.onerror = (e) => reject(e);
-    reader.readAsText(file);
-  });
-};
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 export function CanvasToolbar() {
   const { toggleSidebar } = useSidebar();
@@ -69,7 +55,19 @@ export function CanvasToolbar() {
     if (!files || files.length === 0) return;
 
     const file = files[0];
+
+    if (file.size > MAX_FILE_SIZE) {
+      showDialog({ 
+        title: "File Too Large", 
+        description: `${file.name} exceeds 50MB limit.`, 
+        type: "error" 
+      });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     const nodeId = `file-${Date.now()}`;
+
     
     let position = { x: 0, y: 0 };
     if (viewport) {

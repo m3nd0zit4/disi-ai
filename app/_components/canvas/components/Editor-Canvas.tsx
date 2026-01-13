@@ -225,12 +225,16 @@ export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCan
           color={theme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.08)'} 
         />
 
-        {nodes.filter(n => n.selected && !n.id.startsWith('preview-')).length > 0 && (
-          <NodeToolbar 
-            nodeIds={nodes.filter(n => n.selected && !n.id.startsWith('preview-')).map(n => n.id)} 
-            isVisible={true} 
-          />
-        )}
+        {(() => {
+          const selectedRealNodes = nodes.filter(n => n.selected && !n.id.startsWith('preview-'));
+          if (selectedRealNodes.length === 0) return null;
+          return (
+            <NodeToolbar 
+              nodeIds={selectedRealNodes.map(n => n.id)} 
+              isVisible={true} 
+            />
+          );
+        })()}
       </ReactFlow>
     </div>
   );

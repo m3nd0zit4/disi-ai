@@ -155,7 +155,7 @@ export function useNodePreview(
     
     // Position file preview ABOVE the input preview (Hub)
     const existingFileCount = previewFileNodeIdsRef.current.size;
-    const offset = (existingFileCount - 1) * 220; // 220px spacing
+    const offset = existingFileCount * 220; // 220px spacing
     
     // Center the row of files above the hub
     // We'll adjust the startPos.x based on the total number of files later if needed, 

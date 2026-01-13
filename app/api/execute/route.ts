@@ -254,8 +254,9 @@ export async function POST(req: Request) {
 
       // Find pending nodes from this execution
       const pendingNodes = canvas.nodes.filter(
-        (n: NodeData) => n.data.executionId === executionId && n.data.status === "pending"
+        (n: CanvasNode) => n.data.executionId === executionId && n.data.status === "pending"
       );
+
 
       if (pendingNodes.length === 0) {
         return NextResponse.json({ error: "No pending nodes found for this execution" }, { status: 400 });

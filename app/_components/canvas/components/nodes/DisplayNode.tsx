@@ -28,9 +28,11 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
   const [fetchedUrl, setFetchedUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+
     // Fetch fresh signed URL whenever mediaStorageId is present
     if (mediaStorageId) {
-      fetch(`/api/file?key=${encodeURIComponent(mediaStorageId)}`)
+      fetch(`/api/file?key=${encodeURIComponent(mediaStorageId)}`, { signal: controller.signal })
         .then(res => {
           if (!res.ok) {
             throw new Error(`Failed to fetch signed URL: ${res.status} ${res.statusText}`);
@@ -38,10 +40,18 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
           return res.json();
         })
         .then(data => {
-          if (data.url) setFetchedUrl(data.url);
+          if (!controller.signal.aborted && data.url) {
+            setFetchedUrl(data.url);
+          }
         })
-        .catch(err => console.error("Failed to load media URL", err));
+        .catch(err => {
+          if (err.name !== 'AbortError') {
+            console.error("Failed to load media URL", err);
+          }
+        });
     }
+
+    return () => controller.abort();
   }, [mediaStorageId]);
 
   const signedUrl = mediaStorageId ? fetchedUrl : (mediaUrl || null);

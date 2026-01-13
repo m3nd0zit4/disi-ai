@@ -113,9 +113,11 @@ function AttachmentPreview({ file }: { file: { url?: string; storageId?: string;
   const [signedUrl, setSignedUrl] = React.useState<string | null>(file.url || null);
 
   React.useEffect(() => {
+    const controller = new AbortController();
+    
     // Fetch fresh signed URL whenever storageId is present
     if (file.storageId) {
-      fetch(`/api/file?key=${encodeURIComponent(file.storageId)}`)
+      fetch(`/api/file?key=${encodeURIComponent(file.storageId)}`, { signal: controller.signal })
         .then(res => {
           if (!res.ok) {
             throw new Error(`Failed to fetch signed URL: ${res.status} ${res.statusText}`);
@@ -123,13 +125,21 @@ function AttachmentPreview({ file }: { file: { url?: string; storageId?: string;
           return res.json();
         })
         .then(data => {
-          if (data.url) setSignedUrl(data.url);
+          if (!controller.signal.aborted && data.url) {
+            setSignedUrl(data.url);
+          }
         })
-        .catch(err => console.error("Failed to load attachment URL", err));
+        .catch(err => {
+          if (err.name !== 'AbortError') {
+            console.error("Failed to load attachment URL", err);
+          }
+        });
     } else {
       // If no storageId, use url directly
       setSignedUrl(file.url || null);
     }
+
+    return () => controller.abort();
   }, [file.storageId, file.url]);
 
   if (!signedUrl) return <div className="h-20 w-20 bg-muted animate-pulse rounded-lg" />;

@@ -81,7 +81,7 @@ export function AuthModal({ isOpen, onClose, redirectUrl = "/" }: AuthModalProps
                     showOptionalFields: false,
                   }
                 }}
-                fallbackRedirectUrl="/"
+                fallbackRedirectUrl={redirectUrl}
               />
             </motion.div>
           </div>

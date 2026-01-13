@@ -203,7 +203,7 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     const latestNodes = useCanvasStore.getState().nodes;
     const latestEdges = useCanvasStore.getState().edges;
     
-    const nodesToSync = latestNodes.filter(n => !n.id.startsWith('preview-'));
+    const nodesToSync = latestNodes.filter(n => !n.id.startsWith('preview-') && n.type !== 'preview-input' && n.type !== 'preview-file');
     const edgesToSync = latestEdges.filter(e => !e.id.startsWith('edge-preview-') && !e.target.startsWith('preview-'));
 
     await updateCanvas({ 
@@ -216,6 +216,9 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     try {
       const executionId = await createCanvasExecution({ canvasId });
       
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
       await fetch("/api/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -225,17 +228,23 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
           prompt, // Pass prompt directly to avoid DB race conditions
           targetNodeId: nodeId // Explicitly target this node
         }),
+        signal: controller.signal
       }).then(res => {
+        clearTimeout(timeoutId);
         if (!res.ok) {
           throw new Error(`Execution request failed: ${res.status}`);
         }
         return res;
+      }).catch(err => {
+        clearTimeout(timeoutId);
+        throw err;
       });
     } catch (error) {
+      const isAbort = error instanceof Error && error.name === 'AbortError';
       console.error("Failed to trigger regeneration:", error);
       useCanvasStore.getState().updateNodeData(nodeId, { 
         status: "error", 
-        error: "Failed to start generation" 
+        error: isAbort ? "Generation timed out" : "Failed to start generation" 
       });
     }
   }, [canvasId, updateCanvas, createCanvasExecution]);
