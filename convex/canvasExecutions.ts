@@ -43,6 +43,11 @@ export const createCanvasExecutionByClerkId = mutation({
     input: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || identity.subject !== args.clerkId) {
+      throw new Error("Not authenticated or clerkId mismatch");
+    }
+
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
@@ -271,10 +276,14 @@ export const updateNodeExecution = mutation({
   },
 });
 
-// GET EXECUTION
 export const getCanvasExecutionByClerkId = query({
   args: { executionId: v.id("canvasExecutions"), clerkId: v.string() },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || identity.subject !== args.clerkId) {
+      return null;
+    }
+
     const execution = await ctx.db.get(args.executionId);
     if (!execution) return null;
 

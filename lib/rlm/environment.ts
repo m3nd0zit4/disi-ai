@@ -174,36 +174,64 @@ export class PromptEnvironment {
    * Equivalent to: prompt.split(delimiter)
    */
   split(delimiter: string | RegExp): PromptSlice[] {
-    const parts = this.prompt.split(delimiter);
-    const slices: PromptSlice[] = [];
-    let currentIndex = 0;
+    const regex = typeof delimiter === 'string' 
+      ? new RegExp(delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+      : new RegExp(delimiter.source, delimiter.flags.includes('g') ? delimiter.flags : delimiter.flags + 'g');
     
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const startIndex = this.prompt.indexOf(part, currentIndex);
-      const endIndex = startIndex + part.length;
+    const slices: PromptSlice[] = [];
+    let lastIndex = 0;
+    let chunkIndex = 0;
+    
+    const matches = [...this.prompt.matchAll(regex)];
+    
+    for (const match of matches) {
+      const matchIndex = match.index!;
+      const content = this.prompt.slice(lastIndex, matchIndex);
       
       slices.push({
-        content: part,
-        startIndex,
-        endIndex,
+        content,
+        startIndex: lastIndex,
+        endIndex: matchIndex,
         metadata: {
-          sectionName: `Part ${i + 1}`,
-          chunkIndex: i,
-          totalChunks: parts.length,
+          sectionName: `Part ${chunkIndex + 1}`,
+          chunkIndex,
+          totalChunks: matches.length + 1,
         },
       });
       
-      currentIndex = endIndex;
+      lastIndex = matchIndex + match[0].length;
+      chunkIndex++;
     }
+    
+    // Final part
+    const finalContent = this.prompt.slice(lastIndex);
+    slices.push({
+      content: finalContent,
+      startIndex: lastIndex,
+      endIndex: this.prompt.length,
+      metadata: {
+        sectionName: `Part ${chunkIndex + 1}`,
+        chunkIndex,
+        totalChunks: matches.length + 1,
+      },
+    });
     
     return slices;
   }
 
   /**
    * Split by section markers (e.g., "Chapter 1", "Chapter 2")
+   * 
+   * @IMPORTANT The pattern must be trusted. Do not construct from user input.
+   * Construction from untrusted sources can expose the application to ReDoS.
    */
   splitBySections(pattern: RegExp): PromptSlice[] {
+    // Lightweight runtime guard against ReDoS
+    const source = pattern.source;
+    if (source.length > 500 || /(\[.*\]|\(.*\))[\*\+\?]/.test(source)) {
+       throw new Error("Invalid or potentially dangerous regex pattern provided to splitBySections.");
+    }
+
     const flags = pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g';
     const regex = new RegExp(pattern.source, flags);
     const matches = [...this.prompt.matchAll(regex)];

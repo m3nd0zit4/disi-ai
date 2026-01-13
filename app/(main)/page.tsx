@@ -6,6 +6,9 @@ import { ArrowRight, Sparkles } from "lucide-react";
 
 export default function LandingPage() {
   const router = useRouter();
+  const handleLearnMoreClick = () => {
+    document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] p-4 bg-background relative overflow-hidden">
@@ -22,7 +25,7 @@ export default function LandingPage() {
             The Future of <span className="text-primary">Multi-Model</span> Creativity
           </h1>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            Disi AI is evolving. Soon, you'll be able to orchestrate multiple AI models in a beautiful, infinite canvas.
+            Disi AI is evolving. Soon, you&apos;ll be able to orchestrate multiple AI models in a beautiful, infinite canvas.
           </p>
         </div>
 
@@ -39,12 +42,13 @@ export default function LandingPage() {
             variant="outline" 
             size="lg" 
             className="rounded-full px-8 h-12 text-base font-bold bg-background/50 backdrop-blur-md"
+            onClick={handleLearnMoreClick}
           >
             Learn More
           </Button>
         </div>
 
-        <div className="pt-12 grid grid-cols-1 sm:grid-cols-3 gap-8 text-left">
+        <div id="features" className="pt-12 grid grid-cols-1 sm:grid-cols-3 gap-8 text-left">
           <FeatureCard 
             title="Infinite Canvas" 
             description="Organize your thoughts and AI outputs in a spatial environment."

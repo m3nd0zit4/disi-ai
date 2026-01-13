@@ -97,8 +97,8 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
     }
   };
 
-  const aspectRatio = dimensions ? dimensions.height / dimensions.width : 1;
-  const nodeHeight = dimensions ? VIEWPORT_WIDTH * aspectRatio : 200;
+  const aspectRatio = (dimensions && dimensions.width > 0) ? dimensions.height / dimensions.width : 1;
+  const nodeHeight = (dimensions && dimensions.width > 0) ? VIEWPORT_WIDTH * aspectRatio : 200;
 
   return (
     <div className="group relative select-none">

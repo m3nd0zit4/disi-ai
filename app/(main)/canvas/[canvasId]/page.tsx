@@ -8,6 +8,7 @@ import { ConnectionsProvider } from "@/app/_components/canvas/providers/Connecti
 import { EditorProvider } from "@/app/_components/canvas/providers/EditorProvider";
 import { useParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import ChatInputBox from "@/app/_components/ChatInputBox";
 
 const CanvasPage = () => {
   const params = useParams();
@@ -28,11 +29,16 @@ const CanvasPage = () => {
   return (
     <EditorProvider>
       <ConnectionsProvider canvasId={canvasId}>
-        <EditorCanvas 
-          canvasId={canvasId} 
-          initialNodes={canvas.nodes} 
-          initialEdges={canvas.edges} 
-        />
+        <div className="relative w-full h-screen overflow-hidden">
+          <EditorCanvas 
+            canvasId={canvasId} 
+            initialNodes={canvas.nodes} 
+            initialEdges={canvas.edges} 
+          />
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-3xl px-4 z-50">
+            <ChatInputBox canvasId={canvasId} />
+          </div>
+        </div>
       </ConnectionsProvider>
     </EditorProvider>
   );

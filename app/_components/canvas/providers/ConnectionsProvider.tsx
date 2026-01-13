@@ -204,7 +204,9 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     const latestEdges = useCanvasStore.getState().edges;
     
     const nodesToSync = latestNodes.filter(n => !n.id.startsWith('preview-') && n.type !== 'preview-input' && n.type !== 'preview-file');
-    const edgesToSync = latestEdges.filter(e => !e.id.startsWith('edge-preview-') && !e.target.startsWith('preview-'));
+    const edgesToSync = latestEdges.filter(
+      e => !e.id.startsWith('edge-preview-') && !e.target.startsWith('preview-') && !e.source.startsWith('preview-')
+    );
 
     await updateCanvas({ 
       canvasId, 

@@ -110,7 +110,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           newPending.push({
             nodeId: node.id,
             fileName: fileData.fileName || "File",
-            preview: fileData.previewUrl || (fileData.fileType?.startsWith("image/") ? fileData.storageId : undefined),
+            preview: fileData.previewUrl || (fileData.fileType?.startsWith("image/") && fileData.storageId ? `/api/file?key=${encodeURIComponent(fileData.storageId)}&redirect=true` : undefined),
             fileType: fileData.fileType,
             isExistingNode: true
           });

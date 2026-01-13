@@ -135,6 +135,7 @@ export class RLMOrchestrator {
       };
     } catch (error) {
       console.error("[RLM Orchestrator] Environment execution failed:", error);
+      this.resetState();
       return this.execute(query, context);
     }
   }

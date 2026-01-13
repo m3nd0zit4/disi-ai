@@ -75,7 +75,8 @@ Synthesize these sub-answers into a cohesive markdown response for the original 
       temperature: 0.5,
     });
 
-    const totalTokens = results.reduce((sum, r) => sum + r.tokensUsed, 0) + response.tokens;
+    const responseTokens = typeof response.tokens === 'number' ? response.tokens : ((response.tokens as any)?.total || 0);
+    const totalTokens = results.reduce((sum, r) => sum + r.tokensUsed, 0) + responseTokens;
     const cacheHits = results.filter(r => r.fromCache).length;
 
     const output: RLMOutput = {

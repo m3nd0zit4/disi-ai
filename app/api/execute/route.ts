@@ -151,6 +151,7 @@ export async function POST(req: Request) {
               data: {
                 fileName: fa.name,
                 fileType: fa.type,
+                fileSize: fa.size || 0,
                 storageId: fa.storageId,
                 uploadStatus: "complete",
                 createdAt: Date.now(),

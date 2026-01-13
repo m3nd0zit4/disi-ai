@@ -6,12 +6,18 @@
  * Format file size in bytes to a human-readable string
  */
 export const formatFileSize = (bytes: number): string => {
-  if (bytes <= 0) return "0 B";
-  if (bytes >= 1024 * 1024 * 1024 * 1024) return "Too Large"; // Guard against extremely large sizes
+  if (bytes < 0) return "Invalid size";
+  if (bytes === 0) return "0 B";
   
   const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  
+  // Handle 0 < bytes < 1 by forcing i = 0
+  let i = bytes < 1 ? 0 : Math.floor(Math.log(bytes) / Math.log(k));
+  
+  // Clamp i to valid range
+  i = Math.max(0, Math.min(i, sizes.length - 1));
+  
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 };
 

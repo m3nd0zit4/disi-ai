@@ -233,8 +233,3 @@
     auto !important;
 }
 
-.interactive-edge:hover + .react-flow__edge-path {
-  stroke-width: 3px;
-  stroke: var(--primary);
-  opacity: 0.8;
-}
