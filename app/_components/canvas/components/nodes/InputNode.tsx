@@ -4,16 +4,14 @@ import { User } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
-import { NodeToolbar } from "./NodeToolbar";
 import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
 import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
 import { InputNodeData } from "../../types";
 
 export const InputNode = memo(({ id, data, selected }: NodeProps) => {
-  const inputData = data as InputNodeData;
+  const inputData = data as unknown as InputNodeData;
   const { text, createdAt, color, attachments, role, importance } = inputData;
-  const selectedNodeIdForToolbar = useCanvasStore((state: CanvasState) => state.selectedNodeIdForToolbar);
   const edges = useCanvasStore((state: CanvasState) => state.edges);
   const { user } = useUser();
 
@@ -22,8 +20,6 @@ export const InputNode = memo(({ id, data, selected }: NodeProps) => {
 
   return (
     <div className="group relative select-none">
-      <NodeToolbar nodeId={id} isVisible={selectedNodeIdForToolbar === id} data={data} />
-      
       {hasIncoming && (
         <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 bg-primary/5 backdrop-blur-xl border border-primary/10 rounded-full animate-in fade-in slide-in-from-bottom-1 duration-500">
           <div className="size-1 rounded-full bg-primary/60 animate-pulse" />
@@ -35,7 +31,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps) => {
 
       <div 
         className={cn(
-          "min-w-[280px] max-w-[420px] backdrop-blur-2xl transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5 !border-0",
+          "w-[350px] backdrop-blur-2xl transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5",
           (!color || color === 'transparent') && "bg-white/80 dark:bg-white/[0.08]",
           selected ? "ring-1 ring-primary/30 shadow-[0_20px_50px_rgba(0,0,0,0.15)] z-50" : "shadow-sm hover:border-primary/10"
         )}
@@ -48,7 +44,11 @@ export const InputNode = memo(({ id, data, selected }: NodeProps) => {
         
         <div className="p-6 space-y-4">
           <div className="prose prose-sm dark:prose-invert max-w-none text-[14px] leading-relaxed text-foreground/90 font-medium whitespace-pre-wrap selection:bg-primary/20">
-            {text}
+            {text || (
+              <span className="text-foreground/30 italic font-normal">
+                Use as a variable, it can be referenced by other nodes...
+              </span>
+            )}
           </div>
 
           {/* Attachments */}

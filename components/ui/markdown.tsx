@@ -57,12 +57,12 @@ const INITIAL_COMPONENTS: Partial<Components> = {
   },
   img: function ImgComponent({ src, alt, ...props }) {
     return (
-      <div className="relative w-full max-w-md my-4 rounded-xl overflow-hidden border bg-muted/50">
+      <div className="relative w-full max-w-md my-4 rounded-xl overflow-hidden border bg-muted/50 max-h-[400px] flex items-center justify-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src}
           alt={alt || "Generated image"}
-          className="w-full h-auto object-cover"
+          className="w-full h-auto max-h-full object-contain"
           loading="lazy"
           {...props}
         />

@@ -16,6 +16,7 @@ interface DialogProps {
   type?: DialogType;
   confirmText?: string;
   cancelText?: string;
+  children?: React.ReactNode;
 }
 
 export function Dialog({
@@ -27,6 +28,7 @@ export function Dialog({
   type = "info",
   confirmText = "Confirm",
   cancelText = "Cancel",
+  children,
 }: DialogProps) {
   const icons = {
     info: <HelpCircle className="w-6 h-6 text-blue-500" />,
@@ -70,11 +72,12 @@ export function Dialog({
                     <p className="text-[13px] text-muted-foreground leading-snug">
                       {description}
                     </p>
+                    {children}
                   </div>
                 </div>
 
                 <div className="mt-6 flex items-center justify-end gap-2">
-                  {type === "confirm" ? (
+                  {onConfirm ? (
                     <>
                       <Button
                         variant="ghost"

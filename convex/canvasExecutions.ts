@@ -266,19 +266,15 @@ export const updateNodeExecution = mutation({
 });
 
 // GET EXECUTION
-export const getExecution = query({
-  args: { executionId: v.id("canvasExecutions") },
+export const getCanvasExecutionByClerkId = query({
+  args: { executionId: v.id("canvasExecutions"), clerkId: v.string() },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
     const execution = await ctx.db.get(args.executionId);
     if (!execution) return null;
 
-    // Verify ownership
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
       .first();
 
     if (!user || execution.userId !== user._id) {

@@ -1,6 +1,6 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import { Position, NodeProps } from "@xyflow/react";
-import { Sparkles, Lock } from "lucide-react";
+import { Sparkles, Lock, ChevronDown, ChevronUp } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import AIThinkingBlock from "@/components/ui/ai-thinking-block";
@@ -11,7 +11,6 @@ import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
-import { NodeToolbar } from "./NodeToolbar";
 import { AlertCircle, Settings } from "lucide-react";
 import Link from "next/link";
 import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
@@ -19,7 +18,7 @@ import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
 import { ResponseNodeData } from "../../types";
 
 export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
-  const responseData = data as ResponseNodeData;
+  const responseData = data as unknown as ResponseNodeData;
   const { 
     text, 
     modelId, 
@@ -37,9 +36,9 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
     importance
   } = responseData;
   
-  const selectedNodeIdForToolbar = useCanvasStore((state: CanvasState) => state.selectedNodeIdForToolbar);
+  const [isExpanded, setIsExpanded] = useState(false);
   const edges = useCanvasStore((state: CanvasState) => state.edges);
-  const { theme } = useTheme();
+  const theme = useTheme().theme;
   const isLocked = isProModel && isUserFree;
 
   const incomingEdges = useMemo(
@@ -57,8 +56,6 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
   
   return (
     <div className="group relative select-none">
-      <NodeToolbar nodeId={id} isVisible={selectedNodeIdForToolbar === id} data={data} showRegenerate={true} />
-      
       {hasIncoming && (
         <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 bg-primary/5 backdrop-blur-xl border border-primary/10 rounded-full animate-in fade-in slide-in-from-bottom-1 duration-500">
           <div className="size-1 rounded-full bg-primary/60 animate-pulse" />
@@ -70,7 +67,7 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
 
       <div 
         className={cn(
-          "min-w-[300px] max-w-[550px] backdrop-blur-2xl transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5",
+          "w-[350px] backdrop-blur-2xl transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5",
           (!color || color === 'transparent') && "bg-white/80 dark:bg-white/[0.08]",
           selected ? "ring-1 ring-primary/30 shadow-[0_20px_50px_rgba(0,0,0,0.15)] z-50" : "shadow-sm hover:border-primary/10"
         )}
@@ -145,16 +142,46 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
                     )}
                   </div>
                 ) : (
-                  <>
-                    {displayMarkdown ? (
-                      <div className="relative">
-                        <Markdown>{displayMarkdown}</Markdown>
-                        {status === "streaming" && (
-                          <span className="inline-block w-1.5 h-4 ml-1 bg-primary/40 animate-pulse align-middle rounded-full" />
-                        )}
+                  <div className="relative">
+                    <div className={cn(
+                      "relative transition-all duration-500 ease-in-out",
+                      !isExpanded && displayMarkdown.length > 500 && "max-h-[300px] overflow-hidden"
+                    )}>
+                      {displayMarkdown ? (
+                        <div className="relative">
+                          <Markdown>{displayMarkdown}</Markdown>
+                          {status === "streaming" && (
+                            <span className="inline-block w-1.5 h-4 ml-1 bg-primary/40 animate-pulse align-middle rounded-full" />
+                          )}
+                        </div>
+                      ) : null}
+                      
+                      {!isExpanded && displayMarkdown.length > 500 && (
+                        <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-white/80 dark:from-black/40 to-transparent pointer-events-none" />
+                      )}
+                    </div>
+
+                    {displayMarkdown.length > 500 && (
+                      <div className="flex justify-center mt-2">
+                        <button
+                          onClick={() => setIsExpanded(!isExpanded)}
+                          className="opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/5 hover:bg-primary/10 text-[11px] font-bold text-primary/70 hover:text-primary"
+                        >
+                          {isExpanded ? (
+                            <>
+                              <ChevronUp className="w-3 h-3" />
+                              Collapse
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="w-3 h-3" />
+                              Expand
+                            </>
+                          )}
+                        </button>
                       </div>
-                    ) : null}
-                  </>
+                    )}
+                  </div>
                 )}
               </div>
             </>

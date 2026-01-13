@@ -5,6 +5,14 @@ import { sendToQueue } from "@/lib/sqs";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
+import { NodeData, DisplayNodeData } from "@/app/_components/canvas/types";
+
+type CanvasNode = {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  data: NodeData;
+};
 
 function getRequiredEnv(key: string): string {
   const value = process.env[key];
@@ -43,14 +51,14 @@ export async function POST(req: Request) {
       inputNodeId: providedInputNodeId,
       parentNodeId, // Legacy support
       parentNodeIds, // New array support
-      targetNodeId,
       imageSize,
       imageQuality,
       imageBackground,
       imageOutputFormat,
       imageN,
       imageModeration,
-      attachments, // Array of { storageId, type, name, size }
+      attachments, // Legacy attachments
+      fileAttachments, // New array of { storageId, type, name, size, position }
     } = body;
 
     // 1. Get user record
@@ -66,7 +74,7 @@ export async function POST(req: Request) {
     }
 
     let executionId = propExecutionId;
-    let nodesToQueue: NodeData[] = [];
+    let nodesToQueue: CanvasNode[] = [];
     let canvasForContext = canvas; // Declare in outer scope
 
     if (!executionId && prompt && (newNodeId || providedInputNodeId)) {
@@ -131,6 +139,32 @@ export async function POST(req: Request) {
             animated: true,
           });
         });
+
+        // Create nodes and edges for file attachments (Files -> Hub)
+        if (Array.isArray(fileAttachments)) {
+          fileAttachments.forEach((fa, i) => {
+            const fileNodeId = `file-${newNodeId}-${i}`;
+            nodesToAdd.push({
+              id: fileNodeId,
+              type: "file",
+              position: fa.position || { x: inputNodeX - 250, y: inputNodeY + (i * 120) },
+              data: {
+                fileName: fa.name,
+                fileType: fa.type,
+                storageId: fa.storageId,
+                uploadStatus: "complete",
+                createdAt: Date.now(),
+              }
+            });
+
+            newEdges.push({
+              id: `edge-${fileNodeId}-${inputNodeId}`,
+              source: fileNodeId,
+              target: inputNodeId,
+              animated: true,
+            });
+          });
+        }
       } else {
         // Update existing input node's text and attachments if they changed
         // This ensures the DB is consistent with the prompt sent
@@ -178,7 +212,7 @@ export async function POST(req: Request) {
             createdAt: Date.now(),
             isImageNode: isImageModel,
             type: isImageModel ? "image" : undefined,
-          }
+          } as any // Cast to any to avoid complex union type issues in this context
         };
       });
 

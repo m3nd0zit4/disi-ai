@@ -7,7 +7,8 @@ import {
   Globe, 
   Image as ImageIcon,
   Zap,
-  HelpCircle
+  HelpCircle,
+  Upload
 } from "lucide-react";
 import { LucideIcon } from "lucide-react";
 
@@ -19,7 +20,7 @@ const toolIcons: Record<string, LucideIcon> = {
   agent: Zap,
 };
 
-export function ToolActionsBar() {
+export function ToolActionsBar({ onUpload }: { onUpload?: () => void }) {
   const { enabledTools } = useAIContext();
   
   const activeTools = Object.entries(enabledTools)
@@ -42,6 +43,15 @@ export function ToolActionsBar() {
           </div>
         );
       })}
+      {onUpload && (
+        <button
+          onClick={onUpload}
+          className="flex items-center justify-center size-6 rounded-lg bg-primary/5 text-primary/60 hover:bg-primary/10 transition-colors"
+          title="Upload File"
+        >
+          <Upload className="w-3.5 h-3.5" />
+        </button>
+      )}
     </div>
   );
 }

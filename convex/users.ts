@@ -37,7 +37,16 @@ export const createUser = mutation({
       lastLoginAt: Date.now(),
     });
 
-    console.log("User created:", userId);
+    // ?Create default canvas for the new user
+    await ctx.db.insert("canvas", {
+      userId,
+      name: "My First Canvas",
+      nodes: [],
+      edges: [],
+      createdAt: Date.now(),
+    });
+
+    console.log("User created with default canvas:", userId);
     return userId;
   },
 });

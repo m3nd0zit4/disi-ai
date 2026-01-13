@@ -176,6 +176,44 @@ export const updateNodeDataInternal = mutation({
   },
 });
 
+export const updateNodeDataByClerkId = mutation({
+  args: {
+    canvasId: v.id("canvas"),
+    clerkId: v.string(),
+    nodeId: v.string(),
+    data: v.any(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) throw new Error("User not found");
+
+    const canvas = await ctx.db.get(args.canvasId);
+    if (!canvas) throw new Error("Canvas not found");
+
+    if (canvas.userId !== user._id) {
+      throw new Error("Unauthorized");
+    }
+
+    const newNodes = canvas.nodes.map((node: Record<string, any>) => {
+      if (node.id === args.nodeId) {
+        return { ...node, data: { ...node.data, ...args.data } };
+      }
+      return node;
+    });
+
+    await ctx.db.patch(args.canvasId, {
+      nodes: newNodes,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
 // ADD NODES AND EDGES
 export const addNodesAndEdges = mutation({
   args: {

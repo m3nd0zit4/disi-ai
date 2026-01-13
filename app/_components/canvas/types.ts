@@ -49,9 +49,24 @@ export interface DisplayNodeData extends BaseNodeData {
   status?: "pending" | "thinking" | "streaming" | "complete" | "error";
   modelId?: string;
   executionId?: string;
+  metadata?: {
+    width?: number;
+    height?: number;
+  };
+}
+
+export interface FileNodeData extends BaseNodeData {
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  storageId: string;
+  uploadStatus: "pending" | "uploading" | "complete" | "error";
+  textContent?: string;
+  previewUrl?: string;
 }
 
 export type NodeData = 
   | InputNodeData 
   | ResponseNodeData 
-  | DisplayNodeData;
+  | DisplayNodeData
+  | FileNodeData;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Search,
   ChevronDown
@@ -8,11 +8,21 @@ import {
 import { Button } from '@/components/ui/button';
 import ChatInputBox from '@/app/_components/ChatInputBox';
 import { AuthModal } from '@/app/_components/auth/AuthModal';
-import { useConvexAuth } from 'convex/react';
+import { useConvexAuth, useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import { useRouter } from 'next/navigation';
 
 const Page = () => {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const [userClosed, setUserClosed] = useState(false);
+  const router = useRouter();
+  const canvases = useQuery(api.canvas.listCanvas);
+
+  useEffect(() => {
+    if (isAuthenticated && !isLoading && canvases && canvases.length > 0) {
+      router.push(`/canvas/${canvases[0]._id}`);
+    }
+  }, [isAuthenticated, isLoading, canvases, router]);
 
   const showAuthModal = !isLoading && !isAuthenticated && !userClosed;
 

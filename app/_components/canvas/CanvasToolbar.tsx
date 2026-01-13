@@ -5,28 +5,44 @@ import {
   PanelLeft, 
   MessageSquare, 
   Plus, 
-  Search 
+  Search,
+  FilePlus
 } from "lucide-react";
 import { useSidebar } from "@/components/ui/sidebar";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
 import { Node } from "@xyflow/react";
+import { useRef } from "react";
+import { useDialog } from "@/hooks/useDialog";
+
+// File type helpers (reused from ChatInputBox or moved to shared)
+const isTextualFile = (file: File): boolean => {
+  const textualTypes = ["text/", "application/json", "application/xml", "application/javascript", "application/typescript"];
+  const textualExtensions = ["txt", "md", "py", "js", "ts", "jsx", "tsx", "html", "htm", "css", "scss", "sass", "json", "xml", "yaml", "yml", "csv", "sql", "sh", "bash", "php", "rb", "go", "java", "c", "cpp", "h", "hpp", "cs", "rs", "swift", "kt", "scala", "r", "vue", "svelte", "astro", "config", "conf", "ini", "toml", "log", "gitignore", "dockerfile", "makefile", "readme"];
+  const isTextualMimeType = textualTypes.some((type) => file.type.toLowerCase().startsWith(type));
+  const extension = file.name.split(".").pop()?.toLowerCase() || "";
+  return isTextualMimeType || textualExtensions.includes(extension);
+};
+
+const readFileAsText = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve((e.target?.result as string) || "");
+    reader.onerror = (e) => reject(e);
+    reader.readAsText(file);
+  });
+};
 
 export function CanvasToolbar() {
   const { toggleSidebar } = useSidebar();
-  const { addNode, viewport, nodes, setNodes } = useCanvasStore();
+  const { addNode, viewport, nodes, setNodes, updateNodeData } = useCanvasStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { showDialog } = useDialog();
 
   const handleAddFreeNode = () => {
     const newNodeId = `input-${Date.now()}`;
     
-    // Calculate center of viewport
-    // Default to (0,0) if viewport not available
     let position = { x: 0, y: 0 };
     if (viewport) {
-      // viewport.x/y are the top-left corner in canvas coordinates (negative of screen offset)
-      // zoom is the current zoom level
-      // Center = (-viewport.x + window.innerWidth/2) / viewport.zoom
-      // But since we don't have window.innerWidth easily here, let's use a simpler heuristic 
-      // or just place it at a reasonable offset from the current view.
       position = {
         x: (-viewport.x + 400) / viewport.zoom,
         y: (-viewport.y + 300) / viewport.zoom,
@@ -44,9 +60,83 @@ export function CanvasToolbar() {
       },
     };
 
-    // Deselect other nodes and add the new one
     const updatedNodes = nodes.map(n => ({ ...n, selected: false }));
     setNodes([...updatedNodes, newNode]);
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    const nodeId = `file-${Date.now()}`;
+    
+    let position = { x: 0, y: 0 };
+    if (viewport) {
+      position = {
+        x: (-viewport.x + 450) / viewport.zoom,
+        y: (-viewport.y + 350) / viewport.zoom,
+      };
+    }
+
+    let textContent: string | undefined;
+    if (isTextualFile(file)) {
+      try {
+        textContent = await readFileAsText(file);
+      } catch {
+        textContent = undefined;
+      }
+    }
+
+    const newNode: Node = {
+      id: nodeId,
+      type: "file",
+      position,
+      selected: true,
+      data: {
+        fileName: file.name,
+        fileType: file.type || "application/octet-stream",
+        fileSize: file.size,
+        storageId: "", 
+        uploadStatus: "uploading",
+        textContent,
+        createdAt: Date.now(),
+      },
+    };
+
+    const updatedNodes = nodes.map(n => ({ ...n, selected: false }));
+    setNodes([...updatedNodes, newNode]);
+
+    // Upload logic
+    try {
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentType: file.type, fileName: file.name }),
+      });
+
+      if (!response.ok) throw new Error("Failed to get upload URL");
+      const { url, key } = await response.json();
+
+      const uploadResult = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+
+      if (!uploadResult.ok) throw new Error("Upload to S3 failed");
+      
+      updateNodeData(nodeId, { 
+        storageId: key, 
+        uploadStatus: "complete" 
+      });
+    } catch (error) {
+      console.error("Upload error:", error);
+      updateNodeData(nodeId, { uploadStatus: "error" });
+      showDialog({ title: "Upload Error", description: `Failed to upload ${file.name}`, type: "error" });
+    }
+
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   return (
@@ -74,11 +164,28 @@ export function CanvasToolbar() {
         variant="ghost"
         size="icon"
         className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
-        aria-label="Add new"
+        aria-label="Add new text node"
         onClick={handleAddFreeNode}
       >
         <Plus className="size-4" />
       </Button>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
+        aria-label="Add new file node"
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <FilePlus className="size-4" />
+      </Button>
+
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        onChange={handleFileSelect}
+      />
 
       <Button
         variant="ghost"
