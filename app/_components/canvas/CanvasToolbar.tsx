@@ -16,7 +16,13 @@ import { useDialog } from "@/hooks/useDialog";
 
 import { isTextualFile, readFileAsText } from "@/lib/file-utils";
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; /**
+ * Client-side toolbar for the canvas that provides controls to toggle the sidebar, add text nodes, add file nodes, and access messages and search.
+ *
+ * The file node flow validates selected files against a 50 MB limit, creates a file node placed relative to the viewport, and initiates the upload process that updates the node's upload status.
+ *
+ * @returns The toolbar's JSX element.
+ */
 
 export function CanvasToolbar() {
   const { toggleSidebar } = useSidebar();

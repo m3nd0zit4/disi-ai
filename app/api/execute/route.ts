@@ -22,6 +22,13 @@ type CanvasEdge = {
   animated?: boolean;
 };
 
+/**
+ * Retrieve the value of an environment variable by its key.
+ *
+ * @param key - The environment variable name to look up
+ * @returns The environment variable's value
+ * @throws Error when the environment variable is not defined
+ */
 function getRequiredEnv(key: string): string {
   const value = process.env[key];
   if (!value) {
@@ -41,6 +48,18 @@ const DEFAULT_MODEL = {
   isEnabled: true,
 };
 
+/**
+ * Handle POST requests to create or resume canvas executions, persist any new nodes/edges,
+ * resolve execution context for each pending node, and enqueue node jobs to SQS for processing.
+ *
+ * This endpoint authenticates the caller, validates the canvas and user, then either:
+ * - Creates a new execution with an input node (or updates an existing input node), generates one or more response/display nodes (positioned via layout logic), persists nodes and edges, and enqueues those response nodes; or
+ * - Resumes an existing execution by finding pending nodes and enqueuing them.
+ *
+ * The queued message for each node includes node inputs, resolved reasoning context, image/attachment options, and execution identifiers.
+ *
+ * @returns A JSON NextResponse: on success `{"success": true, "jobs": [{ nodeId, jobId }, ...], "message": string}`; on error an `{"error": string}` response with an appropriate HTTP status (401, 404, 400, or 500).
+ */
 export async function POST(req: Request) {
   try {
     const { userId: clerkId } = await auth();

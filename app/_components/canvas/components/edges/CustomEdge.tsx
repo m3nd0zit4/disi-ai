@@ -8,6 +8,16 @@ import { useParams } from 'next/navigation';
 import { Scissors } from 'lucide-react';
 import { Id } from '@/convex/_generated/dataModel';
 
+/**
+ * Render a Bezier-style graph edge with hover and selection visuals and an interactive control to disconnect the edge.
+ *
+ * The edge displays a hover-activated scissors button at the computed label position. Double-clicking the edge or clicking the scissors removes the edge from the local store immediately (optimistic update) and triggers a backend mutation to persist the removal.
+ *
+ * @param id - The edge identifier used for local removal and backend mutation
+ * @param style - Optional SVG style overrides applied to the rendered edge
+ * @param selected - Whether the edge is currently selected (affects visual styling)
+ * @returns A React element that renders the custom edge, its interaction path, and the hover scissors control
+ */
 export default function CustomEdge({
   id,
   sourceX,
