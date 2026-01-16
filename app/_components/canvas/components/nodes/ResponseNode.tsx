@@ -17,6 +17,13 @@ import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
 
 import { ResponseNodeData } from "../../types";
 
+const GRADIENT_MAP: Record<string, string> = {
+  "rgba(59, 130, 246, 0.15)": "bg-gradient-to-t from-[#E2ECFE] dark:from-[#111B2E] to-transparent",
+  "rgba(168, 85, 247, 0.15)": "bg-gradient-to-t from-[#F2E6FE] dark:from-[#21142E] to-transparent",
+  "rgba(236, 72, 153, 0.15)": "bg-gradient-to-t from-[#FCE4F0] dark:from-[#2B1220] to-transparent",
+  "rgba(234, 179, 8, 0.15)":  "bg-gradient-to-t from-[#FCF4DA] dark:from-[#2B230B] to-transparent",
+};
+
 export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
   const responseData = data as unknown as ResponseNodeData;
   const { 
@@ -157,7 +164,14 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
                       ) : null}
                       
                       {!isExpanded && displayMarkdown.length > 500 && (
-                        <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-white/80 dark:from-black/40 to-transparent pointer-events-none" />
+                        <div 
+                          className={cn(
+                            "absolute bottom-0 left-0 right-0 h-24 pointer-events-none",
+                            color && GRADIENT_MAP[color] 
+                              ? GRADIENT_MAP[color] 
+                              : "bg-gradient-to-t from-white/90 dark:from-black/40 to-transparent"
+                          )}
+                        />
                       )}
                     </div>
 

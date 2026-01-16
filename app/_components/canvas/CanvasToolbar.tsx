@@ -31,7 +31,7 @@ export function CanvasToolbar() {
     if (viewport) {
       position = {
         x: (-viewport.x + 400) / viewport.zoom,
-        y: (-viewport.y + 300) / viewport.zoom,
+        y: (-viewport.y + 100) / viewport.zoom, // Higher up
       };
     }
 
@@ -73,7 +73,7 @@ export function CanvasToolbar() {
     if (viewport) {
       position = {
         x: (-viewport.x + 450) / viewport.zoom,
-        y: (-viewport.y + 350) / viewport.zoom,
+        y: (-viewport.y + 150) / viewport.zoom, // Higher up
       };
     }
 

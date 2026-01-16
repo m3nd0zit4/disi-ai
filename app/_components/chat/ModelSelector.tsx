@@ -6,7 +6,6 @@ import {
   Image as ImageIcon, 
   Video, 
   Wand2, 
-  Globe, 
   Zap,
   ChevronDown,
   Search,
@@ -30,7 +29,6 @@ import { SpecializedModel } from "@/types/AiModel";
 
 const modes = [
   { id: "regular", name: "Regular", icon: Sparkles },
-  { id: "webpage", name: "Webpage", icon: Globe },
   { id: "image", name: "Image", icon: ImageIcon },
   { id: "video", name: "Video", icon: Video },
   { id: "prompt_enhance", name: "Prompt Enhance", icon: Wand2 },

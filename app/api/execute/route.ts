@@ -5,13 +5,21 @@ import { sendToQueue } from "@/lib/sqs";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
-import { NodeData, DisplayNodeData } from "@/app/_components/canvas/types";
+import { findBestPosition } from "@/lib/canvas/layout";
+import { NodeData, DisplayNodeData, ResponseNodeData } from "@/app/_components/canvas/types";
 
 type CanvasNode = {
   id: string;
   type: string;
   position: { x: number; y: number };
   data: NodeData;
+};
+
+type CanvasEdge = {
+  id: string;
+  source: string;
+  target: string;
+  animated?: boolean;
 };
 
 function getRequiredEnv(key: string): string {
@@ -59,6 +67,7 @@ export async function POST(req: Request) {
       imageModeration,
       attachments, // Legacy attachments
       fileAttachments, // New array of { storageId, type, name, size, position }
+      isBranching, // NEW: Flag for lateral positioning
     } = body;
 
     // 1. Get user record
@@ -86,38 +95,62 @@ export async function POST(req: Request) {
       // Consolidate parent IDs once
       const parents = parentNodeIds || (parentNodeId ? [parentNodeId] : []);
 
-      // Calculate position based on parent node or use passed position
-      let startX = 100;
-      let startY = canvas.nodes.length * 200 + 100;
-      
-      if (body.position) {
-        startX = body.position.x;
-        startY = body.position.y;
-      } else {
-        if (parents.length > 0) {
-            const parentNodes = canvas.nodes.filter(n => parents.includes(n.id));
-            if (parentNodes.length > 0) {
-                const avgX = parentNodes.reduce((sum, n) => sum + n.position.x, 0) / parentNodes.length;
-                const maxY = Math.max(...parentNodes.map(n => n.position.y));
-                
-                startX = avgX;
-                startY = maxY + 400;
-            }
-        }
-      }
+      // Calculate position using intelligent layout
+      const inputNodeSize = { width: 350, height: 200 };
+      const inputNodePos = findBestPosition({
+        nodes: canvas.nodes,
+        edges: canvas.edges,
+        anchorNodeId: parents[0], // Use the first parent as anchor
+        newNodeId: providedInputNodeId || `input-${newNodeId}`, // Pass the ID of the node we are about to create
+        newNodeSize: inputNodeSize,
+        newNodeType: "input",
+        isExplicitSelection: isBranching // Pass the flag
+      });
 
-      const RESPONSE_WIDTH = 500;
-      const SPACING = 40;
-      const totalResponseWidth = modelsToProcess.length * RESPONSE_WIDTH + (modelsToProcess.length - 1) * SPACING;
-      
-      const inputNodeX = startX + (totalResponseWidth / 2) - (350 / 2);
-      const inputNodeY = startY;
+      const inputNodeX = inputNodePos.x;
+      const inputNodeY = inputNodePos.y;
 
       const inputNodeId = providedInputNodeId || `input-${newNodeId}`;
-      const nodesToAdd = [];
-      const newEdges = [];
+      const nodesToAdd: CanvasNode[] = [];
+      const newEdges: CanvasEdge[] = [];
 
       if (!providedInputNodeId) {
+        // Create nodes and edges for file attachments (Files -> Hub)
+        // Position files ABOVE the input node
+        if (Array.isArray(fileAttachments)) {
+          const FILE_WIDTH = 350;
+          const FILE_SPACING = 20;
+          const totalFilesWidth = fileAttachments.length * FILE_WIDTH + (fileAttachments.length - 1) * FILE_SPACING;
+          const filesStartX = inputNodeX + (350 / 2) - (totalFilesWidth / 2);
+
+          fileAttachments.forEach((fa, i) => {
+            const fileNodeId = `file-${newNodeId}-${i}`;
+            nodesToAdd.push({
+              id: fileNodeId,
+              type: "file",
+              position: fa.position || { 
+                x: filesStartX + i * (FILE_WIDTH + FILE_SPACING), 
+                y: inputNodeY - 250 // Above input node
+              },
+              data: {
+                fileName: fa.name,
+                fileType: fa.type,
+                fileSize: fa.size || 0,
+                storageId: fa.storageId,
+                uploadStatus: "complete",
+                createdAt: Date.now(),
+              }
+            });
+
+            newEdges.push({
+              id: `edge-${fileNodeId}-${inputNodeId}`,
+              source: fileNodeId,
+              target: inputNodeId,
+              animated: true,
+            });
+          });
+        }
+
         // Create new input node
         nodesToAdd.push({
           id: inputNodeId,
@@ -139,33 +172,6 @@ export async function POST(req: Request) {
             animated: true,
           });
         });
-
-        // Create nodes and edges for file attachments (Files -> Hub)
-        if (Array.isArray(fileAttachments)) {
-          fileAttachments.forEach((fa, i) => {
-            const fileNodeId = `file-${newNodeId}-${i}`;
-            nodesToAdd.push({
-              id: fileNodeId,
-              type: "file",
-              position: fa.position || { x: inputNodeX - 250, y: inputNodeY + (i * 120) },
-              data: {
-                fileName: fa.name,
-                fileType: fa.type,
-                fileSize: fa.size || 0,
-                storageId: fa.storageId,
-                uploadStatus: "complete",
-                createdAt: Date.now(),
-              }
-            });
-
-            newEdges.push({
-              id: `edge-${fileNodeId}-${inputNodeId}`,
-              source: fileNodeId,
-              target: inputNodeId,
-              animated: true,
-            });
-          });
-        }
       } else {
         // Update existing input node's text and attachments if they changed
         // This ensures the DB is consistent with the prompt sent
@@ -195,26 +201,47 @@ export async function POST(req: Request) {
         }
       }
 
-      const responseNodes = modelsToProcess.map((model, i) => {
+      const responseNodes: CanvasNode[] = [];
+      modelsToProcess.forEach((model, i) => {
         const modelInfo = SPECIALIZED_MODELS.find(m => m.id === model.modelId);
         const isImageModel = !!modelInfo && modelInfo.category === "image";
+        const baseId = newNodeId ?? providedInputNodeId ?? `fallback-${Date.now()}`;
+        const responseNodeId = `response-${baseId}-${i}`;
+        
+        const responseNodeSize = { width: 500, height: 400 };
+        const responseNodePos = findBestPosition({
+          nodes: [...canvas.nodes, ...nodesToAdd], // Include the newly created input node
+          anchorNodeId: inputNodeId,
+          newNodeSize: responseNodeSize,
+          newNodeType: isImageModel ? "display" : "response",
+          isParallel: true,
+          parallelIndex: i,
+          totalParallel: modelsToProcess.length
+        });
 
-        return {
-          id: `response-${newNodeId}-${i}`,
+        const data: NodeData = isImageModel 
+          ? {
+              type: "image",
+              executionId,
+              modelId: model.modelId,
+              status: "pending",
+              createdAt: Date.now(),
+              text: "",
+            } as DisplayNodeData
+          : {
+              executionId,
+              modelId: model.modelId,
+              status: "pending",
+              createdAt: Date.now(),
+              text: "",
+            } as ResponseNodeData;
+
+        responseNodes.push({
+          id: responseNodeId,
           type: isImageModel ? "display" : "response",
-          position: { 
-            x: startX + i * (RESPONSE_WIDTH + SPACING), 
-            y: inputNodeY + 300 
-          },
-          data: {
-            text: "",
-            modelId: model.modelId,
-            status: "pending",
-            createdAt: Date.now(),
-            isImageNode: isImageModel,
-            type: isImageModel ? "image" : undefined,
-          } as any // Cast to any to avoid complex union type issues in this context
-        };
+          position: responseNodePos,
+          data
+        });
       });
 
       nodesToAdd.push(...responseNodes);

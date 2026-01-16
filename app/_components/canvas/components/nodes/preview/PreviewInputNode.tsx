@@ -13,17 +13,17 @@ export const PreviewInputNode = memo(({ data, selected }: NodeProps) => {
   const { user } = useUser();
 
   return (
-    <div className="group relative select-none animate-pulse">
+    <div className="group relative select-none">
       <div 
         className={cn(
-          "w-[350px] backdrop-blur-2xl transition-all duration-500 rounded-[2rem] overflow-hidden border-2 border-dashed border-primary/40 bg-primary/5 opacity-80",
+          "w-[350px] backdrop-blur-2xl rounded-[2rem] overflow-hidden border-2 border-dashed border-primary/40 bg-primary/5 opacity-80",
           selected ? "ring-1 ring-primary/30 shadow-lg" : "shadow-sm"
         )}
       >
         <NodeHandle type="target" position={Position.Top} />
         
         <div className="p-6 space-y-4">
-          <div className="prose prose-sm dark:prose-invert max-w-none text-[14px] leading-relaxed text-foreground/90 font-medium whitespace-pre-wrap">
+          <div className="prose prose-sm dark:prose-invert max-w-none text-[14px] leading-relaxed text-foreground/90 font-medium whitespace-pre-wrap min-h-[1.5em]">
             {text || <span className="text-muted-foreground/50 italic">Escribe tu prompt aquí...</span>}
           </div>
           

@@ -92,13 +92,33 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   const createCanvas = useMutation(api.canvas.createCanvas);
 
   // Use custom hook for preview logic
-  const { handlePromptChange, cleanupPreview, addPreviewFile, previewNodeIdRef } = useNodePreview(prompt, setPrompt);
+  const { handlePromptChange, cleanupPreview, addPreviewFile, previewNodeIdRef } = useNodePreview(prompt, setPrompt, selectedModels);
 
   const nodes = useCanvasStore(state => state.nodes);
+  
+  // Track previous node state to prevent infinite loops
+  const prevNodesRef = useRef<{
+    selectedFileNodeIds: Set<string>;
+    allNodeIds: Set<string>;
+  }>({
+    selectedFileNodeIds: new Set(),
+    allNodeIds: new Set()
+  });
 
   // Sync pending files with canvas selection
   useEffect(() => {
     const selectedFileNodes = nodes.filter(n => n.selected && n.type === 'file');
+    const currentSelectedIds = new Set(selectedFileNodes.map(n => n.id));
+    
+    // Only update if the selection actually changed
+    const prevSelectedIds = prevNodesRef.current.selectedFileNodeIds;
+    const hasSelectionChanged = 
+      currentSelectedIds.size !== prevSelectedIds.size ||
+      [...currentSelectedIds].some(id => !prevSelectedIds.has(id));
+    
+    if (!hasSelectionChanged) return;
+    
+    prevNodesRef.current.selectedFileNodeIds = currentSelectedIds;
     
     setPendingFiles(prev => {
       const newPending = [...prev];
@@ -124,8 +144,21 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
 
   // Sync pending files with node existence (remove if node is deleted)
   useEffect(() => {
+    const currentNodeIds = new Set(nodes.map(n => n.id));
+    const prevNodeIds = prevNodesRef.current.allNodeIds;
+    
+    // Only update if nodes were actually removed
+    const hasNodesRemoved = [...prevNodeIds].some(id => !currentNodeIds.has(id));
+    
+    if (!hasNodesRemoved) {
+      prevNodesRef.current.allNodeIds = currentNodeIds;
+      return;
+    }
+    
+    prevNodesRef.current.allNodeIds = currentNodeIds;
+    
     setPendingFiles(prev => {
-      const filtered = prev.filter(p => nodes.some(n => n.id === p.nodeId));
+      const filtered = prev.filter(p => currentNodeIds.has(p.nodeId));
       return filtered.length !== prev.length ? filtered : prev;
     });
   }, [nodes]);
@@ -153,27 +186,27 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
         const options = modelInfo.providerMetadata.metadata.imageGenerationOptions;
         if (!options) return;
 
-        if (options.sizes && options.sizes.length > 0 && !imageSize) {
-          setImageSize(options.sizes[0]);
+        if (options.sizes && options.sizes.length > 0) {
+          setImageSize(prev => prev || options.sizes[0]);
         }
-        if (options.quality && options.quality.length > 0 && !imageQuality) {
-          setImageQuality(options.quality[0]);
+        if (options.quality && options.quality.length > 0) {
+          setImageQuality(prev => prev || options.quality[0]);
         }
 
         if (options.modelType === "gpt-image") {
-          if (options.background && options.background.length > 0 && !imageBackground) {
-            setImageBackground(options.background[0]);
+          if (options.background && options.background.length > 0) {
+            setImageBackground(prev => prev || options.background[0]);
           }
-          if (options.output_format && options.output_format.length > 0 && !imageOutputFormat) {
-            setImageOutputFormat(options.output_format[0]);
+          if (options.output_format && options.output_format.length > 0) {
+            setImageOutputFormat(prev => prev || options.output_format[0]);
           }
-          if (options.moderation && options.moderation.length > 0 && !imageModeration) {
-            setImageModeration(options.moderation[0]);
+          if (options.moderation && options.moderation.length > 0) {
+            setImageModeration(prev => prev || options.moderation[0]);
           }
         }
       }
     }
-  }, [selectedModels, hasModelsSelected, imageSize, imageQuality, imageBackground, imageOutputFormat, imageN, imageModeration]);
+  }, [selectedModels, hasModelsSelected]);
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement> | FileList, isDirect = false) => {
     const selectedFiles = "target" in e ? (e.target as HTMLInputElement).files : e;
@@ -398,13 +431,19 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
         }
 
         const previewNode = currentNodes.find(n => n.id === previewNodeIdRef.current);
-        previewPosition = previewNode?.position || previewPosition;
+        // CRITICAL: Use the preview node's position if it exists (handles manual movement)
+        if (previewNode) {
+            previewPosition = previewNode.position;
+        }
       }
 
       const previewId = previewNodeIdRef.current;
       const newNodeId = previewId ? previewId.replace('preview-', '') : `node-${Date.now()}`;
       
       // Files are now nodes on canvas, no need to pass attachments
+
+      // Determine if this is a branching action (explicit selection)
+      const isBranching = !!selectedInputNode;
 
       const response = await fetch("/api/execute", {
         method: "POST",
@@ -419,6 +458,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           newNodeId: newNodeId,
           inputNodeId: selectedInputNode?.id,
           parentNodeIds: parentNodeIds,
+          isBranching, // Pass the flag
           fileAttachments: pendingFiles
             .filter(f => f.storageId && f.storageId !== "")
             .map(f => {

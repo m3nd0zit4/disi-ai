@@ -9,6 +9,7 @@ import { EditorProvider } from "@/app/_components/canvas/providers/EditorProvide
 import { useParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import ChatInputBox from "@/app/_components/ChatInputBox";
+import { CanvasToolbar } from "@/app/_components/canvas/CanvasToolbar";
 
 const CanvasPage = () => {
   const params = useParams();
@@ -20,7 +21,9 @@ const CanvasPage = () => {
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary/50" />
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Loading Canvas...</p>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+            Loading Canvas...
+          </p>
         </div>
       </div>
     );
@@ -30,11 +33,14 @@ const CanvasPage = () => {
     <EditorProvider>
       <ConnectionsProvider canvasId={canvasId}>
         <div className="relative w-full h-screen overflow-hidden">
-          <EditorCanvas 
-            canvasId={canvasId} 
-            initialNodes={canvas.nodes} 
-            initialEdges={canvas.edges} 
+          <EditorCanvas
+            canvasId={canvasId}
+            initialNodes={canvas.nodes}
+            initialEdges={canvas.edges}
           />
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50">
+            <CanvasToolbar />
+          </div>
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-3xl px-4 z-50">
             <ChatInputBox canvasId={canvasId} />
           </div>
