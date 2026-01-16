@@ -247,7 +247,8 @@ export function findBestPosition(params: LayoutParams): Point {
       
       // User explicitly said: "No importa que se superpongan"
       // So we return DIRECTLY, skipping avoidCollisions
-      return targetPos;
+      // But we MUST clamp to viewport if provided
+      return clampToViewport(targetPos, newNodeSize, viewport);
   }
   
   // If explicitly selected but NO children yet -> First branch
@@ -259,7 +260,7 @@ export function findBestPosition(params: LayoutParams): Point {
         x: anchorNode.position.x + anchorSize.width / 2 - newNodeSize.width / 2,
         y: anchorNode.position.y + anchorSize.height + RANK_GAP
       };
-      return targetPos;
+      return clampToViewport(targetPos, newNodeSize, viewport);
   }
 
   // --- Identify Cluster Context ---

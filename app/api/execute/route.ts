@@ -99,6 +99,7 @@ export async function POST(req: Request) {
       const inputNodeSize = { width: 350, height: 200 };
       const inputNodePos = findBestPosition({
         nodes: canvas.nodes,
+        edges: canvas.edges,
         anchorNodeId: parents[0], // Use the first parent as anchor
         newNodeId: providedInputNodeId || `input-${newNodeId}`, // Pass the ID of the node we are about to create
         newNodeSize: inputNodeSize,
@@ -204,7 +205,8 @@ export async function POST(req: Request) {
       modelsToProcess.forEach((model, i) => {
         const modelInfo = SPECIALIZED_MODELS.find(m => m.id === model.modelId);
         const isImageModel = !!modelInfo && modelInfo.category === "image";
-        const responseNodeId = `response-${newNodeId}-${i}`;
+        const baseId = newNodeId ?? providedInputNodeId ?? `fallback-${Date.now()}`;
+        const responseNodeId = `response-${baseId}-${i}`;
         
         const responseNodeSize = { width: 500, height: 400 };
         const responseNodePos = findBestPosition({

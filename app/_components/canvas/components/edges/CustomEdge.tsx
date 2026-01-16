@@ -19,10 +19,13 @@ export default function CustomEdge({
   style = {},
   markerEnd,
   selected,
+  source,
+  target,
 }: EdgeProps) {
   const params = useParams();
   const canvasId = params.canvasId as Id<"canvas">;
   
+  const addEdgeToStore = useCanvasStore(state => state.addEdge);
   const removeEdgeFromStore = useCanvasStore(state => state.removeEdge);
   const removeEdgeMutation = useMutation(api.canvas.removeEdge);
   
@@ -49,7 +52,14 @@ export default function CustomEdge({
             await removeEdgeMutation({ canvasId, edgeId: id });
         } catch (error) {
             console.error("Failed to remove edge:", error);
-            // Revert? (Complex without undo stack, but acceptable for now)
+            // Revert
+            addEdgeToStore({
+                id,
+                source,
+                target,
+                type: 'custom', 
+                animated: true 
+            });
         }
     }
   };
@@ -96,8 +106,10 @@ export default function CustomEdge({
             className="nodrag nopan"
         >
             <button
+                type="button"
+                aria-label="Disconnect edge"
                 className="bg-background border border-border rounded-full p-1 shadow-sm hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                onClick={onDoubleClick} // Allow single click on scissors too? User said double click on edge, but scissors usually implies click. Let's support click on scissors.
+                onClick={onDoubleClick} 
                 title="Double-click edge or click here to disconnect"
             >
                 <Scissors size={14} />

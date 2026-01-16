@@ -20,11 +20,13 @@ export function useNodePreview(
   const previewEdgeIdRef = useRef<string | null>(null);
   const previewFileNodeIdsRef = useRef<Set<string>>(new Set());
   const previewFileEdgeIdsRef = useRef<Set<string>>(new Set());
-  const previewResponseNodeIdsRef = useRef<Set<string>>(new Set());
+  const previewResponseNodeIdsRef = useRef<string[]>([]);
   const previewResponseEdgeIdsRef = useRef<Set<string>>(new Set());
   
   const isSyncingRef = useRef(false);
-  const hasManuallyMovedRef = useRef(false);
+  const hasManuallyMovedPerAnchorMap = useRef<Record<string, boolean>>({});
+  
+  const DEFAULT_PREVIEW_MODEL = "gpt-5.2";
 
   // Targeted selector for the selected input node (including preview-input)
   const selectedInputNode = nodes.find(n => n.selected && (n.type === 'input' || n.type === 'preview-input'));
@@ -52,11 +54,12 @@ export function useNodePreview(
 
     // Cleanup response previews
     previewResponseNodeIdsRef.current.forEach(id => removeNode(id));
-    previewResponseNodeIdsRef.current.clear();
+    previewResponseNodeIdsRef.current = [];
     previewResponseEdgeIdsRef.current.forEach(id => removeEdge(id));
     previewResponseEdgeIdsRef.current.clear();
     
-    hasManuallyMovedRef.current = false;
+    // We don't necessarily need to clear the map, but we can if we want to reset state for this preview session
+    // hasManuallyMovedPerAnchorMap.current = {}; 
   }, [removeNode, removeEdge]);
 
   const ensureInputPreview = useCallback((currentNodes: Node[], currentPrompt?: string) => {
@@ -228,7 +231,7 @@ export function useNodePreview(
     
     const previewNode = nodes.find(n => n.id === previewNodeIdRef.current);
     if (previewNode?.dragging) {
-      hasManuallyMovedRef.current = true;
+      hasManuallyMovedPerAnchorMap.current[previewNodeIdRef.current] = true;
     }
   }, [nodes]);
 
@@ -253,7 +256,7 @@ export function useNodePreview(
       updateNodeData(previewNodeIdRef.current, { text: prompt });
       
       // Only auto-follow if the user hasn't manually moved it
-      if (!hasManuallyMovedRef.current) {
+      if (!hasManuallyMovedPerAnchorMap.current[previewNodeIdRef.current]) {
         const selectedNode = currentNodes.find(n => n.selected && !n.id.startsWith('preview-'));
         const previewNode = currentNodes.find(n => n.id === previewNodeIdRef.current);
 
@@ -333,14 +336,15 @@ export function useNodePreview(
     if (isSyncingRef.current) return;
     if (!previewNodeIdRef.current) return;
 
-    const currentNodes = useCanvasStore.getState().nodes;
+    const singleState = useCanvasStore.getState();
+    const currentNodes = singleState.nodes;
     const inputPreview = currentNodes.find(n => n.id === previewNodeIdRef.current);
     if (!inputPreview) return;
 
-    const modelsToPreview = selectedModels.length > 0 ? selectedModels : [{ modelId: "gpt-5.2" }];
+    const modelsToPreview = selectedModels.length > 0 ? selectedModels : [{ modelId: DEFAULT_PREVIEW_MODEL }];
     
     // Sync response nodes
-    const currentResponseIds = Array.from(previewResponseNodeIdsRef.current);
+    const currentResponseIds = [...previewResponseNodeIdsRef.current];
     
     // Remove extra nodes
     if (currentResponseIds.length > modelsToPreview.length) {
@@ -348,25 +352,26 @@ export function useNodePreview(
       toRemove.forEach(id => {
         removeNode(id);
         removeEdge(`edge-preview-response-${id}`);
-        previewResponseNodeIdsRef.current.delete(id);
         previewResponseEdgeIdsRef.current.delete(`edge-preview-response-${id}`);
       });
+      // Update ref to match
+      previewResponseNodeIdsRef.current = currentResponseIds.slice(0, modelsToPreview.length);
     }
 
     // Add or update nodes
     modelsToPreview.forEach((model, i) => {
-      const existingId = currentResponseIds[i];
+      const existingId = previewResponseNodeIdsRef.current[i];
       
       if (existingId) {
         // Update existing node
         updateNodeData(existingId, { modelId: model.modelId });
         // Update position if not dragging
         const node = currentNodes.find(n => n.id === existingId);
-        if (node && !node.dragging && !hasManuallyMovedRef.current) {
+        if (node && !node.dragging && !hasManuallyMovedPerAnchorMap.current[previewNodeIdRef.current!]) {
           const responseNodeSize = { width: 350, height: 250 };
           const responseNodePos = findBestPosition({
             nodes: currentNodes.filter(n => n.id !== existingId),
-            edges: useCanvasStore.getState().edges,
+            edges: singleState.edges,
             anchorNodeId: inputPreview.id,
             newNodeSize: responseNodeSize,
             newNodeType: "preview-response",
@@ -375,8 +380,8 @@ export function useNodePreview(
             totalParallel: modelsToPreview.length
           });
 
-          useCanvasStore.getState().setNodes(
-            useCanvasStore.getState().nodes.map(n => 
+          singleState.setNodes(
+            singleState.nodes.map(n => 
               n.id === existingId ? { ...n, position: responseNodePos } : n
             )
           );
@@ -387,7 +392,7 @@ export function useNodePreview(
         const responseNodeSize = { width: 350, height: 250 };
         const responseNodePos = findBestPosition({
           nodes: currentNodes,
-          edges: useCanvasStore.getState().edges,
+          edges: singleState.edges,
           anchorNodeId: inputPreview.id,
           newNodeSize: responseNodeSize,
           newNodeType: "preview-response",
@@ -415,7 +420,7 @@ export function useNodePreview(
           animated: true,
         });
 
-        previewResponseNodeIdsRef.current.add(nodeId);
+        previewResponseNodeIdsRef.current.push(nodeId);
         previewResponseEdgeIdsRef.current.add(edgeId);
       }
     });
