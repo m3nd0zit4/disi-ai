@@ -3,7 +3,7 @@ import { Node, Edge } from "@xyflow/react";
 // Constants for layout
 const RANK_GAP = 50; // Vertical gap between ranks (Case 1)
 const NODE_GAP = 30; // Horizontal gap between siblings (Case 6)
-const LATERAL_GAP = 210; // Gap for lateral placement (Case 4) - Increased to 100
+const LATERAL_GAP = 210; // Gap for lateral placement (Case 4) - 210
 const MAX_CLUSTER_HEIGHT = 1200; // Case 3: Saturation limit
 const COLLISION_PADDING = 20; // Case 8: Padding for collision detection
 

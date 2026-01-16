@@ -24,6 +24,7 @@ export interface CanvasState {
   addNode: (node: Node) => void;
   removeNode: (nodeId: string) => void;
   updateNodeData: (nodeId: string, data: Record<string, any>) => void;
+  updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   addEdge: (edge: Edge) => void;
   removeEdge: (edgeId: string) => void;
   duplicateNode: (nodeId: string) => void;
@@ -180,6 +181,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         return node;
       }),
     });
+  },
+  updateNodePosition: (nodeId: string, position: { x: number; y: number }) => {
+    set(state => ({
+      nodes: state.nodes.map((node) => {
+        if (node.id === nodeId) {
+          return { ...node, position };
+        }
+        return node;
+      }),
+    }));
   },
   addEdge: (edge: Edge) => set({ edges: [...get().edges, edge] }),
   removeEdge: (edgeId: string) => set({ edges: get().edges.filter(e => e.id !== edgeId) }),

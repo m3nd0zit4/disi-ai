@@ -9,10 +9,11 @@ export function useNodePreview(
   setPrompt: (value: string) => void,
   selectedModels: SelectedModel[] = []
 ) {
-  const nodes = useCanvasStore(state => state.nodes);
-  const edges = useCanvasStore(state => state.edges);
+  // CRITICAL: Don't subscribe to nodes/edges reactively to avoid infinite loops
+  // Use imperative getState() calls inside effects instead
   const addNode = useCanvasStore(state => state.addNode);
   const updateNodeData = useCanvasStore(state => state.updateNodeData);
+  const updateNodePosition = useCanvasStore(state => state.updateNodePosition);
   const removeNode = useCanvasStore(state => state.removeNode);
   const addEdge = useCanvasStore(state => state.addEdge);
   const removeEdge = useCanvasStore(state => state.removeEdge);
@@ -28,9 +29,10 @@ export function useNodePreview(
   const hasManuallyMovedPerAnchorMap = useRef<Record<string, boolean>>({});
   
   const DEFAULT_PREVIEW_MODEL = "gpt-5.2";
-
-  // Targeted selector for the selected input node (including preview-input)
-  const selectedInputNode = nodes.find(n => n.selected && (n.type === 'input' || n.type === 'preview-input'));
+  
+  // Cache selectedModels to prevent unnecessary effect re-runs
+  const selectedModelsRef = useRef<SelectedModel[]>(selectedModels);
+  const prevSelectedModelsJsonRef = useRef<string>("");
 
   const cleanupPreview = useCallback(() => {
     // Don't cleanup if the preview node is currently selected (user might be editing it)
@@ -195,16 +197,20 @@ export function useNodePreview(
     }
 
     // Check if we are editing an existing node
-    const selectedInputNode = nodes.find(n => n.selected && (n.type === 'input' || n.type === 'preview-input'));
+    const currentNodes = useCanvasStore.getState().nodes;
+    const selectedInputNode = currentNodes.find(n => n.selected && (n.type === 'input' || n.type === 'preview-input'));
     if (selectedInputNode && selectedInputNode.id !== previewNodeIdRef.current) {
       updateNodeData(selectedInputNode.id, { text: newPrompt });
     }
-  }, [cleanupPreview, ensureInputPreview, nodes, setPrompt, updateNodeData]);
+  }, [cleanupPreview, ensureInputPreview, setPrompt, updateNodeData]);
 
   // Selection to Prompt Sync
   const lastSelectedNodeIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    const currentNodes = useCanvasStore.getState().nodes;
+    const selectedInputNode = currentNodes.find(n => n.selected && (n.type === 'input' || n.type === 'preview-input'));
+    
     if (selectedInputNode) {
       isSyncingRef.current = true;
       setPrompt((selectedInputNode.data.text as string) || "");
@@ -223,20 +229,20 @@ export function useNodePreview(
       setPrompt("");
       lastSelectedNodeIdRef.current = null;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedInputNode?.id, cleanupPreview]);
+  }, [setPrompt, cleanupPreview]);
 
-  // Track manual movements
+  // Track manual movements - runs on every render but uses ref so no infinite loop
   useEffect(() => {
     if (!previewNodeIdRef.current) return;
     
-    const previewNode = nodes.find(n => n.id === previewNodeIdRef.current);
+    const currentNodes = useCanvasStore.getState().nodes;
+    const previewNode = currentNodes.find(n => n.id === previewNodeIdRef.current);
     if (previewNode?.dragging) {
       hasManuallyMovedPerAnchorMap.current[previewNodeIdRef.current] = true;
     }
-  }, [nodes]);
+  });
 
-  // Real-time update ONLY effect
+  // Real-time update ONLY effect - CRITICAL: Only depends on prompt to avoid infinite loops
   useEffect(() => {
     if (isSyncingRef.current) return;
     if (!prompt.trim() && previewFileNodeIdsRef.current.size === 0) return;
@@ -275,7 +281,7 @@ export function useNodePreview(
             nodes: currentNodes.filter(n => n.id !== previewNode.id),
             edges: useCanvasStore.getState().edges,
             anchorNodeId: anchorNodeId,
-            newNodeId: previewNode.id, // NEW: Pass the ID to ensure it's excluded
+            newNodeId: previewNode.id,
             newNodeSize,
             newNodeType: "preview-input",
             isExplicitSelection
@@ -292,15 +298,9 @@ export function useNodePreview(
 
       // Ensure edge exists and connects to the current selection
       const selectedNode = currentNodes.find(n => n.selected && !n.id.startsWith('preview-'));
-      // Logic for edge connection needs to handle fallback anchor too?
-      // For now, let's keep edge logic tied to selection, or if no selection, maybe last node?
-      // The user requirement specifically mentioned "Selection -> Branch".
-      // If no selection, it just stacks.
       
       if (selectedNode) {
         const currentEdges = useCanvasStore.getState().edges;
-        // Only look for the context edge (from selected node to hub)
-        // We identify it because it's NOT a file preview edge
         const existingContextEdge = currentEdges.find(e => 
           e.target === previewNodeIdRef.current && 
           !e.id.startsWith('edge-preview-file-') &&
@@ -320,25 +320,27 @@ export function useNodePreview(
             animated: true,
           });
         }
-      } else {
-         // If no selection, we might want to connect to the "last node" if we are stacking?
-         // But usually we don't show edge until execution if it's just a new prompt at bottom?
-         // Actually, if we are positioning relative to last node, we probably should show edge?
-         // Let's stick to: If explicit selection, show edge. If not, maybe don't show edge yet?
-         // Or show edge to last node?
-         // Current behavior seems to be: only connect if selected.
-         // Let's respect that for now to avoid clutter.
       }
     }
-  }, [prompt, updateNodeData, addEdge, removeEdge]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prompt]);
 
-  // Response Previews Sync
+  // Response Previews Sync - CRITICAL: Only depends on selectedModels with deep comparison
   useEffect(() => {
     if (isSyncingRef.current) return;
     if (!previewNodeIdRef.current) return;
 
-    // Use reactive nodes/edges from the hook scope
-    const inputPreview = nodes.find(n => n.id === previewNodeIdRef.current);
+    // Deep equality check to prevent unnecessary re-runs
+    const currentModelsJson = JSON.stringify(selectedModels.map(m => m.modelId));
+    if (currentModelsJson === prevSelectedModelsJsonRef.current) return;
+    prevSelectedModelsJsonRef.current = currentModelsJson;
+    selectedModelsRef.current = selectedModels;
+
+    // Use imperative getState() to avoid reactive subscriptions
+    const currentNodes = useCanvasStore.getState().nodes;
+    const currentEdges = useCanvasStore.getState().edges;
+    
+    const inputPreview = currentNodes.find(n => n.id === previewNodeIdRef.current);
     if (!inputPreview) return;
 
     const modelsToPreview = selectedModels.length > 0 ? selectedModels : [{ modelId: DEFAULT_PREVIEW_MODEL }];
@@ -354,7 +356,6 @@ export function useNodePreview(
         removeEdge(`edge-preview-response-${id}`);
         previewResponseEdgeIdsRef.current.delete(`edge-preview-response-${id}`);
       });
-      // Update ref to match
       previewResponseNodeIdsRef.current = currentResponseIds.slice(0, modelsToPreview.length);
     }
 
@@ -366,12 +367,12 @@ export function useNodePreview(
         // Update existing node
         updateNodeData(existingId, { modelId: model.modelId });
         // Update position if not dragging
-        const node = nodes.find(n => n.id === existingId);
+        const node = currentNodes.find(n => n.id === existingId);
         if (node && !node.dragging && !hasManuallyMovedPerAnchorMap.current[previewNodeIdRef.current!]) {
           const responseNodeSize = { width: 350, height: 250 };
           const responseNodePos = findBestPosition({
-            nodes: nodes.filter(n => n.id !== existingId),
-            edges: edges,
+            nodes: currentNodes.filter(n => n.id !== existingId),
+            edges: currentEdges,
             anchorNodeId: inputPreview.id,
             newNodeSize: responseNodeSize,
             newNodeType: "preview-response",
@@ -380,26 +381,15 @@ export function useNodePreview(
             totalParallel: modelsToPreview.length
           });
 
-          // We can't use setNodes directly on the reactive 'nodes' array as it's read-only from store
-          // We must use the store action. 
-          // However, setNodes replaces ALL nodes.
-          // To avoid race conditions with other updates, we should probably use updateNodeData if possible, 
-          // but updateNodeData only updates data, not position.
-          // So we must use setNodes or a specific updateNodePosition action if it existed.
-          // Assuming setNodes is safe enough here if we base it on the latest 'nodes'.
-          useCanvasStore.getState().setNodes(
-            nodes.map(n => 
-              n.id === existingId ? { ...n, position: responseNodePos } : n
-            )
-          );
+          updateNodePosition(existingId, responseNodePos);
         }
       } else {
         // Add new node
         const nodeId = `preview-response-${Date.now()}-${i}`;
         const responseNodeSize = { width: 350, height: 250 };
         const responseNodePos = findBestPosition({
-          nodes: nodes,
-          edges: edges,
+          nodes: currentNodes,
+          edges: currentEdges,
           anchorNodeId: inputPreview.id,
           newNodeSize: responseNodeSize,
           newNodeType: "preview-response",
@@ -431,7 +421,8 @@ export function useNodePreview(
         previewResponseEdgeIdsRef.current.add(edgeId);
       }
     });
-  }, [selectedModels, nodes, edges, updateNodeData, addNode, addEdge, removeNode, removeEdge]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModels]);
 
   return {
     handlePromptChange,

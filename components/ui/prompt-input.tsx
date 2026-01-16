@@ -66,29 +66,29 @@ function PromptInput({
   const [internalValue, setInternalValue] = useState(value || "")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const handleChange = (newValue: string) => {
+  const handleChange = React.useCallback((newValue: string) => {
     setInternalValue(newValue)
     onValueChange?.(newValue)
-  }
+  }, [onValueChange])
 
   const handleClick: React.MouseEventHandler<HTMLDivElement> = (e) => {
     if (!disabled) textareaRef.current?.focus()
     onClick?.(e)
   }
 
+  const contextValue = React.useMemo(() => ({
+    isLoading,
+    value: value ?? internalValue,
+    setValue: onValueChange ?? handleChange,
+    maxHeight,
+    onSubmit,
+    disabled,
+    textareaRef,
+  }), [isLoading, value, internalValue, onValueChange, handleChange, maxHeight, onSubmit, disabled])
+
   return (
     <TooltipProvider>
-      <PromptInputContext.Provider
-        value={{
-          isLoading,
-          value: value ?? internalValue,
-          setValue: onValueChange ?? handleChange,
-          maxHeight,
-          onSubmit,
-          disabled,
-          textareaRef,
-        }}
-      >
+      <PromptInputContext.Provider value={contextValue}>
         <div
           onClick={handleClick}
           className={cn(
