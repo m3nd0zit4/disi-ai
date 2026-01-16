@@ -92,7 +92,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   const createCanvas = useMutation(api.canvas.createCanvas);
 
   // Use custom hook for preview logic
-  const { handlePromptChange, cleanupPreview, addPreviewFile, previewNodeIdRef } = useNodePreview(prompt, setPrompt);
+  const { handlePromptChange, cleanupPreview, addPreviewFile, previewNodeIdRef } = useNodePreview(prompt, setPrompt, selectedModels);
 
   const nodes = useCanvasStore(state => state.nodes);
 
@@ -398,13 +398,19 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
         }
 
         const previewNode = currentNodes.find(n => n.id === previewNodeIdRef.current);
-        previewPosition = previewNode?.position || previewPosition;
+        // CRITICAL: Use the preview node's position if it exists (handles manual movement)
+        if (previewNode) {
+            previewPosition = previewNode.position;
+        }
       }
 
       const previewId = previewNodeIdRef.current;
       const newNodeId = previewId ? previewId.replace('preview-', '') : `node-${Date.now()}`;
       
       // Files are now nodes on canvas, no need to pass attachments
+
+      // Determine if this is a branching action (explicit selection)
+      const isBranching = !!selectedInputNode;
 
       const response = await fetch("/api/execute", {
         method: "POST",
@@ -419,6 +425,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           newNodeId: newNodeId,
           inputNodeId: selectedInputNode?.id,
           parentNodeIds: parentNodeIds,
+          isBranching, // Pass the flag
           fileAttachments: pendingFiles
             .filter(f => f.storageId && f.storageId !== "")
             .map(f => {

@@ -315,6 +315,38 @@ export const deleteCanvas = mutation({
   },
 });
 
+export const removeEdge = mutation({
+  args: {
+    canvasId: v.id("canvas"),
+    edgeId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const canvas = await ctx.db.get(args.canvasId);
+    if (!canvas) throw new Error("Canvas not found");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user || canvas.userId !== user._id) {
+      throw new Error("Unauthorized");
+    }
+
+    const newEdges = canvas.edges.filter((e: any) => e.id !== args.edgeId);
+
+    await ctx.db.patch(args.canvasId, {
+      edges: newEdges,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
 // LIST
 export const listCanvas = query({
   args: {},
