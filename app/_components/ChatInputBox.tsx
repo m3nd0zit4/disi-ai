@@ -56,6 +56,14 @@ interface ChatInputBoxProps {
   canvasId?: Id<"canvas">;
 }
 
+/**
+ * Chat input component for composing prompts, attaching files as canvas nodes, and submitting executions to drive canvas workflows.
+ *
+ * This component manages prompt text, file attachment previews (creating canvas file nodes and uploading them), drag-and-drop and paste handling, image-generation options when an image model is selected, and submission logic that creates a canvas if needed and posts execution payloads to the backend.
+ *
+ * @param props.canvasId - Optional canvas id to bind the input to an existing canvas; when omitted a new canvas may be created on submit.
+ * @returns The rendered chat input UI element that handles composing and submitting prompts with attachment support.
+ */
 export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxProps) {
   const { selectedModels, hasModelsSelected } = useAIContext();
   const router = useRouter();

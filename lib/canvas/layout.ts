@@ -37,7 +37,12 @@ export interface LayoutParams {
 }
 
 /**
- * Estimates the size of a node.
+ * Determine the width and height for a node.
+ *
+ * Uses the node's measured dimensions when available; otherwise returns type-specific default dimensions.
+ *
+ * @param node - The node to evaluate for sizing.
+ * @returns An object with `width` and `height` in pixels for the node.
  */
 function getNodeSize(node: Node): { width: number; height: number } {
   if (node.measured?.width && node.measured?.height) {
@@ -62,7 +67,12 @@ function getNodeSize(node: Node): { width: number; height: number } {
 }
 
 /**
- * Checks if two rectangles overlap.
+ * Determine whether two axis-aligned rectangles overlap when an optional padding is applied.
+ *
+ * @param r1 - The first rectangle
+ * @param r2 - The second rectangle
+ * @param padding - Extra spacing added to each rectangle's edges when checking overlap (defaults to COLLISION_PADDING)
+ * @returns `true` if the rectangles overlap or touch within the given padding, `false` otherwise.
  */
 function isOverlapping(r1: Rect, r2: Rect, padding = COLLISION_PADDING): boolean {
   return !(
@@ -74,7 +84,10 @@ function isOverlapping(r1: Rect, r2: Rect, padding = COLLISION_PADDING): boolean
 }
 
 /**
- * Calculates the bounding box of a set of nodes.
+ * Compute the axis-aligned bounding rectangle that encloses all given nodes.
+ *
+ * @param nodes - The nodes to include when computing the bounds
+ * @returns A rect { x, y, width, height } that covers every node's position and size; returns { x: 0, y: 0, width: 0, height: 0 } if `nodes` is empty
  */
 function getBounds(nodes: Node[]): Rect {
   if (nodes.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
@@ -101,8 +114,15 @@ function getBounds(nodes: Node[]): Rect {
 }
 
 /**
- * Adjusts position to avoid collisions with ANY existing node.
- * Crucial: Does NOT move existing nodes. Only moves the new position.
+ * Shifts a proposed node position until it no longer overlaps any existing node.
+ *
+ * Adjusts and returns a modified position by nudging the proposed point to avoid overlaps with the provided existing nodes. When `preferLateral` is true, adjustments keep the X coordinate and move downward to stack in a lateral column; otherwise the function prefers downward nudges and may shift right to escape dense columns. Existing nodes are never moved.
+ *
+ * @param proposedPos - Initial candidate position for the new node
+ * @param size - Width and height of the new node
+ * @param existingNodes - Array of nodes to avoid overlapping
+ * @param preferLateral - If true, preserve X and only move vertically to form a lateral column
+ * @returns A position `{ x, y }` adjusted so it does not overlap any of `existingNodes`
  */
 function avoidCollisions(proposedPos: Point, size: { width: number; height: number }, existingNodes: Node[], preferLateral: boolean = false): Point {
   const currentPos = { ...proposedPos };
@@ -143,7 +163,12 @@ function avoidCollisions(proposedPos: Point, size: { width: number; height: numb
 }
 
 /**
- * Clamps position to viewport (Case 7).
+ * Clamp a proposed top-left position so the node's rectangle stays within the visible viewport area with padding.
+ *
+ * @param pos - The proposed top-left coordinates of the node.
+ * @param size - The node's width and height.
+ * @param viewport - The current viewport transform and dimensions (`x`, `y`, `zoom`, `width`, `height`).
+ * @returns The adjusted position constrained to the viewport's visible region minus a 50px padding on each edge.
  */
 function clampToViewport(pos: Point, size: { width: number; height: number }, viewport?: LayoutParams["viewport"]): Point {
   if (!viewport) return pos;
@@ -163,7 +188,21 @@ function clampToViewport(pos: Point, size: { width: number; height: number }, vi
 }
 
 /**
- * Main Heuristic Layout Function
+ * Compute a heuristic top-left position for placing a new node relative to existing nodes and an optional anchor.
+ *
+ * The function chooses among multiple layout strategies (first-node centering, parallel outputs, explicit user-driven
+ * branching or continuation, vertical stacking, lateral placement for follow-ups or saturated clusters), applies
+ * collision avoidance against existing nodes, and optionally clamps the result to a provided viewport.
+ *
+ * @param params - Layout parameters controlling placement:
+ *   - anchorNodeId: optional id of the anchor node to attach the new node to
+ *   - newNodeId: optional id of the new node (excluded from sibling checks)
+ *   - newNodeSize: desired width/height of the new node (defaults provided)
+ *   - newNodeType: optional type hint used for follow-up heuristics (e.g., response -> input)
+ *   - isParallel / parallelIndex / totalParallel: place multiple parallel outputs centered under the anchor
+ *   - viewport: optional viewport used to center the first node or to clamp the final position
+ *   - isExplicitSelection: when true, prefer explicit branching/continuation placements described above
+ * @returns A Point { x, y } specifying the top-left coordinates where the new node should be placed.
  */
 export function findBestPosition(params: LayoutParams): Point {
   const { 

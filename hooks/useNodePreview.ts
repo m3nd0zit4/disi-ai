@@ -4,6 +4,20 @@ import { Node } from "@xyflow/react";
 import { SelectedModel } from "@/types/AiModel";
 import { findBestPosition } from "@/lib/canvas/layout";
 
+/**
+ * Manage a dynamic node preview system on the canvas, creating, positioning, syncing, and cleaning up a hub preview node plus file and model-response preview nodes.
+ *
+ * The hook keeps prompt text synchronized with either a selected input node or a transient preview hub, preserves user manual movements, ensures edges between hub and anchors, stacks file previews above the hub, and renders parallel response previews for selected models.
+ *
+ * @param prompt - Current prompt text shown/edited by the UI
+ * @param setPrompt - Setter to update the external prompt state
+ * @param selectedModels - Optional array of models to drive parallel "preview-response" nodes; when empty, a default model (`gpt-5.2`) is used
+ * @returns An object with preview controls and state:
+ *  - handlePromptChange: function to update the prompt and synchronize preview nodes
+ *  - cleanupPreview: function to remove all preview nodes and edges (unless the preview hub is currently selected)
+ *  - addPreviewFile: function that accepts a file descriptor ({ name, type, size, preview? }) and adds a preview-file node connected to the hub; returns the new node id or null
+ *  - previewNodeIdRef: ref containing the current preview hub node id or `null`
+ */
 export function useNodePreview(
   prompt: string,
   setPrompt: (value: string) => void,
