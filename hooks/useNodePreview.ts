@@ -10,6 +10,7 @@ export function useNodePreview(
   selectedModels: SelectedModel[] = []
 ) {
   const nodes = useCanvasStore(state => state.nodes);
+  const edges = useCanvasStore(state => state.edges);
   const addNode = useCanvasStore(state => state.addNode);
   const updateNodeData = useCanvasStore(state => state.updateNodeData);
   const removeNode = useCanvasStore(state => state.removeNode);
@@ -336,9 +337,8 @@ export function useNodePreview(
     if (isSyncingRef.current) return;
     if (!previewNodeIdRef.current) return;
 
-    const singleState = useCanvasStore.getState();
-    const currentNodes = singleState.nodes;
-    const inputPreview = currentNodes.find(n => n.id === previewNodeIdRef.current);
+    // Use reactive nodes/edges from the hook scope
+    const inputPreview = nodes.find(n => n.id === previewNodeIdRef.current);
     if (!inputPreview) return;
 
     const modelsToPreview = selectedModels.length > 0 ? selectedModels : [{ modelId: DEFAULT_PREVIEW_MODEL }];
@@ -366,12 +366,12 @@ export function useNodePreview(
         // Update existing node
         updateNodeData(existingId, { modelId: model.modelId });
         // Update position if not dragging
-        const node = currentNodes.find(n => n.id === existingId);
+        const node = nodes.find(n => n.id === existingId);
         if (node && !node.dragging && !hasManuallyMovedPerAnchorMap.current[previewNodeIdRef.current!]) {
           const responseNodeSize = { width: 350, height: 250 };
           const responseNodePos = findBestPosition({
-            nodes: currentNodes.filter(n => n.id !== existingId),
-            edges: singleState.edges,
+            nodes: nodes.filter(n => n.id !== existingId),
+            edges: edges,
             anchorNodeId: inputPreview.id,
             newNodeSize: responseNodeSize,
             newNodeType: "preview-response",
@@ -380,8 +380,15 @@ export function useNodePreview(
             totalParallel: modelsToPreview.length
           });
 
-          singleState.setNodes(
-            singleState.nodes.map(n => 
+          // We can't use setNodes directly on the reactive 'nodes' array as it's read-only from store
+          // We must use the store action. 
+          // However, setNodes replaces ALL nodes.
+          // To avoid race conditions with other updates, we should probably use updateNodeData if possible, 
+          // but updateNodeData only updates data, not position.
+          // So we must use setNodes or a specific updateNodePosition action if it existed.
+          // Assuming setNodes is safe enough here if we base it on the latest 'nodes'.
+          useCanvasStore.getState().setNodes(
+            nodes.map(n => 
               n.id === existingId ? { ...n, position: responseNodePos } : n
             )
           );
@@ -391,8 +398,8 @@ export function useNodePreview(
         const nodeId = `preview-response-${Date.now()}-${i}`;
         const responseNodeSize = { width: 350, height: 250 };
         const responseNodePos = findBestPosition({
-          nodes: currentNodes,
-          edges: singleState.edges,
+          nodes: nodes,
+          edges: edges,
           anchorNodeId: inputPreview.id,
           newNodeSize: responseNodeSize,
           newNodeType: "preview-response",
@@ -424,7 +431,7 @@ export function useNodePreview(
         previewResponseEdgeIdsRef.current.add(edgeId);
       }
     });
-  }, [selectedModels, updateNodeData, addNode, addEdge, removeNode, removeEdge]);
+  }, [selectedModels, nodes, edges, updateNodeData, addNode, addEdge, removeNode, removeEdge]);
 
   return {
     handlePromptChange,

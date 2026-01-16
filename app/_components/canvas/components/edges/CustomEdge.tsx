@@ -43,11 +43,11 @@ export default function CustomEdge({
   const onDoubleClick = async (event: React.MouseEvent) => {
     event.stopPropagation();
     
-    // Optimistic update
-    removeEdgeFromStore(id);
-    
     // Backend update
     if (canvasId) {
+        // Optimistic update
+        removeEdgeFromStore(id);
+
         try {
             await removeEdgeMutation({ canvasId, edgeId: id });
         } catch (error) {

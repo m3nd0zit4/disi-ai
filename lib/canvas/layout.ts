@@ -211,110 +211,111 @@ export function findBestPosition(params: LayoutParams): Point {
     };
     
     // Check collision for this specific spot
+    // Check collision for this specific spot
     targetPos = avoidCollisions(targetPos, newNodeSize, nodes);
-    return targetPos;
-  }
-
-  // --- Check for existing children (Branching detection) ---
-  const siblings = nodes.filter(n => 
-    n.id !== newNodeId && 
-    edges.some(e => e.source === anchorNodeId && e.target === n.id)
-  );
-  const hasChildren = siblings.length > 0;
-
-  // --- CRITICAL CHANGE: Explicit Selection Logic ---
-  // If explicitly selected:
-  // 1. If it HAS children -> It's a BRANCH -> Lateral Layout (Chain to the right)
-  // 2. If it has NO children -> It's a CONTINUATION -> Vertical Layout (Standard)
-  if (isExplicitSelection && hasChildren) {
-      // Find the "last" sibling to append to the right
-      // We sort by creation time to find the latest addition
-      const sortedSiblings = [...siblings].sort((a, b) => {
-          const tA = (a.data?.createdAt as number) || 0;
-          const tB = (b.data?.createdAt as number) || 0;
-          return tA - tB; // Ascending
-      });
-      
-      const lastSibling = sortedSiblings[sortedSiblings.length - 1];
-      const lastSiblingSize = getNodeSize(lastSibling);
-
-      // Flowith-like behavior: Chain to the right
-      // "Si hay dos nodos, se genera al lado derecho del segundo nodo"
-      targetPos = {
-          x: lastSibling.position.x + lastSiblingSize.width + LATERAL_GAP,
-          y: lastSibling.position.y // Align tops
-      };
-      
-      // User explicitly said: "No importa que se superpongan"
-      // So we return DIRECTLY, skipping avoidCollisions
-      // But we MUST clamp to viewport if provided
-      return clampToViewport(targetPos, newNodeSize, viewport);
-  }
-  
-  // If explicitly selected but NO children yet -> First branch
-  // We treat this as a "Continuation" in terms of logic (vertical), 
-  // But user said: "Si debajo de la respuesta no haya ningún prompt... se genera exactamente abajo"
-  // So we place it exactly below and RETURN, bypassing collision detection.
-  if (isExplicitSelection && !hasChildren) {
-      targetPos = {
-        x: anchorNode.position.x + anchorSize.width / 2 - newNodeSize.width / 2,
-        y: anchorNode.position.y + anchorSize.height + RANK_GAP
-      };
-      return clampToViewport(targetPos, newNodeSize, viewport);
-  }
-
-  // --- Identify Cluster Context ---
-  // (Standard logic continues below for non-branching or first-child cases)
-
-  // Sort siblings by vertical position to find the "bottom" of the stack
-  siblings.sort((a, b) => a.position.y - b.position.y);
-  
-  const lastSibling = siblings[siblings.length - 1];
-  const clusterBounds = getBounds([anchorNode, ...siblings]);
-
-  // --- Case 5: Follow-up / New Turn (Branching) ---
-  // If we are attaching an INPUT to a RESPONSE, it's a new turn.
-  // Or if explicitly requested to branch.
-  // We assume if types are different (Response -> Input), it's a follow-up.
-  const isFollowUp = (anchorNode.type || 'default').includes('response') && newNodeType?.includes('input');
-  
-  // --- Case 3: Cluster Saturation ---
-  const isClusterSaturated = clusterBounds.height > MAX_CLUSTER_HEIGHT;
-
-  if (isFollowUp || isClusterSaturated) {
-    // --- Case 4 & 5: Lateral Placement ---
-    // Place to the RIGHT of the anchor/cluster
-    // If it's a follow-up, we align with the ANCHOR (top), or maybe slightly below?
-    // Usually "Chat" flows: Prompt -> Response -> (Right) Prompt -> Response
-    
-    // Find the right-most point of the current cluster to avoid overlapping it
-    const rightMostX = clusterBounds.x + clusterBounds.width;
-    
-    targetPos = {
-      x: rightMostX + LATERAL_GAP,
-      y: anchorNode.position.y // Align top with anchor to create a "row" of turns
-    };
+    // Do NOT return here, let it flow to viewport clamping
   } else {
-    // --- Case 1 & 2: Vertical Stacking ---
-    if (lastSibling) {
-      // Place below the last sibling
-      const lastSiblingSize = getNodeSize(lastSibling);
+    // --- Check for existing children (Branching detection) ---
+    const siblings = nodes.filter(n => 
+      n.id !== newNodeId && 
+      edges.some(e => e.source === anchorNodeId && e.target === n.id)
+    );
+    const hasChildren = siblings.length > 0;
+
+    // --- CRITICAL CHANGE: Explicit Selection Logic ---
+    // If explicitly selected:
+    // 1. If it HAS children -> It's a BRANCH -> Lateral Layout (Chain to the right)
+    // 2. If it has NO children -> It's a CONTINUATION -> Vertical Layout (Standard)
+    if (isExplicitSelection && hasChildren) {
+        // Find the "last" sibling to append to the right
+        // We sort by creation time to find the latest addition
+        const sortedSiblings = [...siblings].sort((a, b) => {
+            const tA = (a.data?.createdAt as number) || 0;
+            const tB = (b.data?.createdAt as number) || 0;
+            return tA - tB; // Ascending
+        });
+        
+        const lastSibling = sortedSiblings[sortedSiblings.length - 1];
+        const lastSiblingSize = getNodeSize(lastSibling);
+
+        // Flowith-like behavior: Chain to the right
+        // "Si hay dos nodos, se genera al lado derecho del segundo nodo"
+        targetPos = {
+            x: lastSibling.position.x + lastSiblingSize.width + LATERAL_GAP,
+            y: lastSibling.position.y // Align tops
+        };
+        
+        // User explicitly said: "No importa que se superpongan"
+        // So we return DIRECTLY, skipping avoidCollisions
+        // But we MUST clamp to viewport if provided
+        return clampToViewport(targetPos, newNodeSize, viewport);
+    }
+    
+    // If explicitly selected but NO children yet -> First branch
+    // We treat this as a "Continuation" in terms of logic (vertical), 
+    // But user said: "Si debajo de la respuesta no haya ningún prompt... se genera exactamente abajo"
+    // So we place it exactly below and RETURN, bypassing collision detection.
+    if (isExplicitSelection && !hasChildren) {
+        targetPos = {
+          x: anchorNode.position.x + anchorSize.width / 2 - newNodeSize.width / 2,
+          y: anchorNode.position.y + anchorSize.height + RANK_GAP
+        };
+        return clampToViewport(targetPos, newNodeSize, viewport);
+    }
+
+    // --- Identify Cluster Context ---
+    // (Standard logic continues below for non-branching or first-child cases)
+
+    // Sort siblings by vertical position to find the "bottom" of the stack
+    siblings.sort((a, b) => a.position.y - b.position.y);
+    
+    const lastSibling = siblings[siblings.length - 1];
+    const clusterBounds = getBounds([anchorNode, ...siblings]);
+
+    // --- Case 5: Follow-up / New Turn (Branching) ---
+    // If we are attaching an INPUT to a RESPONSE, it's a new turn.
+    // Or if explicitly requested to branch.
+    // We assume if types are different (Response -> Input), it's a follow-up.
+    const isFollowUp = (anchorNode.type || 'default').includes('response') && newNodeType?.includes('input');
+    
+    // --- Case 3: Cluster Saturation ---
+    const isClusterSaturated = clusterBounds.height > MAX_CLUSTER_HEIGHT;
+
+    if (isFollowUp || isClusterSaturated) {
+      // --- Case 4 & 5: Lateral Placement ---
+      // Place to the RIGHT of the anchor/cluster
+      // If it's a follow-up, we align with the ANCHOR (top), or maybe slightly below?
+      // Usually "Chat" flows: Prompt -> Response -> (Right) Prompt -> Response
+      
+      // Find the right-most point of the current cluster to avoid overlapping it
+      const rightMostX = clusterBounds.x + clusterBounds.width;
+      
       targetPos = {
-        x: anchorNode.position.x + anchorSize.width / 2 - newNodeSize.width / 2, // Center align
-        y: lastSibling.position.y + lastSiblingSize.height + RANK_GAP
+        x: rightMostX + LATERAL_GAP,
+        y: anchorNode.position.y // Align top with anchor to create a "row" of turns
       };
     } else {
-      // First child
-      targetPos = {
-        x: anchorNode.position.x + anchorSize.width / 2 - newNodeSize.width / 2,
-        y: anchorNode.position.y + anchorSize.height + RANK_GAP
-      };
+      // --- Case 1 & 2: Vertical Stacking ---
+      if (lastSibling) {
+        // Place below the last sibling
+        const lastSiblingSize = getNodeSize(lastSibling);
+        targetPos = {
+          x: anchorNode.position.x + anchorSize.width / 2 - newNodeSize.width / 2, // Center align
+          y: lastSibling.position.y + lastSiblingSize.height + RANK_GAP
+        };
+      } else {
+        // First child
+        targetPos = {
+          x: anchorNode.position.x + anchorSize.width / 2 - newNodeSize.width / 2,
+          y: anchorNode.position.y + anchorSize.height + RANK_GAP
+        };
+      }
     }
-  }
 
-  // --- Case 8: Collision Avoidance ---
-  // This is the final safety net.
-  targetPos = avoidCollisions(targetPos, newNodeSize, nodes);
+    // --- Case 8: Collision Avoidance ---
+    // This is the final safety net.
+    targetPos = avoidCollisions(targetPos, newNodeSize, nodes);
+  }
 
   // --- Case 7: Viewport Restriction ---
   // Only clamp if we have viewport info.
@@ -325,21 +326,62 @@ export function findBestPosition(params: LayoutParams): Point {
   // Better: Don't strictly clamp to viewport if it causes collision.
   // But user said "Nunca fuera de cámara".
   // Let's clamp, then check collision again?
+  // --- Case 7: Viewport Restriction ---
   if (viewport) {
      const clamped = clampToViewport(targetPos, newNodeSize, viewport);
-     // If clamping moved it significantly, re-check collision
-     if (Math.abs(clamped.x - targetPos.x) > 10 || Math.abs(clamped.y - targetPos.y) > 10) {
-        // It moved. Check if it's safe.
+     
+     // If clamped position is different (meaning it was out of bounds)
+     if (clamped.x !== targetPos.x || clamped.y !== targetPos.y) {
+        // Check if the clamped position causes a collision
         const isSafe = !nodes.some(n => {
             const s = getNodeSize(n);
             return isOverlapping({ ...clamped, ...newNodeSize }, { x: n.position.x, y: n.position.y, ...s });
         });
+
         if (isSafe) {
             targetPos = clamped;
+        } else {
+            // Overlap detected at clamped position.
+            // Search for a safe spot INSIDE the viewport.
+            let bestSafePos: Point | null = null;
+            const searchRadius = 500; // Max search radius
+            const step = 50;
+            
+            // Spiral search
+            for (let r = step; r <= searchRadius; r += step) {
+                for (let angle = 0; angle < 360; angle += 45) {
+                    const rad = angle * (Math.PI / 180);
+                    const testPos = {
+                        x: clamped.x + r * Math.cos(rad),
+                        y: clamped.y + r * Math.sin(rad)
+                    };
+                    
+                    // Must be inside viewport
+                    const reClamped = clampToViewport(testPos, newNodeSize, viewport);
+                    if (reClamped.x !== testPos.x || reClamped.y !== testPos.y) continue; // Skip if out of viewport
+                    
+                    // Check collision
+                    const safe = !nodes.some(n => {
+                        const s = getNodeSize(n);
+                        return isOverlapping({ ...testPos, ...newNodeSize }, { x: n.position.x, y: n.position.y, ...s });
+                    });
+                    
+                    if (safe) {
+                        bestSafePos = testPos;
+                        break;
+                    }
+                }
+                if (bestSafePos) break;
+            }
+            
+            if (bestSafePos) {
+                targetPos = bestSafePos;
+            }
+            // If no safe spot found in viewport, we fallback to the original targetPos (which was collision-safe but off-screen)
+            // This honors "Nunca fuera de cámara" by trying hard, but prioritizes non-overlap if absolutely impossible?
+            // Actually user said: "only if no safe on-screen spot exists... fall back to the original"
+            // So we are good.
         }
-        // If not safe, we prefer the original "safe" position even if out of viewport?
-        // Or we try to find a safe spot in viewport?
-        // For now, let's respect the "No Overlap" rule as #1.
      }
   }
 
