@@ -134,7 +134,9 @@ export async function POST(req: Request) {
           const filesStartX = inputNodeX + (350 / 2) - (totalFilesWidth / 2);
 
           fileAttachments.forEach((fa, i) => {
-            const fileNodeId = fa.id || `file-${newNodeId}-${i}`;
+            const fileNodeId = fa.id && typeof fa.id === 'string' && fa.id.length < 100 
+              ? fa.id 
+              : `file-${newNodeId}-${i}`;
             nodesToAdd.push({
               id: fileNodeId,
               type: "file",
@@ -312,16 +314,18 @@ export async function POST(req: Request) {
 
     // Import context resolution once before processing nodes
     const { resolveNodeContext } = await import("@/lib/reasoning/context");
-    const { Redis } = await import("@upstash/redis");
+    const { redis } = await import("@/lib/redis");
 
-    // Initialize Redis client for fetching file content
-    const redis = new Redis({
-      url: getRequiredEnv("UPSTASH_REDIS_REST_URL"),
-      token: getRequiredEnv("UPSTASH_REDIS_REST_TOKEN"),
-    });
+    if (!redis) {
+      console.warn("[Execute] Redis client not available - file content fetching disabled");
+    }
 
     // Helper to fetch file content from Redis
     const fetchFileContent = async (storageId: string): Promise<string | null> => {
+      if (!redis) {
+        console.warn(`[Execute] Redis not configured, cannot fetch content for: ${storageId}`);
+        return null;
+      }
       console.log(`\n========== FETCH FILE CONTENT ==========`);
       console.log(`[Execute] Attempting to fetch content for storageId: ${storageId}`);
       
@@ -351,20 +355,15 @@ export async function POST(req: Request) {
            console.log(`[Execute] Filename part: ${filenamePart}`);
            
            // Try to extract UUID from filename
-           // New format: "uuid.ext" → split by dot and take first part
+           const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
            const uuidBeforeDot = filenamePart.split('.')[0];
-           console.log(`[Execute] UUID before dot: ${uuidBeforeDot} (length: ${uuidBeforeDot.length})`);
            
-           if (uuidBeforeDot.length === 36) {
-             // This is the UUID from new format (raw/uuid.ext)
+           if (UUID_REGEX.test(uuidBeforeDot)) {
              fileId = uuidBeforeDot;
              console.log(`[Execute] Using UUID from new format: ${fileId}`);
            } else {
-             // Try old format: "uuid-filename.ext" → split by dash and take first part
              const uuidBeforeDash = filenamePart.split('-')[0];
-             console.log(`[Execute] UUID before dash: ${uuidBeforeDash} (length: ${uuidBeforeDash.length})`);
-             
-             if (uuidBeforeDash.length === 36) {
+             if (UUID_REGEX.test(uuidBeforeDash)) {
                fileId = uuidBeforeDash;
                console.log(`[Execute] Using UUID from old format: ${fileId}`);
              }

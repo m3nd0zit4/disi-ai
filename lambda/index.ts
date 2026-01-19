@@ -11,6 +11,7 @@ import { Redis } from "@upstash/redis";
 // Initialize clients
 const requiredEnv = [
   'CONVEX_URL',
+  'CONVEX_DEPLOY_KEY',
   'UPSTASH_REDIS_REST_URL',
   'UPSTASH_REDIS_REST_TOKEN',
   'UPSTASH_VECTOR_REST_URL',
@@ -25,6 +26,9 @@ for (const env of requiredEnv) {
 }
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+// Use admin authentication for internal updates
+(convex as any).setAuth(process.env.CONVEX_DEPLOY_KEY!);
+
 const s3 = new S3Client({ region: process.env.AWS_REGION });
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
@@ -61,6 +65,11 @@ export async function handler(event: S3Event) {
         text = await response.Body?.transformToString() || "";
       } else {
         console.log(`Unsupported file type: ${extension}`);
+        await convex.mutation((api.files as any).updateStatusByS3Key, {
+          s3Key: key,
+          status: "error",
+          errorMessage: `Unsupported file type: ${extension}`,
+        });
         continue;
       }
 
@@ -136,9 +145,10 @@ export async function handler(event: S3Event) {
 }
 
 function semanticChunking(text: string, maxTokens = 512, overlap = 50): string[] {
-  // Simple character-based chunking for now (approx 4 chars per token)
+  // Clamp overlap to prevent infinite loops
+  const safeOverlap = Math.min(overlap, maxTokens - 1);
   const maxChars = maxTokens * 4;
-  const overlapChars = overlap * 4;
+  const overlapChars = safeOverlap * 4;
   const chunks: string[] = [];
   
   let start = 0;
@@ -162,7 +172,9 @@ function semanticChunking(text: string, maxTokens = 512, overlap = 50): string[]
       chunks.push(chunk);
     }
     
-    start = end - overlapChars;
+    // Ensure we always advance at least 1 character
+    const nextStart = end - overlapChars;
+    start = Math.max(nextStart, start + 1);
   }
   
   return chunks;

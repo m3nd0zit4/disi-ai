@@ -1,6 +1,6 @@
-import React, { memo, useState, useEffect } from "react";
+import React, { memo, useState } from "react";
 import { Position, NodeProps } from "@xyflow/react";
-import { cn } from "@/lib/utils";
+import { cn, adjustAlpha } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
 import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
 import Image from "next/image";
@@ -13,6 +13,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
 import { Maximize2 } from "lucide-react";
 import { Dialog } from "../../../ui/Dialog";
+import { useSignedUrl } from "@/hooks/useSignedUrl";
 
 export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) => {
   const displayData = data as unknown as DisplayNodeData;
@@ -25,36 +26,7 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
   const incomingEdges = edges.filter(edge => edge.target === id);
   const hasIncoming = incomingEdges.length > 0;
 
-  const [fetchedUrl, setFetchedUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    // Fetch fresh signed URL whenever mediaStorageId is present
-    if (mediaStorageId) {
-      fetch(`/api/file?key=${encodeURIComponent(mediaStorageId)}`, { signal: controller.signal })
-        .then(res => {
-          if (!res.ok) {
-            throw new Error(`Failed to fetch signed URL: ${res.status} ${res.statusText}`);
-          }
-          return res.json();
-        })
-        .then(data => {
-          if (!controller.signal.aborted && data.url) {
-            setFetchedUrl(data.url);
-          }
-        })
-        .catch(err => {
-          if (err.name !== 'AbortError') {
-            console.error("Failed to load media URL", err);
-          }
-        });
-    }
-
-    return () => controller.abort();
-  }, [mediaStorageId]);
-
-  const signedUrl = mediaStorageId ? fetchedUrl : (mediaUrl || null);
+  const signedUrl = useSignedUrl(mediaStorageId, mediaUrl);
 
   const displayContent = content || text;
   const isPending = status === "pending" || status === "thinking";
@@ -121,7 +93,7 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
         )}
         style={{ 
           backgroundColor: color && color !== 'transparent' ? color : undefined,
-          borderColor: color && color !== 'transparent' ? color.replace('0.15', '0.3') : undefined,
+          borderColor: color && color !== 'transparent' ? adjustAlpha(color, 0.3) : undefined,
           width: effectiveType === "image" ? VIEWPORT_WIDTH : "auto",
           minWidth: effectiveType === "text" ? "200px" : undefined,
         }}
@@ -254,7 +226,7 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
                 </div>
               </div>
               
-              {createdAt && (
+              {createdAt && !isNaN(new Date(createdAt).getTime()) && (
                 <div className="text-[8px] text-white/50 font-bold bg-black/20 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/10 self-end">
                   {formatDistanceToNow(createdAt, { addSuffix: true })}
                 </div>

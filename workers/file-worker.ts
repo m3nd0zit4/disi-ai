@@ -17,6 +17,22 @@ async function main() {
   const { storeEmbedding } = await import("../lib/upstash-vector");
   const { Redis } = await import("@upstash/redis");
 
+  const requiredEnv = [
+    "NEXT_PUBLIC_CONVEX_URL",
+    "AWS_REGION",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_S3_BUCKET_NAME",
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN"
+  ];
+
+  for (const env of requiredEnv) {
+    if (!process.env[env]) {
+      throw new Error(`Missing required environment variable: ${env}`);
+    }
+  }
+
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
   const s3 = new S3Client({ 
     region: process.env.AWS_REGION || "us-east-1",
@@ -155,8 +171,10 @@ async function main() {
 }
 
 function semanticChunking(text: string, maxTokens = 512, overlap = 50): string[] {
+  // Clamp overlap to prevent infinite loops
+  const safeOverlap = Math.min(overlap, maxTokens - 1);
   const maxChars = maxTokens * 4;
-  const overlapChars = overlap * 4;
+  const overlapChars = safeOverlap * 4;
   const chunks: string[] = [];
   
   let start = 0;
@@ -179,7 +197,9 @@ function semanticChunking(text: string, maxTokens = 512, overlap = 50): string[]
       chunks.push(chunk);
     }
     
-    start = end - overlapChars;
+    // Ensure we always advance at least 1 character
+    const nextStart = end - overlapChars;
+    start = Math.max(nextStart, start + 1);
   }
   
   return chunks;

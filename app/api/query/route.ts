@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "@/convex/_generated/api";
 import { searchSimilar } from "@/lib/upstash-vector";
 import { generateEmbedding, queryLLM } from "@/lib/bedrock";
 
-// Removed unused imports: ConvexHttpClient, api, redis
-
 export async function POST(req: Request) {
   try {
+    const { userId, getToken } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { prompt: rawPrompt, fileIds: rawFileIds } = await req.json();
 
     if (!rawPrompt || typeof rawPrompt !== "string") {
@@ -13,8 +19,9 @@ export async function POST(req: Request) {
     }
 
     // Sanitize prompt: remove control characters and limit length
+    // Using Unicode property escape for control characters (ES2018+)
     const prompt = rawPrompt
-      .replace(/[\x00-\x1F\x7F]/g, "")
+      .replace(/\p{Cc}/gu, "")
       .trim()
       .slice(0, 4000); // Reasonable limit for vector search query
 
@@ -28,15 +35,28 @@ export async function POST(req: Request) {
       if (!Array.isArray(rawFileIds)) {
         return NextResponse.json({ error: "fileIds must be an array" }, { status: 400 });
       }
-      fileIds = rawFileIds.filter(id => typeof id === "string" && /^[a-z0-9]+$/i.test(id));
+      
+      const potentialFileIds = rawFileIds.filter(id => typeof id === "string" && /^[a-z0-9]+$/i.test(id));
+      
+      if (potentialFileIds.length > 0) {
+        // Verify ownership via Convex
+        const token = await getToken({ template: "convex" });
+        const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+        if (token) convex.setAuth(token);
+        
+        const validatedFiles = await convex.query(api.files.getFilesByIds, { 
+          fileIds: potentialFileIds as any[] 
+        });
+        
+        fileIds = validatedFiles.map(f => f._id);
+        
+        if (fileIds.length === 0) {
+          return NextResponse.json({ 
+            error: "None of the provided file IDs are valid or owned by you" 
+          }, { status: 400 });
+        }
+      }
     }
-
-    // 1. Get file metadata from Convex to verify access and status
-    // We can use a query to get multiple files. 
-    // For now, let's just assume fileIds are valid or check them one by one if no bulk query exists.
-    // I added 'getFiles' (by canvas) and 'getFile' (by id) in convex/files.ts.
-    // I should probably add 'getFilesByIds' query.
-    // For now, I'll skip strict validation or do it in parallel.
     
     // 2. Generate query embedding
     const queryEmbedding = await generateEmbedding(prompt);

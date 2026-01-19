@@ -98,6 +98,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
 
   // Track object URLs for revocation
   const objectUrlsRef = useRef<Set<string>>(new Set());
+  const uploadControllers = useRef<Map<string, AbortController>>(new Map());
 
   const revokeUrl = useCallback((url?: string) => {
     if (url && url.startsWith('blob:')) {
@@ -283,6 +284,8 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           ? { x: lastNode.position.x + 50, y: lastNode.position.y - 150 }
           : { x: 100, y: 100 };
 
+      const previewUrl = file.type.startsWith("image/") ? createUrl(file) : undefined;
+
       const fileNode = {
         id: nodeId,
         type: "file",
@@ -295,7 +298,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           storageId: "", 
           uploadStatus: "uploading" as const,
           textContent,
-          previewUrl: file.type.startsWith("image/") ? createUrl(file) : undefined,
+          previewUrl,
           createdAt: Date.now(),
         },
       };
@@ -307,7 +310,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
       setPendingFiles(prev => [...prev, { 
         nodeId: nodeId, 
         fileName: file.name, 
-        preview: file.type.startsWith("image/") ? createUrl(file) : undefined,
+        preview: previewUrl,
         fileType: file.type,
         isExistingNode: true,
         storageId: "" // Will be updated after upload
@@ -315,6 +318,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
 
       // Upload to S3 via Convex action (async)
       const controller = new AbortController();
+      uploadControllers.current.set(nodeId, controller);
       (async () => {
         try {
           console.log(`[ChatInputBox] Creating file record in Convex for: ${file.name}`);
@@ -435,6 +439,8 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
     setIsLoading(true);
     isSubmittingRef.current = true;
     
+    let optimisticInputId: string | undefined = undefined;
+    
     try {
       let currentCanvasId = canvasId;
 
@@ -493,7 +499,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
       // Generate a base ID for the new operation
       const baseId = previewId ? previewId.replace('preview-', '') : `${Date.now()}`;
       const newNodeId = baseId;
-      const optimisticInputId = `input-${baseId}`;
+      optimisticInputId = `input-${baseId}`;
       
       // Files are now nodes on canvas, no need to pass attachments
 
@@ -520,15 +526,18 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
          useCanvasStore.getState().addNode(optimisticInputNode);
          
          // Create edges from files to this new input node
-         pendingFiles.forEach(pf => {
-            const edgeId = `edge-${pf.nodeId}-${optimisticInputId}`;
-            useCanvasStore.getState().addEdge({
-               id: edgeId,
-               source: pf.nodeId,
-               target: optimisticInputId,
-               animated: true
-            });
-         });
+         if (optimisticInputId) {
+           const targetId = optimisticInputId;
+           pendingFiles.forEach(pf => {
+              const edgeId = `edge-${pf.nodeId}-${targetId}`;
+              useCanvasStore.getState().addEdge({
+                 id: edgeId,
+                 source: pf.nodeId,
+                 target: targetId,
+                 animated: true
+              });
+           });
+         }
       }
 
       const response = await fetch("/api/execute", {
@@ -583,6 +592,18 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
 
     } catch (error) {
       console.error("Error sending message:", error);
+      
+      // ROLLBACK: Remove optimistic node and edges if API call fails
+      if (optimisticInputId) {
+        const store = useCanvasStore.getState();
+        store.removeNode(optimisticInputId);
+        
+        pendingFiles.forEach(pf => {
+          const edgeId = `edge-${pf.nodeId}-${optimisticInputId}`;
+          store.removeEdge(edgeId);
+        });
+      }
+
       showDialog({
         title: "Error",
         description: error instanceof Error ? error.message : "The message could not be sent",
@@ -658,7 +679,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
             <div className="px-3 pb-2 flex gap-2 flex-wrap overflow-x-auto hide-scroll-bar">
               {pendingFiles.map((pf) => (
                 <div key={pf.nodeId} className="relative group">
-                  <div className="h-12 w-12 rounded-lg border border-border bg-muted/50 overflow-hidden flex items-center justify-center">
+                  <div className="h-12 w-12 rounded-lg border border-border bg-muted/50 overflow-hidden flex items-center justify-center relative">
                     {pf.preview ? (
                       <Image 
                         src={pf.preview.startsWith('blob:') || pf.preview.startsWith('http') ? pf.preview : `/api/file?key=${encodeURIComponent(pf.preview)}&redirect=true`} 
@@ -676,6 +697,13 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
                       const fileToRemove = pendingFiles.find(p => p.nodeId === pf.nodeId);
                       if (fileToRemove) {
                         revokeUrl(fileToRemove.preview);
+                        
+                        // Abort in-progress upload if any
+                        const controller = uploadControllers.current.get(pf.nodeId);
+                        if (controller) {
+                          controller.abort();
+                          uploadControllers.current.delete(pf.nodeId);
+                        }
                       }
                       setPendingFiles(prev => prev.filter(p => p.nodeId !== pf.nodeId));
                       // Also deselect the node on canvas if it was an existing node

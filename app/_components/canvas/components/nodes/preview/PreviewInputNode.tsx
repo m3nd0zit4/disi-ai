@@ -2,11 +2,12 @@ import React, { memo } from "react";
 import { Position, NodeProps } from "@xyflow/react";
 import { User } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { cn } from "@/lib/utils";
+import { cn, adjustAlpha } from "@/lib/utils";
 import { NodeHandle } from "../NodeHandle";
 import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
 import { InputNodeData } from "../../../types";
+import { useSignedUrl } from "@/hooks/useSignedUrl";
 
 export const PreviewInputNode = memo(({ data, selected }: NodeProps) => {
   const inputData = data as unknown as InputNodeData;
@@ -23,7 +24,7 @@ export const PreviewInputNode = memo(({ data, selected }: NodeProps) => {
         )}
         style={{ 
           backgroundColor: color && color !== 'transparent' ? color : undefined,
-          borderColor: color && color !== 'transparent' ? color.replace('0.15', '0.3') : undefined
+          borderColor: color && color !== 'transparent' ? adjustAlpha(color, 0.3) : undefined
         }}
       >
         <NodeHandle type="target" position={Position.Top} className="opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -40,9 +41,9 @@ export const PreviewInputNode = memo(({ data, selected }: NodeProps) => {
           {/* Attachments */}
           {attachments && attachments.length > 0 && (
             <div className="flex flex-wrap gap-2 pt-2">
-              {attachments?.map((file: { url?: string; storageId?: string; type?: string; name?: string }, i: number) => {
+              {attachments?.map((file: { url?: string; storageId?: string; type?: string; name?: string }) => {
                 return (
-                  <AttachmentPreview key={i} file={file} />
+                  <AttachmentPreview key={file.storageId || file.url || file.name} file={file} />
                 );
               })}
             </div>
@@ -82,7 +83,9 @@ export const PreviewInputNode = memo(({ data, selected }: NodeProps) => {
               </div>
             </div>
             <div className="text-[10px] text-muted-foreground/60 font-medium self-end pb-1">
-              {createdAt ? formatDistanceToNow(createdAt, { addSuffix: true }) : 'Just now'}
+              {createdAt && !isNaN(new Date(createdAt).getTime()) 
+                ? formatDistanceToNow(createdAt, { addSuffix: true }) 
+                : 'Just now'}
             </div>
           </div>
         </div>
@@ -96,37 +99,7 @@ export const PreviewInputNode = memo(({ data, selected }: NodeProps) => {
 PreviewInputNode.displayName = "PreviewInputNode";
 
 function AttachmentPreview({ file }: { file: { url?: string; storageId?: string; type?: string; name?: string } }) {
-  const [signedUrl, setSignedUrl] = React.useState<string | null>(file.url || null);
-
-  React.useEffect(() => {
-    const controller = new AbortController();
-    
-    // Fetch fresh signed URL whenever storageId is present
-    if (file.storageId) {
-      fetch(`/api/file?key=${encodeURIComponent(file.storageId)}`, { signal: controller.signal })
-        .then(res => {
-          if (!res.ok) {
-            throw new Error(`Failed to fetch signed URL: ${res.status} ${res.statusText}`);
-          }
-          return res.json();
-        })
-        .then(data => {
-          if (!controller.signal.aborted && data.url) {
-            setSignedUrl(data.url);
-          }
-        })
-        .catch(err => {
-          if (err.name !== 'AbortError') {
-            console.error("Failed to load attachment URL", err);
-          }
-        });
-    } else {
-      // If no storageId, use url directly
-      setSignedUrl(file.url || null);
-    }
-
-    return () => controller.abort();
-  }, [file.storageId, file.url]);
+  const signedUrl = useSignedUrl(file.storageId, file.url);
 
   if (!signedUrl) return <div className="h-20 w-20 bg-muted animate-pulse rounded-lg" />;
 
