@@ -125,7 +125,7 @@ export async function POST(req: Request) {
         const sqsResponse = await sendToQueue(queueUrl, messageBody, conversationId);
         
         return {
-          jobId: sqsResponse.MessageId,
+          jobId: sqsResponse.messageId,
           modelId: model.modelId,
           responseId: body.responseIds[index],
         };

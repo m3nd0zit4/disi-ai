@@ -22,8 +22,6 @@ export function useNodePreview(
   const previewEdgeIdRef = useRef<string | null>(null);
   const previewFileNodeIdsRef = useRef<Set<string>>(new Set());
   const previewFileEdgeIdsRef = useRef<Set<string>>(new Set());
-  const previewResponseNodeIdsRef = useRef<string[]>([]);
-  const previewResponseEdgeIdsRef = useRef<Set<string>>(new Set());
   
   const isSyncingRef = useRef(false);
   const hasManuallyMovedPerAnchorMap = useRef<Record<string, boolean>>({});
@@ -54,12 +52,6 @@ export function useNodePreview(
     previewFileNodeIdsRef.current.clear();
     previewFileEdgeIdsRef.current.forEach(id => removeEdge(id));
     previewFileEdgeIdsRef.current.clear();
-
-    // Cleanup response previews
-    previewResponseNodeIdsRef.current.forEach(id => removeNode(id));
-    previewResponseNodeIdsRef.current = [];
-    previewResponseEdgeIdsRef.current.forEach(id => removeEdge(id));
-    previewResponseEdgeIdsRef.current.clear();
     
     // We don't necessarily need to clear the map, but we can if we want to reset state for this preview session
     // hasManuallyMovedPerAnchorMap.current = {}; 
@@ -303,8 +295,7 @@ export function useNodePreview(
         const currentEdges = useCanvasStore.getState().edges;
         const existingContextEdge = currentEdges.find(e => 
           e.target === previewNodeIdRef.current && 
-          !e.id.startsWith('edge-preview-file-') &&
-          !e.id.startsWith('edge-preview-response-')
+          !e.id.startsWith('edge-preview-file-')
         );
         
         if (!existingContextEdge || existingContextEdge.source !== selectedNode.id) {
@@ -324,105 +315,6 @@ export function useNodePreview(
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prompt]);
-
-  // Response Previews Sync - CRITICAL: Only depends on selectedModels with deep comparison
-  useEffect(() => {
-    if (isSyncingRef.current) return;
-    if (!previewNodeIdRef.current) return;
-
-    // Deep equality check to prevent unnecessary re-runs
-    const currentModelsJson = JSON.stringify(selectedModels.map(m => m.modelId));
-    if (currentModelsJson === prevSelectedModelsJsonRef.current) return;
-    prevSelectedModelsJsonRef.current = currentModelsJson;
-    selectedModelsRef.current = selectedModels;
-
-    // Use imperative getState() to avoid reactive subscriptions
-    const currentNodes = useCanvasStore.getState().nodes;
-    const currentEdges = useCanvasStore.getState().edges;
-    
-    const inputPreview = currentNodes.find(n => n.id === previewNodeIdRef.current);
-    if (!inputPreview) return;
-
-    const modelsToPreview = selectedModels.length > 0 ? selectedModels : [{ modelId: DEFAULT_PREVIEW_MODEL }];
-    
-    // Sync response nodes
-    const currentResponseIds = [...previewResponseNodeIdsRef.current];
-    
-    // Remove extra nodes
-    if (currentResponseIds.length > modelsToPreview.length) {
-      const toRemove = currentResponseIds.slice(modelsToPreview.length);
-      toRemove.forEach(id => {
-        removeNode(id);
-        removeEdge(`edge-preview-response-${id}`);
-        previewResponseEdgeIdsRef.current.delete(`edge-preview-response-${id}`);
-      });
-      previewResponseNodeIdsRef.current = currentResponseIds.slice(0, modelsToPreview.length);
-    }
-
-    // Add or update nodes
-    modelsToPreview.forEach((model, i) => {
-      const existingId = previewResponseNodeIdsRef.current[i];
-      
-      if (existingId) {
-        // Update existing node
-        updateNodeData(existingId, { modelId: model.modelId });
-        // Update position if not dragging
-        const node = currentNodes.find(n => n.id === existingId);
-        if (node && !node.dragging && !hasManuallyMovedPerAnchorMap.current[previewNodeIdRef.current!]) {
-          const responseNodeSize = { width: 350, height: 250 };
-          const responseNodePos = findBestPosition({
-            nodes: currentNodes.filter(n => n.id !== existingId),
-            edges: currentEdges,
-            anchorNodeId: inputPreview.id,
-            newNodeSize: responseNodeSize,
-            newNodeType: "preview-response",
-            isParallel: true,
-            parallelIndex: i,
-            totalParallel: modelsToPreview.length
-          });
-
-          updateNodePosition(existingId, responseNodePos);
-        }
-      } else {
-        // Add new node
-        const nodeId = `preview-response-${Date.now()}-${i}`;
-        const responseNodeSize = { width: 350, height: 250 };
-        const responseNodePos = findBestPosition({
-          nodes: currentNodes,
-          edges: currentEdges,
-          anchorNodeId: inputPreview.id,
-          newNodeSize: responseNodeSize,
-          newNodeType: "preview-response",
-          isParallel: true,
-          parallelIndex: i,
-          totalParallel: modelsToPreview.length
-        });
-
-        addNode({
-          id: nodeId,
-          type: "preview-response",
-          position: responseNodePos,
-          data: {
-            modelId: model.modelId,
-            status: "pending",
-            createdAt: Date.now(),
-          },
-        });
-
-        const edgeId = `edge-preview-response-${nodeId}`;
-        addEdge({
-          id: edgeId,
-          source: inputPreview.id,
-          target: nodeId,
-          animated: true,
-        });
-
-        previewResponseNodeIdsRef.current.push(nodeId);
-        previewResponseEdgeIdsRef.current.add(edgeId);
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedModels]);
 
   return {
     handlePromptChange,

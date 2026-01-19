@@ -333,4 +333,38 @@ export default defineSchema({
   })
     .index("by_status", ["status"])
     .index("by_status_created", ["status", "createdAt"]),
+
+  // ===== FILES (File Processing Architecture) =====
+  files: defineTable({
+    // Relaciones
+    canvasId: v.id("canvas"),
+    userId: v.id("users"),
+
+    // Metadata
+    fileName: v.string(),
+    fileType: v.string(),
+    fileSize: v.number(),
+    s3Key: v.string(),
+
+    // Estado
+    status: v.union(
+      v.literal("uploading"),
+      v.literal("processing"),
+      v.literal("ready"),
+      v.literal("error")
+    ),
+    errorMessage: v.optional(v.string()),
+
+    // Resultados (solo metadata, no contenido)
+    extractedTextLength: v.optional(v.number()),
+    totalChunks: v.optional(v.number()),
+
+    // Timestamps
+    createdAt: v.number(),
+    processedAt: v.optional(v.number()),
+  })
+    .index("by_canvas", ["canvasId"])
+    .index("by_status", ["status"])
+    .index("by_user", ["userId"])
+    .index("by_s3_key", ["s3Key"]),
 });

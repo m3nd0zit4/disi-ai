@@ -11,7 +11,7 @@ import { ArrowUp, Mic, Plus, Github, Figma, FolderOpen, X } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useAIContext } from "@/context/AIContext";
-import { useMutation } from "convex/react";
+import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useRouter, useParams } from "next/navigation";
@@ -88,11 +88,12 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   const addMenuRef = useRef<HTMLDivElement>(null);
   const { showDialog } = useDialog();
 
-  // Convex mutations
+  // Convex mutations and actions
   const createCanvas = useMutation(api.canvas.createCanvas);
+  const createFile = useAction(api.files.createFile);
 
   // Use custom hook for preview logic
-  const { handlePromptChange, cleanupPreview, addPreviewFile, previewNodeIdRef } = useNodePreview(prompt, setPrompt, selectedModels);
+  const { handlePromptChange, cleanupPreview, previewNodeIdRef } = useNodePreview(prompt, setPrompt, selectedModels);
 
   const nodes = useCanvasStore(state => state.nodes);
   
@@ -187,28 +188,28 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
         if (!options) return;
 
         if (options.sizes && options.sizes.length > 0) {
-          setImageSize(prev => prev || options.sizes[0]);
+          setImageSize(prev => prev || options.sizes?.[0] || "");
         }
         if (options.quality && options.quality.length > 0) {
-          setImageQuality(prev => prev || options.quality[0]);
+          setImageQuality(prev => prev || options.quality?.[0] || "");
         }
 
         if (options.modelType === "gpt-image") {
           if (options.background && options.background.length > 0) {
-            setImageBackground(prev => prev || options.background[0]);
+            setImageBackground(prev => prev || options.background?.[0] || "");
           }
           if (options.output_format && options.output_format.length > 0) {
-            setImageOutputFormat(prev => prev || options.output_format[0]);
+            setImageOutputFormat(prev => prev || options.output_format?.[0] || "");
           }
           if (options.moderation && options.moderation.length > 0) {
-            setImageModeration(prev => prev || options.moderation[0]);
+            setImageModeration(prev => prev || options.moderation?.[0] || "");
           }
         }
       }
     }
   }, [selectedModels, hasModelsSelected]);
 
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement> | FileList, isDirect = false) => {
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement> | FileList) => {
     const selectedFiles = "target" in e ? (e.target as HTMLInputElement).files : e;
     if (!selectedFiles || !canvasId) return;
 
@@ -237,18 +238,24 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
         }
       }
 
-      // Add file node to canvas IMMEDIATELY to avoid race conditions
+      // Add file node to canvas IMMEDIATELY as a REAL node
       const currentNodes = useCanvasStore.getState().nodes;
+      
+      // Find a good position (e.g. near the last selected node or center)
+      const selectedNode = currentNodes.find(n => n.selected);
       const lastNode = currentNodes[currentNodes.length - 1];
-      const position = {
-        x: lastNode ? lastNode.position.x + 50 : 100,
-        y: lastNode ? lastNode.position.y - 150 : 100,
-      };
+      
+      const position = selectedNode 
+        ? { x: selectedNode.position.x, y: selectedNode.position.y - 200 }
+        : lastNode 
+          ? { x: lastNode.position.x + 50, y: lastNode.position.y - 150 }
+          : { x: 100, y: 100 };
 
       const fileNode = {
         id: nodeId,
         type: "file",
         position,
+        selected: true, // Select the new node
         data: {
           fileName: file.name,
           fileType: file.type || "application/octet-stream",
@@ -256,44 +263,58 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           storageId: "", 
           uploadStatus: "uploading" as const,
           textContent,
+          previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
           createdAt: Date.now(),
         },
       };
 
-      if (isDirect) {
-        useCanvasStore.getState().addNode(fileNode);
-      }
+      // Add to store immediately
+      useCanvasStore.getState().addNode(fileNode);
 
-      // Add to pending files list for UI feedback and linking
-      const previewId = addPreviewFile({
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined
-      });
-
+      // Add to pending files list for linking logic (but maybe hide from UI if requested)
       setPendingFiles(prev => [...prev, { 
-        nodeId: previewId || nodeId, 
+        nodeId: nodeId, 
         fileName: file.name, 
         preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
         fileType: file.type,
+        isExistingNode: true,
         storageId: "" // Will be updated after upload
       }]);
 
-      // Upload to S3 (async, doesn't block UI)
+      // Upload to S3 via Convex action (async)
       const controller = new AbortController();
       (async () => {
         try {
-          const response = await fetch("/api/upload", {
+          console.log(`[ChatInputBox] Creating file record in Convex for: ${file.name}`);
+          
+          // Call Convex action to create file record
+          const result = await createFile({
+            fileName: file.name,
+            fileType: file.type || "application/octet-stream",
+            fileSize: file.size,
+            canvasId: canvasId as Id<"canvas">,
+          });
+
+          console.log(`[ChatInputBox] File record created with ID: ${result.fileId}`);
+          console.log(`[ChatInputBox] S3 Key: ${result.s3Key}`);
+          
+          // Generate Presigned URL via local API route
+          console.log(`[ChatInputBox] Generating upload URL via local API...`);
+          const uploadResponse = await fetch("/api/upload", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ contentType: file.type, fileName: file.name }),
+            body: JSON.stringify({ 
+              contentType: file.type, 
+              fileName: file.name,
+              s3Key: result.s3Key 
+            }),
             signal: controller.signal
           });
 
-          if (!response.ok) throw new Error("Failed to get upload URL");
-          const { url, key } = await response.json();
+          if (!uploadResponse.ok) throw new Error("Failed to get upload URL");
+          const { url } = await uploadResponse.json();
 
+          console.log(`[ChatInputBox] Uploading to S3...`);
           const uploadResult = await fetch(url, {
             method: "PUT",
             headers: { "Content-Type": file.type },
@@ -305,24 +326,23 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           
           if (controller.signal.aborted) return;
 
-          // Update node with success status
-          if (isDirect) {
-            useCanvasStore.getState().updateNodeData(nodeId, { 
-              storageId: key, 
-              uploadStatus: "complete" 
-            });
-          } else if (previewId) {
-            useCanvasStore.getState().updateNodeData(previewId, { 
-              storageId: key, 
-              uploadStatus: "complete" 
-            });
-            setPendingFiles(prev => prev.map(f => 
-              f.nodeId === previewId ? { ...f, storageId: key } : f
-            ));
-          }
+          console.log(`[ChatInputBox] ✅ Upload successful! S3 Key: ${result.s3Key}`);
+          console.log(`[ChatInputBox] File is now in Convex and Lambda can process it`);
+
+          // Update node with success status and storageId
+          useCanvasStore.getState().updateNodeData(nodeId, { 
+            storageId: result.s3Key,  // Use the s3Key from Convex
+            uploadStatus: "complete" 
+          });
+          
+          // Update pending file reference
+          setPendingFiles(prev => prev.map(f => 
+            f.nodeId === nodeId ? { ...f, storageId: result.s3Key } : f
+          ));
+
         } catch (error) {
           if (error instanceof Error && error.name === 'AbortError') return;
-          console.error("Upload error:", error);
+          console.error("[ChatInputBox] ❌ Upload error:", error);
           useCanvasStore.getState().updateNodeData(nodeId, { uploadStatus: "error" });
           showDialog({ title: "Upload Error", description: `Failed to upload ${file.name}`, type: "error" });
         }
@@ -330,7 +350,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
     }
     
     if (fileInputRef.current) fileInputRef.current.value = "";
-  }, [canvasId, showDialog, addPreviewFile]);
+  }, [canvasId, showDialog, createFile]);
 
   // Removed: removeFile no longer needed - files are nodes now
 
@@ -438,12 +458,46 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
       }
 
       const previewId = previewNodeIdRef.current;
-      const newNodeId = previewId ? previewId.replace('preview-', '') : `node-${Date.now()}`;
+      // Generate a base ID for the new operation
+      const baseId = previewId ? previewId.replace('preview-', '') : `${Date.now()}`;
+      const newNodeId = baseId;
+      const optimisticInputId = `input-${baseId}`;
       
       // Files are now nodes on canvas, no need to pass attachments
 
       // Determine if this is a branching action (explicit selection)
       const isBranching = !!selectedInputNode;
+
+      // OPTIMISTIC UI: Create the input node immediately if it doesn't exist
+      if (!selectedInputNode) {
+         const viewport = useCanvasStore.getState().viewport || { x: 0, y: 0, zoom: 1 };
+         const inputNodePos = previewPosition || { 
+            x: -viewport.x / viewport.zoom + 100, 
+            y: -viewport.y / viewport.zoom + 100 
+         };
+         
+         const optimisticInputNode = {
+            id: optimisticInputId,
+            type: "input",
+            position: inputNodePos,
+            data: {
+               text: prompt,
+               createdAt: Date.now(),
+            }
+         };
+         useCanvasStore.getState().addNode(optimisticInputNode);
+         
+         // Create edges from files to this new input node
+         pendingFiles.forEach(pf => {
+            const edgeId = `edge-${pf.nodeId}-${optimisticInputId}`;
+            useCanvasStore.getState().addEdge({
+               id: edgeId,
+               source: pf.nodeId,
+               target: optimisticInputId,
+               animated: true
+            });
+         });
+      }
 
       const response = await fetch("/api/execute", {
         method: "POST",
@@ -456,7 +510,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           prompt: prompt,
           models: modelsToUse,
           newNodeId: newNodeId,
-          inputNodeId: selectedInputNode?.id,
+          inputNodeId: selectedInputNode?.id, // If we selected an existing node, use it. Otherwise undefined.
           parentNodeIds: parentNodeIds,
           isBranching, // Pass the flag
           fileAttachments: pendingFiles
@@ -464,6 +518,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
             .map(f => {
               const node = currentNodes.find(n => n.id === f.nodeId);
               return {
+                id: f.nodeId, // PASS THE ID!
                 storageId: f.storageId,
                 name: f.fileName,
                 type: f.fileType,

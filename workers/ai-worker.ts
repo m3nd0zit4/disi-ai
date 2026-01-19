@@ -319,6 +319,18 @@ async function processNodeExecution(data: {
             items: (inputs.context as ReasoningContextItem[]) || []
         };
 
+        console.log(`\n========== AI WORKER CONTEXT ==========`);
+        console.log(`[Worker] Received context with ${rawContext.items.length} items`);
+        rawContext.items.forEach((item, index) => {
+          console.log(`[Worker] Context item ${index + 1}:`, {
+            nodeType: item.nodeType,
+            role: item.role,
+            contentLength: item.content?.length || 0,
+            contentPreview: item.content?.substring(0, 150) + (item.content && item.content.length > 150 ? '...' : '')
+          });
+        });
+        console.log(`========================================\n`);
+
         const userPrompt = prompt || text || "";
 
         // ========== RLM EXECUTION PATH ==========

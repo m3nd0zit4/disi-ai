@@ -30,24 +30,32 @@ function getRequiredEnv(key: string): string {
   return value;
 }
 
-const convex = new ConvexHttpClient(getRequiredEnv("NEXT_PUBLIC_CONVEX_URL"));
-
-// Default model configuration
-const DEFAULT_MODEL = {
-  category: "reasoning" as const,
-  modelId: "gpt-5.2",
-  provider: "GPT",
-  providerModelId: "gpt-5.2",
-  isEnabled: true,
-};
-
 export async function POST(req: Request) {
   try {
-    const { userId: clerkId } = await auth();
+    const { userId: clerkId, getToken } = await auth();
     
     if (!clerkId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    console.log(`[Execute] Authenticating for user ${clerkId}`);
+    const token = await getToken({ template: "convex" });
+    const convex = new ConvexHttpClient(getRequiredEnv("NEXT_PUBLIC_CONVEX_URL"));
+    if (token) {
+      console.log(`[Execute] Setting auth token (length: ${token.length})`);
+      convex.setAuth(token);
+    } else {
+      console.warn(`[Execute] No auth token available for template 'convex'`);
+    }
+
+    // Default model configuration
+    const DEFAULT_MODEL = {
+      category: "reasoning" as const,
+      modelId: "gpt-5.2",
+      provider: "GPT",
+      providerModelId: "gpt-5.2",
+      isEnabled: true,
+    };
 
     const body = await req.json();
     const { 
@@ -70,14 +78,16 @@ export async function POST(req: Request) {
       isBranching, // NEW: Flag for lateral positioning
     } = body;
 
-    // 1. Get user record
-    const user = await convex.query(api.users.getUserByClerkId, { clerkId });
+    // 1. Get user record and canvas details in parallel
+    const [user, canvas] = await Promise.all([
+      convex.query(api.users.getUserByClerkId, { clerkId }),
+      convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId })
+    ]);
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // 2. Get canvas details
-    const canvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId });
     if (!canvas) {
       return NextResponse.json({ error: "Canvas not found" }, { status: 404 });
     }
@@ -124,7 +134,7 @@ export async function POST(req: Request) {
           const filesStartX = inputNodeX + (350 / 2) - (totalFilesWidth / 2);
 
           fileAttachments.forEach((fa, i) => {
-            const fileNodeId = `file-${newNodeId}-${i}`;
+            const fileNodeId = fa.id || `file-${newNodeId}-${i}`;
             nodesToAdd.push({
               id: fileNodeId,
               type: "file",
@@ -302,14 +312,110 @@ export async function POST(req: Request) {
 
     // Import context resolution once before processing nodes
     const { resolveNodeContext } = await import("@/lib/reasoning/context");
+    const { Redis } = await import("@upstash/redis");
+
+    // Initialize Redis client for fetching file content
+    const redis = new Redis({
+      url: getRequiredEnv("UPSTASH_REDIS_REST_URL"),
+      token: getRequiredEnv("UPSTASH_REDIS_REST_TOKEN"),
+    });
+
+    // Helper to fetch file content from Redis
+    const fetchFileContent = async (storageId: string): Promise<string | null> => {
+      console.log(`\n========== FETCH FILE CONTENT ==========`);
+      console.log(`[Execute] Attempting to fetch content for storageId: ${storageId}`);
+      
+      try {
+        // 1. Try to find the file in Convex by S3 Key to get the real ID
+        console.log(`[Execute] Step 1: Querying Convex for file record...`);
+        const fileRecord = await convex.query(api.files.getFileByS3Key, { s3Key: storageId });
+        
+        let fileId: string | undefined = fileRecord?._id;
+        console.log(`[Execute] Convex query result:`, fileRecord ? `Found file with ID: ${fileId}` : 'No file record found');
+        
+        if (fileRecord) {
+          console.log(`[Execute] File status: ${fileRecord.status}`);
+          if (fileRecord.errorMessage) {
+            console.error(`[Execute] File error message: ${fileRecord.errorMessage}`);
+          }
+        }
+
+        // 2. If not found in Convex (maybe race condition or legacy), try to extract UUID from S3 Key
+        if (!fileId) {
+           console.log(`[Execute] Step 2: Extracting UUID from S3 key as fallback...`);
+           // S3 Key formats:
+           // - New format (from Convex): raw/uuid.ext
+           // - Old format (legacy): userId/uuid-filename.ext
+           const parts = storageId.split('/');
+           const filenamePart = parts[parts.length - 1];
+           console.log(`[Execute] Filename part: ${filenamePart}`);
+           
+           // Try to extract UUID from filename
+           // New format: "uuid.ext" → split by dot and take first part
+           const uuidBeforeDot = filenamePart.split('.')[0];
+           console.log(`[Execute] UUID before dot: ${uuidBeforeDot} (length: ${uuidBeforeDot.length})`);
+           
+           if (uuidBeforeDot.length === 36) {
+             // This is the UUID from new format (raw/uuid.ext)
+             fileId = uuidBeforeDot;
+             console.log(`[Execute] Using UUID from new format: ${fileId}`);
+           } else {
+             // Try old format: "uuid-filename.ext" → split by dash and take first part
+             const uuidBeforeDash = filenamePart.split('-')[0];
+             console.log(`[Execute] UUID before dash: ${uuidBeforeDash} (length: ${uuidBeforeDash.length})`);
+             
+             if (uuidBeforeDash.length === 36) {
+               fileId = uuidBeforeDash;
+               console.log(`[Execute] Using UUID from old format: ${fileId}`);
+             }
+           }
+        }
+
+        if (!fileId) {
+            console.error(`[Execute] ❌ FAILED: Could not resolve file ID for storageId: ${storageId}`);
+            console.log(`========================================\n`);
+            return null;
+        }
+
+        // 3. Fetch text from Redis
+        console.log(`[Execute] Step 3: Fetching from Redis with key: file:${fileId}:text`);
+        const redisKey = `file:${fileId}:text`;
+        const text = await redis.get<string>(redisKey);
+        
+        if (text) {
+            console.log(`[Execute] ✅ SUCCESS: Retrieved ${text.length} chars from Redis`);
+            console.log(`[Execute] Content preview (first 200 chars): ${text.substring(0, 200)}...`);
+            console.log(`========================================\n`);
+            return text;
+        } else {
+            console.warn(`[Execute] ⚠️  WARNING: No text found in Redis for key: ${redisKey}`);
+            console.log(`[Execute] This means either:`);
+            console.log(`[Execute]   1. File hasn't been processed by Lambda yet`);
+            console.log(`[Execute]   2. Lambda failed to process the file`);
+            console.log(`[Execute]   3. Redis key expired (TTL: 7 days)`);
+            console.log(`========================================\n`);
+            return null;
+        }
+
+      } catch (error) {
+        console.error(`[Execute] ❌ ERROR fetching file content:`, error);
+        console.log(`========================================\n`);
+        return null;
+      }
+    };
 
     const jobs = await Promise.all(
       nodesToQueue.map(async (node) => {
-        // Collect context using the reasoning logic
-        const reasoningContext = resolveNodeContext(node.id, canvasForContext.nodes, canvasForContext.edges);
+        // Collect context using the reasoning logic with file content fetching
+        const reasoningContext = await resolveNodeContext(
+          node.id, 
+          canvasForContext.nodes, 
+          canvasForContext.edges,
+          fetchFileContent
+        );
         
         // Map to the format expected by the worker (or update worker to handle ReasoningContext)
-        // For now, we'll pass the structured context in the inputs.
+        // For now, we pass the structured context in the inputs.
 
 
         const inputs = { 

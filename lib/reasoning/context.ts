@@ -7,13 +7,15 @@ import { ReasoningNode, ReasoningEdge, ReasoningContext, ReasoningContextItem, S
  * @param targetNodeId The ID of the node being executed.
  * @param nodes All nodes in the canvas (or a relevant subset).
  * @param edges All edges in the canvas.
+ * @param fetchFileContent Optional callback to fetch file content from external storage (e.g. Redis/S3)
  * @returns Structured reasoning context.
  */
-export function resolveNodeContext(
+export async function resolveNodeContext(
   targetNodeId: string,
   nodes: ReasoningNode[],
-  edges: ReasoningEdge[]
-): ReasoningContext {
+  edges: ReasoningEdge[],
+  fetchFileContent?: (storageId: string) => Promise<string | null>
+): Promise<ReasoningContext> {
   const contextItems: ReasoningContextItem[] = [];
   const visited = new Set<string>();
 
@@ -63,12 +65,39 @@ export function resolveNodeContext(
     } else if (sourceNode.data.prompt) {
         content = sourceNode.data.prompt;
     } else if (sourceNode.type === 'file') {
+        console.log(`\n[Context] Processing file node: ${sourceNode.id}`);
+        console.log(`[Context] File name: ${sourceNode.data.fileName}`);
+        console.log(`[Context] Has textContent: ${!!sourceNode.data.textContent}`);
+        console.log(`[Context] Has storageId: ${!!sourceNode.data.storageId}`);
+        console.log(`[Context] fetchFileContent available: ${!!fetchFileContent}`);
+        
         // Handle FileNode content
         if (sourceNode.data.textContent) {
+            const textContentStr = typeof sourceNode.data.textContent === 'string' ? sourceNode.data.textContent : String(sourceNode.data.textContent);
+            console.log(`[Context] Using textContent from node data (${textContentStr.length} chars)`);
             content = `[File: ${sourceNode.data.fileName}]\n${sourceNode.data.textContent}`;
+        } else if (sourceNode.data.storageId && typeof sourceNode.data.storageId === 'string' && fetchFileContent) {
+            console.log(`[Context] Fetching content from external storage for storageId: ${sourceNode.data.storageId}`);
+            // Try to fetch content from external storage if not present in node data
+            try {
+                const fetchedContent = await fetchFileContent(sourceNode.data.storageId);
+                if (fetchedContent) {
+                    console.log(`[Context] ✅ Successfully fetched ${fetchedContent.length} chars from external storage`);
+                    content = `[File: ${sourceNode.data.fileName}]\n${fetchedContent}`;
+                } else {
+                    console.warn(`[Context] ⚠️  No content returned from fetchFileContent`);
+                    content = `[File: ${sourceNode.data.fileName} (Content not available)]`;
+                }
+            } catch (err) {
+                console.error(`[Context] ❌ Failed to fetch content for file ${sourceNode.data.fileName}:`, err);
+                content = `[File: ${sourceNode.data.fileName} (Error fetching content)]`;
+            }
         } else {
-            content = `[File: ${sourceNode.data.fileName} (Binary/Image)]`;
+            console.log(`[Context] Cannot fetch content - using placeholder`);
+            content = `[File: ${sourceNode.data.fileName} (Binary/Image/Processing)]`;
         }
+        
+        console.log(`[Context] Final content length for file node: ${content.length} chars\n`);
     }
 
     // Determine role
