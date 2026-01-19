@@ -1,8 +1,8 @@
 "use client";
 
-import React, { memo, useEffect, useState } from "react";
+import React, { memo, useState } from "react";
 import { Position, NodeProps } from "@xyflow/react";
-import { FileText, Image as ImageIcon, File, Loader2, AlertCircle, Download } from "lucide-react";
+import { Loader2, AlertCircle, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
 import { FileNodeData } from "../../types";
@@ -10,43 +10,16 @@ import { Button } from "@/components/ui/button";
 import Image from "next/image";
 
 import { formatFileSize, isImageType, isTextualType } from "@/lib/file-utils";
+import { useSignedUrl } from "@/hooks/useSignedUrl";
+import { FileIconDisplay } from "./shared/FileIconDisplay";
 
-// Render the appropriate icon based on file type
-const FileIconDisplay = ({ fileType, className }: { fileType: string; className?: string }) => {
-  if (fileType.startsWith("image/")) return <ImageIcon className={className} />;
-  if (fileType.startsWith("text/") || fileType.includes("json") || fileType.includes("javascript")) {
-    return <FileText className={className} />;
-  }
-  return <File className={className} />;
-};
 
-export const FileNode = memo(({ id, data, selected }: NodeProps) => {
+export const FileNode = memo(({ data, selected }: NodeProps) => {
   const fileData = data as unknown as FileNodeData;
   const { fileName, fileType, fileSize, storageId, uploadStatus, textContent, previewUrl } = fileData;
   
-  const [signedUrl, setSignedUrl] = useState<string | null>(previewUrl || null);
+  const signedUrl = useSignedUrl(storageId, previewUrl);
   const [isExpanded, setIsExpanded] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    
-    if (storageId && !signedUrl) {
-      fetch(`/api/file?key=${encodeURIComponent(storageId)}`, { signal: controller.signal })
-        .then(res => res.json())
-        .then(data => {
-          if (!controller.signal.aborted && data.url) {
-            setSignedUrl(data.url);
-          }
-        })
-        .catch(err => {
-          if (err.name !== 'AbortError') {
-            console.error("Failed to load file URL", err);
-          }
-        });
-    }
-
-    return () => controller.abort();
-  }, [storageId, signedUrl]);
 
 
   const handleDownload = (e: React.MouseEvent) => {
@@ -85,7 +58,12 @@ export const FileNode = memo(({ id, data, selected }: NodeProps) => {
               onClick={() => setIsExpanded(!isExpanded)}
             >
               <pre className="whitespace-pre-wrap break-words">
-                {isExpanded ? textContent : textContent.slice(0, 150)}
+                {isExpanded ? textContent : (
+                  <>
+                    {textContent.slice(0, 150)}
+                    {textContent.length > 150 && <span className="text-muted-foreground/50">...</span>}
+                  </>
+                )}
               </pre>
             </div>
           ) : (

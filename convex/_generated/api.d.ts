@@ -11,6 +11,7 @@
 import type * as ai from "../ai.js";
 import type * as canvas from "../canvas.js";
 import type * as canvasExecutions from "../canvasExecutions.js";
+import type * as files from "../files.js";
 import type * as storage from "../storage.js";
 import type * as users from "../users.js";
 import type * as worker from "../worker.js";
@@ -25,6 +26,7 @@ declare const fullApi: ApiFromModules<{
   ai: typeof ai;
   canvas: typeof canvas;
   canvasExecutions: typeof canvasExecutions;
+  files: typeof files;
   storage: typeof storage;
   users: typeof users;
   worker: typeof worker;

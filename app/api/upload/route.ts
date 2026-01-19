@@ -10,7 +10,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { contentType, fileName } = await req.json();
+    const { contentType, fileName, s3Key: providedS3Key } = await req.json();
     
     // Validate contentType - whitelist of allowed MIME types
     const allowedMimeTypes = [
@@ -37,9 +37,9 @@ export async function POST(req: Request) {
 
     // Sanitize filename: remove control characters, path separators, and limit length
     const sanitizedFileName = fileName
-      .replace(/[\\x00-\\x1F\\x7F]/g, "") // Remove control characters
-      .replace(/[\\/]/g, "") // Remove path separators
-      .replace(/\\.\\./g, "") // Remove directory traversal
+      .replace(/\p{Cc}/gu, "") // Remove control characters
+      .replace(/[\\\/]/g, "") // Remove path separators
+      .replace(/\.\./g, "") // Remove directory traversal
       .trim()
       .slice(0, 255); // Limit to 255 characters
 
@@ -47,8 +47,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid fileName after sanitization" }, { status: 400 });
     }
     
-    // Create a unique key: userId/uuid-filename to avoid collisions and organize by user
-    const uniqueKey = `${userId}/${uuidv4()}-${sanitizedFileName}`;
+    let uniqueKey: string;
+    if (providedS3Key) {
+      if (typeof providedS3Key !== "string") {
+        return NextResponse.json({ error: "Invalid s3Key format" }, { status: 400 });
+      }
+      const normalized = providedS3Key.replace(/^\/+/, "").replace(/\/{2,}/g, "/");
+      if (
+        normalized.includes("..") ||
+        normalized.includes("\\") ||
+        !normalized.startsWith(`${userId}/`)
+      ) {
+        return NextResponse.json({ error: "Invalid s3Key format" }, { status: 403 });
+      }
+      uniqueKey = normalized;
+    } else {
+      uniqueKey = `${userId}/${uuidv4()}-${sanitizedFileName}`;
+    }
     
     const url = await generatePresignedUploadUrl(uniqueKey, contentType);
     

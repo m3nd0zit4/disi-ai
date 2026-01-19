@@ -94,8 +94,7 @@ async function processMessage(message: Message, queueUrl: string) {
     data = JSON.parse(message.Body);
   } catch (parseError) {
     log("ERROR", `Failed to parse message ${message.MessageId}`, { 
-      error: parseError instanceof Error ? parseError.message : parseError,
-      bodyPreview: message.Body.substring(0, 100) + (message.Body.length > 100 ? "..." : "")
+      error: parseError instanceof Error ? parseError.message : parseError
     });
     
     await sqsClient.send(new DeleteMessageCommand({
@@ -318,6 +317,11 @@ async function processNodeExecution(data: {
             targetNodeId: nodeId,
             items: (inputs.context as ReasoningContextItem[]) || []
         };
+
+        log("INFO", `AI Worker context received`, { 
+          itemCount: rawContext.items.length,
+          targetNodeId: nodeId
+        });
 
         const userPrompt = prompt || text || "";
 

@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     }
 
     // 2. Get canvas details (Authorized)
-    const canvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId });
+    const canvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId: canvasId as any, clerkId });
     if (!canvas) {
       return NextResponse.json({ error: "Canvas not found or unauthorized" }, { status: 404 });
     }
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
       }];
 
       executionId = await convex.mutation(api.canvasExecutions.createCanvasExecutionByClerkId, { 
-        canvasId,
+        canvasId: canvasId as any,
         clerkId 
       });
 
@@ -109,7 +109,7 @@ export async function POST(req: Request) {
 
       // Add all at once (Authorized)
       await convex.mutation(api.canvas.addNodesAndEdgesByClerkId, { 
-        canvasId, 
+        canvasId: canvasId as any, 
         clerkId,
         nodes: [inputNode, ...responseNodes],
         edges 
@@ -123,7 +123,7 @@ export async function POST(req: Request) {
       // Find nodes that need execution (e.g., pending response nodes)
       // For now, we'll just queue nodes that are targets of new connections or manually triggered
       // In a real flow, we'd find nodes with status "pending"
-      nodesToQueue = nodes.filter(n => n.data?.status === "pending");
+      nodesToQueue = nodes.filter((n: any) => n.data?.status === "pending");
       
       if (nodesToQueue.length === 0 && nodes.length > 0) {
         // Fallback or manual trigger logic
@@ -184,7 +184,7 @@ export async function POST(req: Request) {
         
         return {
           nodeId: node.id,
-          jobId: sqsResponse.MessageId,
+          jobId: sqsResponse.messageId,
         };
       })
     );
