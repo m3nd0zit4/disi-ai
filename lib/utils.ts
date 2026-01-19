@@ -15,10 +15,12 @@ export function adjustAlpha(color: string, newAlpha: number): string {
       r = parseInt(color[1] + color[1], 16);
       g = parseInt(color[2] + color[2], 16);
       b = parseInt(color[3] + color[3], 16);
-    } else {
+    } else if (color.length === 7 || color.length === 9) {
       r = parseInt(color.substring(1, 3), 16);
       g = parseInt(color.substring(3, 5), 16);
       b = parseInt(color.substring(5, 7), 16);
+    } else {
+      return color; // Unrecognized hex format
     }
     return `rgba(${r}, ${g}, ${b}, ${newAlpha})`;
   }

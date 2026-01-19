@@ -19,6 +19,7 @@ async function main() {
 
   const requiredEnv = [
     "NEXT_PUBLIC_CONVEX_URL",
+    "CONVEX_DEPLOY_KEY",
     "AWS_REGION",
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
@@ -34,6 +35,8 @@ async function main() {
   }
 
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+  // Use admin authentication for internal updates
+  (convex as any).setAdminAuth(process.env.CONVEX_DEPLOY_KEY!);
   const s3 = new S3Client({ 
     region: process.env.AWS_REGION || "us-east-1",
     credentials: {
@@ -69,7 +72,7 @@ async function main() {
     
     try {
       // 1. Update status to 'processing'
-      await convex.mutation(api.files.updateStatusByS3Key, {
+      await convex.mutation(api.files.publicUpdateStatusByS3Key, {
         s3Key,
         status: "processing",
       });
@@ -125,7 +128,7 @@ async function main() {
       }
 
       // 5. Update status to 'ready'
-      await convex.mutation(api.files.updateStatusByS3Key, {
+      await convex.mutation(api.files.publicUpdateStatusByS3Key, {
         s3Key,
         status: "ready",
         extractedTextLength: text.length,
@@ -138,7 +141,7 @@ async function main() {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       console.error(`[File Worker] ❌ Error processing ${fileName}:`, error);
       
-      await convex.mutation(api.files.updateStatusByS3Key, {
+      await convex.mutation(api.files.publicUpdateStatusByS3Key, {
         s3Key,
         status: "error",
         errorMessage,
@@ -148,7 +151,7 @@ async function main() {
 
   while (!isShuttingDown) {
     try {
-      const pendingFiles = await convex.query(api.files.getPendingFiles);
+      const pendingFiles = await convex.query(api.files.publicGetPendingFiles);
       
       if (pendingFiles.length > 0) {
         console.log(`[File Worker] Found ${pendingFiles.length} pending files`);

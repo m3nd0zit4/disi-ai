@@ -134,7 +134,9 @@ export async function POST(req: Request) {
           const filesStartX = inputNodeX + (350 / 2) - (totalFilesWidth / 2);
 
           fileAttachments.forEach((fa, i) => {
-            const fileNodeId = fa.id && typeof fa.id === 'string' && fa.id.length < 100 
+            // Use provided ID if it's a short identifier (not a full S3 key path)
+            const MAX_NODE_ID_LENGTH = 100;
+            const fileNodeId = fa.id && typeof fa.id === 'string' && fa.id.length < MAX_NODE_ID_LENGTH 
               ? fa.id 
               : `file-${newNodeId}-${i}`;
             nodesToAdd.push({

@@ -87,7 +87,7 @@ export function AppSidebar() {
                         <div className="p-1.5 rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-all">
                             <Image src={'/logo.svg'} alt='logo' width={20} height={20} className="w-5 h-5" />
                         </div>
-                        <h1 className="logo-font text-lg tracking-tight">Disi</h1>
+                        <h1 className="logo-font text-lg tracking-tight">DISI</h1>
                     </Link>
                     <Button variant="ghost" size="icon" className="size-8 rounded-lg hover:bg-primary/5" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
                         {theme === 'light' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}

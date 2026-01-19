@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { action, internalMutation, query, internalQuery } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { action, internalMutation, query, internalQuery, mutation } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 
 // 1. Create File Record (Internal Mutation)
 export const internalCreateFile = internalMutation({
@@ -56,9 +56,15 @@ export const createFile = action({
       throw new Error("Unauthenticated");
     }
 
+    // Get Convex user from Clerk ID
+    const user = await ctx.runQuery(api.users.getUserByClerkId, { clerkId: identity.subject });
+    if (!user) {
+      throw new Error("User not found");
+    }
+
     // Verify canvas ownership
     const canvas = await ctx.runQuery(internal.canvas.getCanvas, { canvasId: args.canvasId });
-    if (!canvas || canvas.userId !== identity.subject) {
+    if (!canvas || canvas.userId !== user._id) {
       throw new Error("Unauthorized: You do not own this canvas");
     }
 
@@ -69,7 +75,7 @@ export const createFile = action({
     // Create record in Convex FIRST
     const fileId = await ctx.runMutation(internal.files.internalCreateFile, {
       ...args,
-      userId: identity.subject, // Clerk ID
+      userId: user._id, // Convex User ID
       s3Key,
     });
 
@@ -159,7 +165,27 @@ export const getFileByS3Key = internalQuery({
   },
 });
 
-// 7. Update Status by S3 Key (Internal Mutation - called by Lambda)
+// 7. Update Status by S3 Key (Public Wrapper for Lambda)
+export const publicUpdateStatusByS3Key = mutation({
+  args: {
+    s3Key: v.string(),
+    status: v.union(
+      v.literal("uploading"),
+      v.literal("processing"),
+      v.literal("ready"),
+      v.literal("error")
+    ),
+    errorMessage: v.optional(v.string()),
+    extractedTextLength: v.optional(v.number()),
+    totalChunks: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // This is called by Lambda using setAdminAuth
+    await ctx.runMutation(internal.files.updateStatusByS3Key, args);
+  },
+});
+
+// 8. Update Status by S3 Key (Internal Mutation - called by Lambda via wrapper)
 export const updateStatusByS3Key = internalMutation({
   args: {
     s3Key: v.string(),
@@ -193,8 +219,8 @@ export const updateStatusByS3Key = internalMutation({
   },
 });
 
-// 8. Get Pending Files (Internal Query - called by Local Worker)
-export const getPendingFiles = query({
+// 9. Get Pending Files (Internal Query - called by Local Worker via wrapper)
+export const getPendingFiles = internalQuery({
   args: {},
   handler: async (ctx) => {
     // Local worker doesn't have auth context
@@ -202,6 +228,15 @@ export const getPendingFiles = query({
       .query("files")
       .withIndex("by_status", (q) => q.eq("status", "uploading"))
       .collect();
+  },
+});
+
+// 10. Get Pending Files (Public Wrapper for Local Worker)
+export const publicGetPendingFiles = query({
+  args: {},
+  handler: async (ctx) => {
+    // This is called by Local Worker using setAdminAuth
+    return await ctx.runQuery(internal.files.getPendingFiles);
   },
 });
 

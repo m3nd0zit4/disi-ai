@@ -2,7 +2,7 @@
 
 import React, { memo, useState } from "react";
 import { Position, NodeProps } from "@xyflow/react";
-import { FileText, Image as ImageIcon, File, Loader2, AlertCircle, Download } from "lucide-react";
+import { Loader2, AlertCircle, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
 import { FileNodeData } from "../../types";
@@ -11,13 +11,8 @@ import Image from "next/image";
 
 import { formatFileSize, isImageType, isTextualType } from "@/lib/file-utils";
 import { useSignedUrl } from "@/hooks/useSignedUrl";
+import { FileIconDisplay } from "./shared/FileIconDisplay";
 
-// Render the appropriate icon based on file type
-const FileIconDisplay = ({ fileType, className }: { fileType: string; className?: string }) => {
-  if (isImageType(fileType)) return <ImageIcon className={className} />;
-  if (isTextualType(fileType)) return <FileText className={className} />;
-  return <File className={className} />;
-};
 
 export const FileNode = memo(({ data, selected }: NodeProps) => {
   const fileData = data as unknown as FileNodeData;

@@ -55,9 +55,9 @@ export const InputNode = memo(({ id, data, selected }: NodeProps) => {
           {/* Attachments */}
           {attachments && attachments.length > 0 && (
             <div className="flex flex-wrap gap-2 pt-2">
-              {attachments?.map((file: { url?: string; storageId?: string; type?: string; name?: string }) => {
+              {attachments?.map((file: { url?: string; storageId?: string; type?: string; name?: string }, index) => {
                 return (
-                  <AttachmentPreview key={file.storageId || file.url || file.name} file={file} />
+                  <AttachmentPreview key={file.storageId || file.url || `${file.name}-${index}`} file={file} />
                 );
               })}
             </div>

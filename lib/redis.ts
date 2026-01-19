@@ -7,7 +7,7 @@ if (!redisUrl) {
   console.warn("REDIS_URL or UPSTASH_REDIS_URL is not defined. Redis functionality will be disabled.");
 }
 
-export const redis = process.env.UPSTASH_REDIS_REST_URL 
+export const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
   ? new UpstashRedis({
       url: process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,

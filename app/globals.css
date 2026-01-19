@@ -214,7 +214,7 @@
 
 @font-face {
   font-family: "Milven";
-  src: url("../public/fonts/Milven-Regular.otf");
+  src: url("/fonts/Milven-Regular.otf");
   font-weight: normal;
   font-style: normal;
 }
@@ -232,4 +232,3 @@
       12 12,
     auto !important;
 }
-

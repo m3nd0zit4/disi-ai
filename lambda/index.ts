@@ -27,7 +27,7 @@ for (const env of requiredEnv) {
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 // Use admin authentication for internal updates
-(convex as any).setAuth(process.env.CONVEX_DEPLOY_KEY!);
+(convex as any).setAdminAuth(process.env.CONVEX_DEPLOY_KEY!);
 
 const s3 = new S3Client({ region: process.env.AWS_REGION });
 const redis = new Redis({
@@ -47,7 +47,7 @@ export async function handler(event: S3Event) {
 
       // 1. Update status to 'processing'
       // We use 'any' cast because we are importing api from outside and types might be tricky in lambda build
-      await convex.mutation((api.files as any).updateStatusByS3Key, {
+      await convex.mutation((api.files as any).publicUpdateStatusByS3Key, {
         s3Key: key,
         status: "processing",
       });
@@ -65,7 +65,7 @@ export async function handler(event: S3Event) {
         text = await response.Body?.transformToString() || "";
       } else {
         console.log(`Unsupported file type: ${extension}`);
-        await convex.mutation((api.files as any).updateStatusByS3Key, {
+        await convex.mutation((api.files as any).publicUpdateStatusByS3Key, {
           s3Key: key,
           status: "error",
           errorMessage: `Unsupported file type: ${extension}`,
@@ -93,29 +93,33 @@ export async function handler(event: S3Event) {
       // Store full text in Redis
       await redis.set(`file:${convexFileId}:text`, text, { ex: 7 * 24 * 60 * 60 });
 
-      // Process chunks in batches
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        const embedding = await generateEmbedding(chunk);
-        
-        // Store in Vector DB
-        await storeEmbedding(`${convexFileId}_${i}`, embedding, {
-          text: chunk,
-          fileId: convexFileId,
-          chunkIndex: i,
-          s3Key: key
-        });
-        
-        // Store in Redis List
-        await redis.rpush(`file:${convexFileId}:chunks`, JSON.stringify({
-          index: i,
-          text: chunk,
-          embedding: [] // Don't store embedding in Redis list to save space, it's in Vector DB
+      // Process chunks in parallel batches
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+        const batch = chunks.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(async (chunk, j) => {
+          const idx = i + j;
+          const embedding = await generateEmbedding(chunk);
+          
+          // Store in Vector DB
+          await storeEmbedding(`${convexFileId}_${idx}`, embedding, {
+            text: chunk,
+            fileId: convexFileId,
+            chunkIndex: idx,
+            s3Key: key
+          });
+          
+          // Store in Redis List
+          await redis.rpush(`file:${convexFileId}:chunks`, JSON.stringify({
+            index: idx,
+            text: chunk,
+            embedding: [] // Don't store embedding in Redis list to save space
+          }));
         }));
       }
 
       // 5. Update status to 'ready'
-      await convex.mutation((api.files as any).updateStatusByS3Key, {
+      await convex.mutation((api.files as any).publicUpdateStatusByS3Key, {
         s3Key: key,
         status: "ready",
         extractedTextLength: text.length,
@@ -135,7 +139,7 @@ export async function handler(event: S3Event) {
       console.error(`Error processing ${key}:`, error);
       
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      await convex.mutation((api.files as any).updateStatusByS3Key, {
+      await convex.mutation((api.files as any).publicUpdateStatusByS3Key, {
         s3Key: key,
         status: "error",
         errorMessage,
