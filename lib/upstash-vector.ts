@@ -1,13 +1,13 @@
 import { Index } from '@upstash/vector';
 
-console.log("[Vector] Initializing Index...");
-if (!process.env.UPSTASH_VECTOR_REST_URL) console.warn("[Vector] ⚠️ UPSTASH_VECTOR_REST_URL is missing");
-if (!process.env.UPSTASH_VECTOR_REST_TOKEN) console.warn("[Vector] ⚠️ UPSTASH_VECTOR_REST_TOKEN is missing");
+if (!process.env.UPSTASH_VECTOR_REST_URL || !process.env.UPSTASH_VECTOR_REST_TOKEN) {
+  throw new Error("Missing Upstash Vector environment variables");
+}
 
 // Vector index for embeddings
 export const vectorIndex = new Index({
-  url: process.env.UPSTASH_VECTOR_REST_URL!,
-  token: process.env.UPSTASH_VECTOR_REST_TOKEN!,
+  url: process.env.UPSTASH_VECTOR_REST_URL,
+  token: process.env.UPSTASH_VECTOR_REST_TOKEN,
 });
 console.log("[Vector] Index initialized");
 

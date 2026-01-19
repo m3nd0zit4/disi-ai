@@ -47,6 +47,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid fileName after sanitization" }, { status: 400 });
     }
     
+    // Validate providedS3Key if present
+    if (providedS3Key) {
+      if (typeof providedS3Key !== "string" || providedS3Key.includes("..") || providedS3Key.startsWith("/") || providedS3Key.includes("\\")) {
+        return NextResponse.json({ error: "Invalid s3Key format" }, { status: 400 });
+      }
+    }
+
     // Use provided s3Key (from Convex) or create a unique key
     const uniqueKey = providedS3Key || `${userId}/${uuidv4()}-${sanitizedFileName}`;
     

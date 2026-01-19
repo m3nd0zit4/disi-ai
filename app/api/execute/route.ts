@@ -384,7 +384,9 @@ export async function POST(req: Request) {
         
         if (text) {
             console.log(`[Execute] ✅ SUCCESS: Retrieved ${text.length} chars from Redis`);
-            console.log(`[Execute] Content preview (first 200 chars): ${text.substring(0, 200)}...`);
+            if (process.env.DEBUG === 'true' || process.env.NODE_ENV !== 'production') {
+              console.log(`[Execute] Content preview (first 200 chars): ${text.substring(0, 200)}...`);
+            }
             console.log(`========================================\n`);
             return text;
         } else {

@@ -8,10 +8,11 @@ import {
 
 const transcribe = new TranscribeClient({
   region: process.env.AWS_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
+  // Use environment credentials if available, otherwise rely on IAM role/default provider
+  credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  } : undefined,
 });
 
 // Transcribe audio file from S3
@@ -37,10 +38,11 @@ export async function transcribeAudio(
   // Poll for completion
   let status = 'IN_PROGRESS';
   let attempts = 0;
-  const maxAttempts = 60; // 5 minutes max
+  const maxAttempts = parseInt(process.env.TRANSCRIBE_MAX_ATTEMPTS || '60'); // Default 5 minutes
+  const pollInterval = parseInt(process.env.TRANSCRIBE_POLL_INTERVAL || '5000'); // Default 5s
   
   while (status === 'IN_PROGRESS' && attempts < maxAttempts) {
-    await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
     
     const job = await transcribe.send(
       new GetTranscriptionJobCommand({ 

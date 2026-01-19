@@ -18,7 +18,7 @@ const FileIconDisplay = ({ fileType, className }: { fileType: string; className?
   return <File className={className} />;
 };
 
-export const PreviewFileNode = memo(({ id, data, selected }: NodeProps) => {
+export const PreviewFileNode = memo(({ data, selected }: NodeProps) => {
   const fileData = data as unknown as FileNodeData;
   const { fileName, fileType, fileSize, storageId, uploadStatus, textContent, previewUrl } = fileData;
   
@@ -44,7 +44,11 @@ export const PreviewFileNode = memo(({ id, data, selected }: NodeProps) => {
           }
         });
     } else if (previewUrl && signedUrl !== previewUrl) {
-        setSignedUrl(previewUrl);
+        const timeout = setTimeout(() => setSignedUrl(previewUrl), 0);
+        return () => {
+          controller.abort();
+          clearTimeout(timeout);
+        };
     }
 
     return () => controller.abort();
@@ -53,7 +57,15 @@ export const PreviewFileNode = memo(({ id, data, selected }: NodeProps) => {
 
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (signedUrl) window.open(signedUrl, "_blank");
+    if (signedUrl) {
+      const link = document.createElement("a");
+      link.href = signedUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   return (
@@ -121,6 +133,7 @@ export const PreviewFileNode = memo(({ id, data, selected }: NodeProps) => {
                   className="size-6 h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary" 
                   onClick={handleDownload}
                   disabled={!signedUrl}
+                  aria-label="Download file"
                 >
                   <Download className="size-3" />
                 </Button>

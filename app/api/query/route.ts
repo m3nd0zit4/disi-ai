@@ -1,21 +1,34 @@
 import { NextResponse } from "next/server";
-import { ConvexHttpClient } from "convex/browser";
-import { api } from "@/convex/_generated/api";
-import { queryLLM } from "@/lib/bedrock";
 import { searchSimilar } from "@/lib/upstash-vector";
-import { generateEmbedding } from "@/lib/bedrock";
-import { redis } from "@/lib/redis"; // Assuming this exists or I should use upstash-vector one? 
-// Wait, lib/redis.ts exists (I saw it in list_dir).
-// But I should verify if it exports 'redis' client.
+import { generateEmbedding, queryLLM } from "@/lib/bedrock";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+// Removed unused imports: ConvexHttpClient, api, redis
 
 export async function POST(req: Request) {
   try {
-    const { prompt, fileIds } = await req.json();
+    const { prompt: rawPrompt, fileIds: rawFileIds } = await req.json();
 
-    if (!prompt) {
-      return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    if (!rawPrompt || typeof rawPrompt !== "string") {
+      return NextResponse.json({ error: "Prompt is required and must be a string" }, { status: 400 });
+    }
+
+    // Sanitize prompt: remove control characters and limit length
+    const prompt = rawPrompt
+      .replace(/[\x00-\x1F\x7F]/g, "")
+      .trim()
+      .slice(0, 4000); // Reasonable limit for vector search query
+
+    if (prompt.length === 0) {
+      return NextResponse.json({ error: "Invalid prompt after sanitization" }, { status: 400 });
+    }
+
+    // Validate fileIds: must be an array of strings (Convex IDs)
+    let fileIds: string[] = [];
+    if (rawFileIds) {
+      if (!Array.isArray(rawFileIds)) {
+        return NextResponse.json({ error: "fileIds must be an array" }, { status: 400 });
+      }
+      fileIds = rawFileIds.filter(id => typeof id === "string" && /^[a-z0-9]+$/i.test(id));
     }
 
     // 1. Get file metadata from Convex to verify access and status
@@ -33,7 +46,7 @@ export async function POST(req: Request) {
     // In lambda/index.ts I added metadata: { fileId: ... }
     // So we can filter.
     
-    let allRelevantChunks: any[] = [];
+    let allRelevantChunks: { metadata?: { text?: string } }[] = [];
 
     if (fileIds && fileIds.length > 0) {
       // Search with filter for each file or use a generic filter if Upstash supports 'IN' operator.
@@ -45,7 +58,7 @@ export async function POST(req: Request) {
       
       const filterStr = `fileId IN (${fileIds.map((id: string) => `'${id}'`).join(', ')})`;
       
-      const results = await searchSimilar(queryEmbedding, 10, { filter: filterStr });
+      const results = await searchSimilar(queryEmbedding, 10, filterStr);
       allRelevantChunks = results;
     } else {
       // If no files selected, maybe search everything? Or return error?
@@ -65,8 +78,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ answer, sources: allRelevantChunks });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Query error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Internal error" }, { status: 500 });
   }
 }

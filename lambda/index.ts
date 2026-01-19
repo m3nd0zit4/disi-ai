@@ -1,14 +1,29 @@
-import { S3Event, Context } from 'aws-lambda';
+import { S3Event } from 'aws-lambda';
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../convex/_generated/api";
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { extractTextFromBuffer, extractTextFromS3 } from "../lib/textract";
+import { extractTextFromS3 } from "../lib/textract";
 import { transcribeAudio } from "../lib/transcribe";
 import { generateEmbedding } from "../lib/bedrock";
 import { storeEmbedding } from "../lib/upstash-vector";
 import { Redis } from "@upstash/redis";
 
 // Initialize clients
+const requiredEnv = [
+  'CONVEX_URL',
+  'UPSTASH_REDIS_REST_URL',
+  'UPSTASH_REDIS_REST_TOKEN',
+  'UPSTASH_VECTOR_REST_URL',
+  'UPSTASH_VECTOR_REST_TOKEN',
+  'AWS_REGION'
+];
+
+for (const env of requiredEnv) {
+  if (!process.env[env]) {
+    throw new Error(`Missing required environment variable: ${env}`);
+  }
+}
+
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 const s3 = new S3Client({ region: process.env.AWS_REGION });
 const redis = new Redis({
@@ -16,7 +31,7 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 });
 
-export async function handler(event: S3Event, context: Context) {
+export async function handler(event: S3Event) {
   console.log('Processing event:', JSON.stringify(event, null, 2));
 
   for (const record of event.Records) {
@@ -107,13 +122,14 @@ export async function handler(event: S3Event, context: Context) {
 
       console.log(`Successfully processed ${key}`);
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(`Error processing ${key}:`, error);
       
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       await convex.mutation((api.files as any).updateStatusByS3Key, {
         s3Key: key,
         status: "error",
-        errorMessage: error.message || "Unknown error",
+        errorMessage,
       });
     }
   }

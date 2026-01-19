@@ -8,7 +8,7 @@ import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
 import { InputNodeData } from "../../../types";
 
-export const PreviewInputNode = memo(({ id, data, selected }: NodeProps) => {
+export const PreviewInputNode = memo(({ data, selected }: NodeProps) => {
   const inputData = data as unknown as InputNodeData;
   const { text, createdAt, color, attachments, role, importance } = inputData;
   const { user } = useUser();
@@ -132,7 +132,7 @@ function AttachmentPreview({ file }: { file: { url?: string; storageId?: string;
 
   return (
     <div className="relative group overflow-hidden rounded-lg border border-primary/10">
-      {file.type === "image" ? (
+      {file.type?.startsWith("image/") || file.type === "image" ? (
         <div className="relative h-20 w-20">
           <Image 
             src={signedUrl} 

@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "esbuild index.ts --bundle --platform=node --target=node20 --outfile=dist/index.js",
+    "package": "cd dist && zip -r function.zip index.js",
     "deploy": "aws lambda update-function-code --function-name disi-ai-file-processor --zip-file fileb://dist/function.zip"
   },
   "dependencies": {

@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/prompt-input";
 import { Button } from "@/components/ui/button";
 import { ArrowUp, Mic, Plus, Github, Figma, FolderOpen, X } from "lucide-react";
+import Image from "next/image";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useAIContext } from "@/context/AIContext";
@@ -95,6 +96,31 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   // Use custom hook for preview logic
   const { handlePromptChange, cleanupPreview, previewNodeIdRef } = useNodePreview(prompt, setPrompt, selectedModels);
 
+  // Track object URLs for revocation
+  const objectUrlsRef = useRef<Set<string>>(new Set());
+
+  const revokeUrl = useCallback((url?: string) => {
+    if (url && url.startsWith('blob:')) {
+      URL.revokeObjectURL(url);
+      objectUrlsRef.current.delete(url);
+    }
+  }, []);
+
+  const createUrl = useCallback((file: File) => {
+    const url = URL.createObjectURL(file);
+    objectUrlsRef.current.add(url);
+    return url;
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    const urls = objectUrlsRef.current;
+    return () => {
+      urls.forEach(url => URL.revokeObjectURL(url));
+      urls.clear();
+    };
+  }, []);
+
   const nodes = useCanvasStore(state => state.nodes);
   
   // Track previous node state to prevent infinite loops
@@ -159,10 +185,16 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
     prevNodesRef.current.allNodeIds = currentNodeIds;
     
     setPendingFiles(prev => {
-      const filtered = prev.filter(p => currentNodeIds.has(p.nodeId));
+      const filtered = prev.filter(p => {
+        const exists = currentNodeIds.has(p.nodeId);
+        if (!exists) {
+          revokeUrl(p.preview);
+        }
+        return exists;
+      });
       return filtered.length !== prev.length ? filtered : prev;
     });
-  }, [nodes]);
+  }, [nodes, revokeUrl]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -263,7 +295,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           storageId: "", 
           uploadStatus: "uploading" as const,
           textContent,
-          previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+          previewUrl: file.type.startsWith("image/") ? createUrl(file) : undefined,
           createdAt: Date.now(),
         },
       };
@@ -275,7 +307,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
       setPendingFiles(prev => [...prev, { 
         nodeId: nodeId, 
         fileName: file.name, 
-        preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+        preview: file.type.startsWith("image/") ? createUrl(file) : undefined,
         fileType: file.type,
         isExistingNode: true,
         storageId: "" // Will be updated after upload
@@ -350,7 +382,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
     }
     
     if (fileInputRef.current) fileInputRef.current.value = "";
-  }, [canvasId, showDialog, createFile]);
+  }, [canvasId, showDialog, createFile, createUrl]);
 
   // Removed: removeFile no longer needed - files are nodes now
 
@@ -628,10 +660,12 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
                 <div key={pf.nodeId} className="relative group">
                   <div className="h-12 w-12 rounded-lg border border-border bg-muted/50 overflow-hidden flex items-center justify-center">
                     {pf.preview ? (
-                      <img 
+                      <Image 
                         src={pf.preview.startsWith('blob:') || pf.preview.startsWith('http') ? pf.preview : `/api/file?key=${encodeURIComponent(pf.preview)}&redirect=true`} 
                         alt={pf.fileName} 
-                        className="h-full w-full object-cover" 
+                        fill
+                        className="object-cover" 
+                        unoptimized
                       />
                     ) : (
                       <span className="text-[9px] text-muted-foreground uppercase">{pf.fileName.split('.').pop()}</span>
@@ -639,6 +673,10 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
                   </div>
                   <button
                     onClick={() => {
+                      const fileToRemove = pendingFiles.find(p => p.nodeId === pf.nodeId);
+                      if (fileToRemove) {
+                        revokeUrl(fileToRemove.preview);
+                      }
                       setPendingFiles(prev => prev.filter(p => p.nodeId !== pf.nodeId));
                       // Also deselect the node on canvas if it was an existing node
                       if (pf.isExistingNode) {

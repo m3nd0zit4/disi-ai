@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, action, internalMutation, query } from "./_generated/server";
+import { action, internalMutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 
 // 1. Create File Record (Internal Mutation)
@@ -71,9 +71,8 @@ export const createFile = action({
   },
 });
 
-// 3. Update Status (Public Mutation - called by Lambda/Worker)
-// In production, this should be protected or internal
-export const updateStatus = mutation({
+// 3. Update Status (Internal Mutation - called by Lambda/Worker)
+export const updateStatus = internalMutation({
   args: {
     fileId: v.id("files"),
     status: v.union(
@@ -127,8 +126,8 @@ export const getFileByS3Key = query({
   },
 });
 
-// 7. Update Status by S3 Key (Mutation - called by Lambda)
-export const updateStatusByS3Key = mutation({
+// 7. Update Status by S3 Key (Internal Mutation - called by Lambda)
+export const updateStatusByS3Key = internalMutation({
   args: {
     s3Key: v.string(),
     status: v.union(

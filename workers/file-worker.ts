@@ -32,6 +32,18 @@ async function main() {
 
   const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME!;
 
+  let isShuttingDown = false;
+
+  process.on("SIGTERM", () => {
+    console.log("[File Worker] 🛑 Received SIGTERM, initiating graceful shutdown...");
+    isShuttingDown = true;
+  });
+
+  process.on("SIGINT", () => {
+    console.log("[File Worker] 🛑 Received SIGINT, initiating graceful shutdown...");
+    isShuttingDown = true;
+  });
+
   console.log("[File Worker] ✅ Services initialized. Polling for files...");
 
   async function processFile(file: { _id: string; s3Key: string; fileName: string }) {
@@ -118,13 +130,14 @@ async function main() {
     }
   }
 
-  while (true) {
+  while (!isShuttingDown) {
     try {
       const pendingFiles = await convex.query(api.files.getPendingFiles);
       
       if (pendingFiles.length > 0) {
         console.log(`[File Worker] Found ${pendingFiles.length} pending files`);
         for (const file of pendingFiles) {
+          if (isShuttingDown) break;
           await processFile(file);
         }
       }
@@ -133,8 +146,12 @@ async function main() {
     }
     
     // Wait 5 seconds before next poll
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    if (!isShuttingDown) {
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
   }
+
+  console.log("[File Worker] 👋 Shutdown complete");
 }
 
 function semanticChunking(text: string, maxTokens = 512, overlap = 50): string[] {
