@@ -9,11 +9,13 @@ import { isInsufficientFundsError, INSUFFICIENT_FUNDS_MESSAGE } from "@/lib/ai-e
 import "dotenv/config";
 import { config } from "dotenv";
 import { resolve } from "path";
-import { SPECIALIZED_MODELS } from "@/shared/ai-models";
+import { modelRegistry } from "@/shared/ai";
 import { buildReasoningPrompt } from "@/lib/reasoning/prompt";
 import { distillContext } from "@/lib/reasoning/distillation";
 import { ReasoningContext, ReasoningContextItem } from "@/lib/reasoning/types";
 import { executeRLM, RLMMode } from "@/lib/rlm";
+import { evaluateForKnowledge, shouldEvaluate } from "@/lib/knowledge/evaluator";
+import { searchSimilar, storeEmbedding, generateEmbedding } from "@/lib/upstash/upstash-vector";
 
 interface NodeExecutionInputs {
   prompt?: string;
@@ -151,14 +153,14 @@ async function processNodeExecution(data: {
 
   try {
     // 1. Update node status to "running" in execution record
-    await withRetry(() => convex.mutation(api.canvasExecutions.updateNodeExecution, {
+    await withRetry(() => convex.mutation(api.canvas.canvasExecutions.updateNodeExecution, {
       executionId: executionId as Id<"canvasExecutions">,
       nodeId,
       status: "running",
     }), "updateNodeExecution (running)");
 
     // Update node data status to "thinking" on the canvas
-    await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
+    await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
       canvasId: canvasId as Id<"canvas">,
       nodeId,
       data: { status: "thinking" },
@@ -181,15 +183,28 @@ async function processNodeExecution(data: {
         // Fallback to environment variables if apiKey is not provided in the message
         let effectiveApiKey = apiKey;
         if (!effectiveApiKey) {
+          // Map provider names to environment variable names
+          const providerEnvMap: Record<string, string> = {
+            "GPT": "OPENAI_API_KEY",
+            "OPENAI": "OPENAI_API_KEY",
+            "CLAUDE": "ANTHROPIC_API_KEY",
+            "ANTHROPIC": "ANTHROPIC_API_KEY",
+            "GEMINI": "GOOGLE_AI_API_KEY",
+            "GOOGLE": "GOOGLE_AI_API_KEY",
+            "GROK": "XAI_API_KEY",
+            "XAI": "XAI_API_KEY",
+            "DEEPSEEK": "DEEPSEEK_API_KEY",
+          };
           const providerUpper = ((provider as string) || "openai").toUpperCase();
-          effectiveApiKey = process.env[`${providerUpper}_API_KEY`];
+          const envVarName = providerEnvMap[providerUpper] || `${providerUpper}_API_KEY`;
+          effectiveApiKey = process.env[envVarName];
         }
 
         const service = getAIService((provider as string) || "openai", effectiveApiKey || "");
-        
-        const modelDef = SPECIALIZED_MODELS.find(m => m.id === modelId);
-        const isImageModel = modelDef?.category === "image";
-        const isVideoModel = modelDef?.category === "video";
+
+        const modelDef = modelRegistry.getById(modelId || "");
+        const isImageModel = modelDef?.primaryCapability === "image.generation";
+        const isVideoModel = modelDef?.primaryCapability === "video.generation";
         // Handle Image Generation
         if (isImageModel) {
            // Use providerModelId if available, otherwise modelId
@@ -198,7 +213,7 @@ async function processNodeExecution(data: {
            
            log("INFO", `Generating image with model ${targetModel}`);
            
-           await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
+           await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
               canvasId: canvasId as Id<"canvas">,
               nodeId,
               data: { status: "thinking" }, // Use thinking state while generating
@@ -254,7 +269,7 @@ async function processNodeExecution(data: {
 
            const markdownImage = `![Generated Image](${mediaStorageId ? "s3://" + mediaStorageId : response.mediaUrl})`;
            
-           await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
+           await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
               canvasId: canvasId as Id<"canvas">,
               nodeId,
               data: { 
@@ -280,7 +295,7 @@ async function processNodeExecution(data: {
             
             log("INFO", `Generating video with model ${targetModel}`);
 
-            await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
+            await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
               canvasId: canvasId as Id<"canvas">,
               nodeId,
               data: { status: "thinking" },
@@ -292,7 +307,7 @@ async function processNodeExecution(data: {
             });
 
             // Video generation result formatting
-            await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
+            await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
               canvasId: canvasId as Id<"canvas">,
               nodeId,
               data: { 
@@ -349,7 +364,7 @@ async function processNodeExecution(data: {
           log("INFO", `RLM completed: mode=${rlmResult.metadata?.mode}, depth=${rlmResult.metadata?.depthUsed}, subCalls=${rlmResult.metadata?.subCalls}`);
 
           // Update node with RLM result
-          await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
+          await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
             canvasId: canvasId as Id<"canvas">,
             nodeId,
             data: { text: fullText, status: "complete" },
@@ -432,7 +447,7 @@ async function processNodeExecution(data: {
 
             if (!hasStartedStreaming) {
               hasStartedStreaming = true;
-              await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
+              await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
                 canvasId: canvasId as Id<"canvas">,
                 nodeId,
                 data: { status: "streaming" },
@@ -442,7 +457,7 @@ async function processNodeExecution(data: {
             // Update Convex every 10 tokens or 500ms
             const now = Date.now();
             if (tokenCount % 10 === 0 || now - lastUpdateTime > 500) {
-              await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
+              await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
                 canvasId: canvasId as Id<"canvas">,
                 nodeId,
                 data: { text: fullText },
@@ -453,7 +468,7 @@ async function processNodeExecution(data: {
         }
 
         // Final update to ensure text is complete and status is set
-        await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
+        await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
           canvasId: canvasId as Id<"canvas">,
           nodeId,
           data: { text: fullText, status: "complete" },
@@ -482,14 +497,28 @@ async function processNodeExecution(data: {
     }
 
     // 3. Update node status to "completed" in execution record
-    await withRetry(() => convex.mutation(api.canvasExecutions.updateNodeExecution, {
+    await withRetry(() => convex.mutation(api.canvas.canvasExecutions.updateNodeExecution, {
       executionId: executionId as Id<"canvasExecutions">,
       nodeId,
       status: "completed",
       output: result,
     }), "updateNodeExecution (completed)");
 
-    // 4. Delete message from SQS
+    // 4. Process Knowledge Garden auto-feed (non-blocking)
+    if (result?.text && nodeType === "response") {
+      processKnowledgeGardenFeed({
+        executionId: executionId as Id<"canvasExecutions">,
+        canvasId: canvasId as Id<"canvas">,
+        nodeId,
+        content: result.text,
+      }).catch((error) => {
+        log("WARN", "Knowledge Garden feed processing failed (non-critical)", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
+    // 5. Delete message from SQS
     await sqsClient.send(new DeleteMessageCommand({
       QueueUrl: queueUrl,
       ReceiptHandle: message.ReceiptHandle!,
@@ -507,7 +536,7 @@ async function processNodeExecution(data: {
       log("ERROR", `Node ${nodeId} failed`, { error: errorMessage });
     }
 
-    await withRetry(() => convex.mutation(api.canvasExecutions.updateNodeExecution, {
+    await withRetry(() => convex.mutation(api.canvas.canvasExecutions.updateNodeExecution, {
       executionId: executionId as Id<"canvasExecutions">,
       nodeId,
       status: "failed",
@@ -516,7 +545,7 @@ async function processNodeExecution(data: {
 
     // Update node data with error status and message
     const isInsufficientFunds = isInsufficientFundsError(error);
-    await withRetry(() => convex.mutation(api.canvas.updateNodeDataInternal, {
+    await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
       canvasId: canvasId as Id<"canvas">,
       nodeId,
       data: { 
@@ -556,7 +585,7 @@ async function pollQueues() {
     // 1. Poll Convex Queue (Local Fallback)
     if (useConvexQueue) {
       try {
-        const task = await convex.mutation(api.worker.dequeueTask, {});
+        const task = await convex.mutation(api.system.worker.dequeueTask, {});
         if (task) {
           messageReceived = true;
           log("INFO", `Processing task from Convex queue: ${task._id}`);
@@ -570,10 +599,10 @@ async function pollQueues() {
 
           try {
             await processMessage(mockMessage, task.queueUrl);
-            await convex.mutation(api.worker.completeTask, { taskId: task._id, status: "completed" });
+            await convex.mutation(api.system.worker.completeTask, { taskId: task._id, status: "completed" });
           } catch (error) {
             log("ERROR", `Failed to process Convex task ${task._id}`, { error });
-            await convex.mutation(api.worker.completeTask, { taskId: task._id, status: "failed" });
+            await convex.mutation(api.system.worker.completeTask, { taskId: task._id, status: "failed" });
           }
           
           // Continue to next iteration immediately if we got a message
@@ -616,6 +645,180 @@ async function pollQueues() {
   }
 
   log("INFO", "Worker shutdown complete");
+}
+
+/**
+ * Process Knowledge Garden auto-feed for AI responses
+ * This runs asynchronously and doesn't block the main worker flow
+ */
+async function processKnowledgeGardenFeed(params: {
+  executionId: Id<"canvasExecutions">;
+  canvasId: Id<"canvas">;
+  nodeId: string;
+  content: string;
+}) {
+  const { executionId, canvasId, nodeId, content } = params;
+
+  // Skip if content is too short
+  if (!shouldEvaluate(content, 50)) {
+    log("INFO", "KG: Content too short, skipping evaluation");
+    return;
+  }
+
+  try {
+    // 1. Get execution to find userId
+    const execution = await convex.query(api.canvas.canvasExecutions.get, {
+      executionId,
+    });
+
+    if (!execution) {
+      log("WARN", "KG: Execution not found, skipping");
+      return;
+    }
+
+    const userId = execution.userId;
+
+    // 2. Get user's garden settings (via worker action with secret auth)
+    const settings = await convex.action(api.users.settings.workerGetGardenSettings, {
+      secret: process.env.FILE_WORKER_SECRET!,
+      userId,
+    });
+
+    // Skip if garden is inactive or manual mode
+    if (!settings.isActive || settings.feedMode === "manual") {
+      log("INFO", `KG: Garden inactive or manual mode for user, skipping`);
+      return;
+    }
+
+    // 3. Evaluate content
+    const evaluation = evaluateForKnowledge(content);
+    log("INFO", `KG: Evaluation score ${evaluation.score.toFixed(2)}`, {
+      reasons: evaluation.reasons.slice(0, 3),
+    });
+
+    // Determine threshold based on mode
+    const threshold = settings.feedMode === "automatic"
+      ? settings.autoThreshold
+      : settings.suggestThreshold;
+
+    if (evaluation.score < threshold) {
+      log("INFO", `KG: Score ${evaluation.score.toFixed(2)} below threshold ${threshold}, skipping`);
+      return;
+    }
+
+    // 4. Check for duplicates via vector similarity (if we have embedding capability)
+    let isDuplicate = false;
+    let similarSeedId: Id<"seeds"> | undefined;
+    let similarityScore: number | undefined;
+
+    try {
+      const embedding = await generateEmbedding(content.slice(0, 8000));
+
+      // Filter by user's default KB if set
+      const filter = settings.defaultKbId
+        ? `kbId = '${settings.defaultKbId}'`
+        : undefined;
+
+      const similar = await searchSimilar(embedding, 1, filter);
+
+      if (similar.length > 0 && similar[0].score >= settings.duplicateThreshold) {
+        log("INFO", `KG: Duplicate found (similarity ${similar[0].score.toFixed(3)}), skipping`);
+        isDuplicate = true;
+        return;
+      }
+
+      if (similar.length > 0 && similar[0].score >= 0.8) {
+        // Near-duplicate, record for potential linking
+        similarSeedId = similar[0].id as Id<"seeds">;
+        similarityScore = similar[0].score;
+        log("INFO", `KG: Similar seed found (${similar[0].score.toFixed(3)}), will create RELATED link`);
+      }
+    } catch (embedError) {
+      // Embedding/search failed, continue without duplicate check
+      log("WARN", "KG: Duplicate check failed, continuing", {
+        error: embedError instanceof Error ? embedError.message : String(embedError),
+      });
+    }
+
+    // 5. Create candidate or seed based on mode
+    const secret = process.env.FILE_WORKER_SECRET;
+    if (!secret) {
+      log("ERROR", "KG: FILE_WORKER_SECRET not configured");
+      return;
+    }
+
+    const candidateData = {
+      secret,
+      userId,
+      kbId: settings.defaultKbId,
+      canvasId,
+      nodeId,
+      executionId,
+      title: evaluation.suggestedTitle,
+      content,
+      summary: content.slice(0, 500) + (content.length > 500 ? "..." : ""),
+      evaluationScore: evaluation.score,
+      evaluationReasons: evaluation.reasons,
+      evaluationMetrics: {
+        wordCount: evaluation.metrics.wordCount,
+        sentenceCount: evaluation.metrics.sentenceCount,
+        hasStructure: evaluation.metrics.hasStructure,
+        hasCodeBlocks: evaluation.metrics.hasCodeBlocks,
+        informationDensity: evaluation.metrics.informationDensity,
+      },
+      similarSeedId,
+      similarityScore,
+      // Only auto-approve if feedMode is automatic AND defaultKbId exists
+      status: settings.feedMode === "automatic" && settings.defaultKbId ? "auto_approved" as const : "pending" as const,
+      feedMode: settings.feedMode,
+    };
+
+    if (settings.feedMode === "automatic" && settings.defaultKbId) {
+      // Auto mode: Create seed directly + embed
+      // Use deterministic idempotency key for retry safety (based on executionId, nodeId, and title hash)
+      const titleHash = evaluation.suggestedTitle.slice(0, 32).replace(/[^a-zA-Z0-9]/g, "");
+      const idempotencyKey = `auto-${executionId}-${nodeId}-${titleHash}`;
+
+      const seedId = await convex.action(api.knowledge_garden.seedCandidates.workerAutoCreateSeed, {
+        secret,
+        userId,
+        kbId: settings.defaultKbId,
+        canvasId,
+        nodeId,
+        executionId,
+        title: evaluation.suggestedTitle,
+        content,
+        summary: content.slice(0, 500),
+        tags: evaluation.suggestedTags,
+        idempotencyKey,
+      });
+
+      // Store embedding for the new seed
+      try {
+        const embedding = await generateEmbedding(content.slice(0, 8000));
+        await storeEmbedding(String(seedId), embedding, {
+          kbId: String(settings.defaultKbId),
+          title: evaluation.suggestedTitle,
+          type: "seed",
+          source: "auto-feed",
+        });
+        log("INFO", `KG: Auto-created seed ${seedId} with embedding`);
+      } catch (embedError) {
+        log("WARN", `KG: Created seed ${seedId} but embedding failed`, {
+          error: embedError instanceof Error ? embedError.message : String(embedError),
+        });
+      }
+    } else {
+      // Assisted mode: Create candidate for user review
+      await convex.action(api.knowledge_garden.seedCandidates.workerCreateCandidate, candidateData);
+      log("INFO", "KG: Created candidate for assisted review");
+    }
+  } catch (error) {
+    log("ERROR", "KG: Auto-feed processing failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // Don't throw - KG feed is non-critical
+  }
 }
 
 pollQueues().catch(console.error);

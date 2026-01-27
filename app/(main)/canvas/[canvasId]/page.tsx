@@ -8,21 +8,34 @@ import { ConnectionsProvider } from "@/app/_components/canvas/providers/Connecti
 import { EditorProvider } from "@/app/_components/canvas/providers/EditorProvider";
 import { useParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { KnowledgePanel } from "@/app/_components/canvas/KnowledgePanel";
 import ChatInputBox from "@/app/_components/ChatInputBox";
 import { CanvasToolbar } from "@/app/_components/canvas/CanvasToolbar";
 
 const CanvasPage = () => {
   const params = useParams();
   const canvasId = params.canvasId as Id<"canvas">;
-  const canvas = useQuery(api.canvas.getCanvas, { canvasId });
+  const canvas = useQuery(api.canvas.canvas.getCanvas, { canvasId });
 
-  if (!canvas) {
+  if (canvas === undefined) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary/50" />
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
             Loading Canvas...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (canvas === null) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <p className="text-lg font-medium text-muted-foreground">
+            Canvas not found
           </p>
         </div>
       </div>

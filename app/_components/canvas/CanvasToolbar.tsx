@@ -6,7 +6,8 @@ import {
   MessageSquare, 
   Plus, 
   Search,
-  FilePlus
+  FilePlus,
+  Bean
 } from "lucide-react";
 import { useSidebar } from "@/components/ui/sidebar";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
@@ -20,7 +21,15 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 export function CanvasToolbar() {
   const { toggleSidebar } = useSidebar();
-  const { addNode, viewport, nodes, setNodes, updateNodeData } = useCanvasStore();
+  const { 
+    addNode, 
+    viewport, 
+    nodes, 
+    setNodes, 
+    updateNodeData,
+    isKnowledgePanelOpen,
+    setKnowledgePanelOpen
+  } = useCanvasStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { showDialog } = useDialog();
 

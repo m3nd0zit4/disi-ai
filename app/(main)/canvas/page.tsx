@@ -16,7 +16,7 @@ const Page = () => {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const [userClosed, setUserClosed] = useState(false);
   const router = useRouter();
-  const canvases = useQuery(api.canvas.listCanvas);
+  const canvases = useQuery(api.canvas.canvas.listCanvas);
 
   const hasRedirected = useRef(false);
 

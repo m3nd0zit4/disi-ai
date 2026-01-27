@@ -2,7 +2,7 @@ import React, { memo, useState } from "react";
 import { Position, NodeProps } from "@xyflow/react";
 import { cn, adjustAlpha } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
-import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
+import { modelRegistry } from "@/shared/ai";
 import Image from "next/image";
 import { useTheme } from "next-themes";
 import { DisplayNodeData } from "../../types";
@@ -19,7 +19,7 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
   const displayData = data as unknown as DisplayNodeData;
   const { type, content, text, mediaUrl, mediaStorageId, status, modelId, createdAt, color, role, importance } = displayData;
   const edges = useCanvasStore((state: CanvasState) => state.edges);
-  const modelInfo = SPECIALIZED_MODELS.find(m => m.id === modelId);
+  const modelInfo = modelRegistry.getById(modelId || "");
   const { theme } = useTheme();
   const modelIcon = modelInfo?.icon;
 

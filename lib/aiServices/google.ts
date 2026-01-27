@@ -1,12 +1,14 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { BaseAIService, AIRequest, AIResponse } from "./base";
+import { BaseAIService, AIRequest, AIResponse, ImageGenerationRequest, VideoGenerationRequest, MediaResponse } from "./base";
 
 export class GoogleService extends BaseAIService {
     public client: GoogleGenerativeAI;
+    private apiKey: string;
 
     constructor(apiKey: string) {
         super({apiKey, baseURL: "https://generativelanguage.googleapis.com"});
         this.client = new GoogleGenerativeAI(apiKey);
+        this.apiKey = apiKey;
     }
 
     //* Generate a response (non streaming)
@@ -86,11 +88,162 @@ export class GoogleService extends BaseAIService {
     //* Validate API key
     async validateApiKey(): Promise<boolean> {
         try {
-            const model = this.client.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const model = this.client.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
             await model.generateContent("test");
             return true;
         } catch {
             return false;
         }
+    }
+
+    //* Generate image using Gemini (Nano Banana)
+    async generateImage(request: ImageGenerationRequest): Promise<MediaResponse> {
+        const isNanoBanana = request.model.includes("gemini") && request.model.includes("image");
+
+        if (!isNanoBanana) {
+            throw new Error(`Model ${request.model} is not an image generation model`);
+        }
+
+        // Use the Gemini SDK for native image generation
+        const model = this.client.getGenerativeModel({
+            model: request.model,
+            generationConfig: {
+                // Response modalities for image output
+                // @ts-ignore - responseModalities is supported for image models
+                responseModalities: ["image", "text"],
+            }
+        });
+
+        const result = await model.generateContent(request.prompt);
+        const response = result.response;
+
+        // Extract image from response
+        const parts = response.candidates?.[0]?.content?.parts || [];
+
+        for (const part of parts) {
+            // @ts-ignore - inlineData contains image data
+            if (part.inlineData) {
+                // @ts-ignore
+                const mimeType = part.inlineData.mimeType || "image/png";
+                // @ts-ignore
+                const base64Data = part.inlineData.data;
+                const mediaUrl = `data:${mimeType};base64,${base64Data}`;
+
+                return {
+                    mediaUrl,
+                    mediaType: "image",
+                    metadata: {
+                        model: request.model,
+                        prompt: request.prompt,
+                    },
+                };
+            }
+        }
+
+        throw new Error("No image data in response");
+    }
+
+    //* Generate video using Veo
+    async generateVideo(request: VideoGenerationRequest): Promise<MediaResponse> {
+        const isVeo = request.model.includes("veo");
+
+        if (!isVeo) {
+            throw new Error(`Model ${request.model} is not a video generation model`);
+        }
+
+        // Veo uses the predictLongRunning endpoint
+        const baseUrl = "https://generativelanguage.googleapis.com/v1beta";
+        const endpoint = `${baseUrl}/models/${request.model}:predictLongRunning?key=${this.apiKey}`;
+
+        // Start the video generation
+        const startResponse = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                instances: [{
+                    prompt: request.prompt,
+                }],
+                parameters: {
+                    aspectRatio: request.aspectRatio || "16:9",
+                    durationSeconds: request.duration || 4,
+                    sampleCount: 1,
+                },
+            }),
+        });
+
+        if (!startResponse.ok) {
+            const error = await startResponse.text();
+            throw new Error(`Failed to start video generation: ${error}`);
+        }
+
+        const operationData = await startResponse.json();
+        const operationName = operationData.name;
+
+        if (!operationName) {
+            throw new Error("No operation name returned");
+        }
+
+        // Poll for completion
+        const pollEndpoint = `${baseUrl}/${operationName}?key=${this.apiKey}`;
+        const maxAttempts = 120; // Max 10 minutes (5s * 120)
+        const pollInterval = 5000; // 5 seconds
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+            const pollResponse = await fetch(pollEndpoint);
+
+            if (!pollResponse.ok) {
+                continue;
+            }
+
+            const pollData = await pollResponse.json();
+
+            if (pollData.done) {
+                // Check for errors
+                if (pollData.error) {
+                    throw new Error(`Video generation failed: ${pollData.error.message}`);
+                }
+
+                // Extract video URL from response
+                const videos = pollData.response?.predictions?.[0]?.video;
+
+                if (videos) {
+                    // Response contains base64 video data
+                    const mediaUrl = `data:video/mp4;base64,${videos}`;
+                    return {
+                        mediaUrl,
+                        mediaType: "video",
+                        metadata: {
+                            model: request.model,
+                            prompt: request.prompt,
+                            duration: request.duration,
+                            operationName,
+                        },
+                    };
+                }
+
+                // Check for GCS URI
+                const gcsUri = pollData.response?.predictions?.[0]?.gcsUri;
+                if (gcsUri) {
+                    return {
+                        mediaUrl: gcsUri,
+                        mediaType: "video",
+                        metadata: {
+                            model: request.model,
+                            prompt: request.prompt,
+                            isGcsUri: true,
+                            operationName,
+                        },
+                    };
+                }
+
+                throw new Error("No video data in response");
+            }
+        }
+
+        throw new Error("Video generation timed out after 10 minutes");
     }
 }

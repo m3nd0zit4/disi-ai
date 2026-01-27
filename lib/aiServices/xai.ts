@@ -53,15 +53,11 @@ export class XAIService extends BaseAIService {
   //TODO: Hardcoded prices
   private calculateCost(model: string, tokens: number): number {
     const pricing: Record<string, number> = {
-      "grok-4-1-fast-reasoning": 0.0005 / 1000,
-      "grok-4-1-fast-non-reasoning": 0.0002 / 1000,
-      "grok-4-fast-reasoning": 0.0005 / 1000,
-      "grok-4-fast-non-reasoning": 0.0002 / 1000,
-      "grok-2-image-1212": 0,
-      "grok-beta": 0.005 / 1000,
-      "grok-2-latest": 0.005 / 1000,
+      "grok-4": 0.003 / 1000,
+      "grok-3": 0.003 / 1000,
+      "grok-3-mini": 0.0003 / 1000,
     };
-    return tokens * (pricing[model] ?? 0.005);
+    return tokens * (pricing[model] ?? 0.003);
   }
 
   //* Validate API key

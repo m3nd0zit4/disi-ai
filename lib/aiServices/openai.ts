@@ -256,10 +256,98 @@ RULES:
     };
   }
 
-  //* Generate video (placeholder - Sora API not yet public)
+  //* Generate video using Sora
   async generateVideo(request: VideoGenerationRequest): Promise<MediaResponse> {
-    // TODO: Implement when Sora API is available
-    throw new Error(`Video generation not yet available for ${request.model}. Sora API is not yet public.`);
+    const isSora = request.model.includes("sora");
+
+    if (!isSora) {
+      throw new Error(`Model ${request.model} is not a video generation model`);
+    }
+
+    // Map aspect ratio to size
+    const sizeMap: Record<string, string> = {
+      "16:9": "1280x720",
+      "9:16": "720x1280",
+      "1:1": "1024x1024",
+    };
+    const size = sizeMap[request.aspectRatio || "16:9"] || "1280x720";
+
+    // Start video generation job
+    // @ts-ignore - videos API may not be typed yet
+    const video = await this.client.videos.create({
+      model: request.model,
+      prompt: request.prompt,
+      size: size,
+      seconds: request.duration || 4,
+    });
+
+    if (!video.id) {
+      throw new Error("No video job ID returned");
+    }
+
+    // Poll for completion
+    const maxAttempts = 180; // Max 15 minutes (5s * 180)
+    const pollInterval = 5000; // 5 seconds
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+      // @ts-ignore - videos API may not be typed yet
+      const status = await this.client.videos.retrieve(video.id);
+
+      if (status.status === "completed") {
+        // Download the video content
+        // @ts-ignore - videos API may not be typed yet
+        const content = await this.client.videos.downloadContent(video.id);
+
+        // Convert to base64 or get URL
+        if (content.url) {
+          return {
+            mediaUrl: content.url,
+            mediaType: "video",
+            metadata: {
+              model: request.model,
+              prompt: request.prompt,
+              duration: request.duration,
+              videoId: video.id,
+            },
+          };
+        }
+
+        // If we get binary data, convert to base64
+        const buffer = await content.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString("base64");
+
+        return {
+          mediaUrl: `data:video/mp4;base64,${base64}`,
+          mediaType: "video",
+          metadata: {
+            model: request.model,
+            prompt: request.prompt,
+            duration: request.duration,
+            videoId: video.id,
+          },
+        };
+      }
+
+      if (status.status === "failed") {
+        const errorMsg = status.error?.message || "Video generation failed";
+        throw new Error(errorMsg);
+      }
+
+      // Continue polling if status is "queued" or "in_progress"
+    }
+
+    throw new Error("Video generation timed out after 15 minutes");
+  }
+
+  //* Generate embedding
+  async generateEmbedding(text: string): Promise<number[]> {
+    const response = await this.client.embeddings.create({
+      model: "text-embedding-3-small",
+      input: text,
+    });
+    return response.data[0].embedding;
   }
 
   //* Validate API key

@@ -49,8 +49,18 @@ export const PreviewFileNode = memo(({ data, selected }: NodeProps) => {
           {/* Preview Area */}
           {isImageType(fileType) && signedUrl ? (
             <div 
-              className="relative w-full aspect-auto min-h-[100px] max-h-[300px] rounded-lg overflow-hidden bg-muted/50 cursor-pointer group/preview flex items-center justify-center"
+              className="relative w-full aspect-auto min-h-[100px] max-h-[300px] rounded-lg overflow-hidden bg-muted/50 cursor-pointer group/preview flex items-center justify-center focus-visible:ring-2 focus-visible:ring-primary outline-none"
               onClick={() => setIsExpanded(!isExpanded)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setIsExpanded(!isExpanded);
+                }
+              }}
+              tabIndex={0}
+              role="button"
+              aria-expanded={isExpanded}
+              aria-label={`Toggle ${fileName} image preview`}
             >
               <Image src={signedUrl} alt={fileName} width={400} height={300} className="w-full h-auto max-h-full object-contain transition-transform duration-500 group-hover/preview:scale-105" unoptimized />
               <div className="absolute inset-0 bg-black/0 group-hover/preview:bg-black/10 transition-colors" />
@@ -58,10 +68,20 @@ export const PreviewFileNode = memo(({ data, selected }: NodeProps) => {
           ) : isTextualType(fileType) && textContent ? (
             <div 
               className={cn(
-                "text-[9px] font-mono text-muted-foreground bg-muted/50 rounded-lg p-2 cursor-pointer hover:bg-muted/80 transition-colors",
+                "text-[9px] font-mono text-muted-foreground bg-muted/50 rounded-lg p-2 cursor-pointer hover:bg-muted/80 transition-colors focus-visible:ring-2 focus-visible:ring-primary outline-none",
                 isExpanded ? "max-h-48 overflow-y-auto" : "max-h-20 overflow-hidden"
               )}
               onClick={() => setIsExpanded(!isExpanded)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setIsExpanded(!isExpanded);
+                }
+              }}
+              tabIndex={0}
+              role="button"
+              aria-expanded={isExpanded}
+              aria-label={`Toggle ${fileName} text preview`}
             >
               <pre className="whitespace-pre-wrap break-words">
                 {isExpanded ? textContent : (

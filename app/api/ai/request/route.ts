@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { sendToQueue } from "@/lib/sqs";
+import { sendToQueue } from "@/lib/aws/sqs";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 
@@ -33,13 +33,13 @@ export async function POST(req: Request) {
 
     // *Get user from Convex
     const convex = await getAuthenticatedConvexClient();
-    const user = await convex.query(api.users.getCurrentUser);
+    const user = await convex.query(api.users.users.getCurrentUser);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     // *Verify plan limits
-    const stats = await convex.query(api.users.getUserStats);
+    const stats = await convex.query(api.users.users.getUserStats);
     if (!stats) {
       return NextResponse.json({ error: "Could not fetch user stats" }, { status: 500 });
     }
@@ -58,30 +58,31 @@ export async function POST(req: Request) {
     }
 
     // *Obtain user record 
-    const userRecord = await convex.query(api.users.getUserByClerkId, { clerkId: userId });
+    const userRecord = await convex.query(api.users.users.getUserByClerkId, { clerkId: userId });
     if (!userRecord) {
       return NextResponse.json({ error: "User record not found" }, { status: 404 });
     }
 
-    // *Extract specialized models from request
-    const { SPECIALIZED_MODELS } = await import("@/shared/AiModelList");
-    
+    // *Extract specialized models from request using model registry
+    const { modelRegistry } = await import("@/shared/ai");
+
     // *For each reasoning model, send to SQS
     const jobs = await Promise.all(
       models.map(async (model: { modelId: string; provider: string; providerModelId: string; specializedModels?: string[] }, index: number) => {
         console.log(`[Request] Processing model ${model.modelId} (Provider: ${model.provider})...`);
-        
-        // *Extract specialized models for THIS specific model
+
+        // *Extract specialized models for THIS specific model using registry
         const currentSpecializedModelsData = (model.specializedModels || [])
           .map((modelId: string) => {
-            const modelDef = SPECIALIZED_MODELS.find(sm => sm.id === modelId);
+            const modelDef = modelRegistry.getById(modelId);
             if (!modelDef) return null;
-            
+
+            const isImage = modelDef.primaryCapability === 'image.generation';
             return {
-              type: modelDef.category === 'image' ? 'image' as const : 'video' as const,
+              type: isImage ? 'image' as const : 'video' as const,
               modelId: modelDef.id,
               providerModelId: modelDef.providerModelId,
-              modelName: modelDef.name,
+              modelName: modelDef.displayName,
               provider: modelDef.provider,
             };
           })
@@ -153,7 +154,7 @@ async function getUserApiKeyForModel(
   userId: string,
   modelId: string
 ): Promise<string | null> {
-  const { getUserApiKey } = await import("@/lib/aws-secrets");
+  const { getUserApiKey } = await import("@/lib/aws/aws-secrets");
   return getUserApiKey(userId, modelId); 
 }
 

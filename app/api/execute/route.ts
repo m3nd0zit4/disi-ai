@@ -1,10 +1,10 @@
 // Main API route for node execution
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { sendToQueue } from "@/lib/sqs";
+import { sendToQueue } from "@/lib/aws/sqs";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
-import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
+import { modelRegistry } from "@/shared/ai";
 import { findBestPosition } from "@/lib/canvas/layout";
 import { NodeData, DisplayNodeData, ResponseNodeData } from "@/app/_components/canvas/types";
 
@@ -45,7 +45,8 @@ export async function POST(req: Request) {
       console.log(`[Execute] Setting auth token (length: ${token.length})`);
       convex.setAuth(token);
     } else {
-      console.warn(`[Execute] No auth token available for template 'convex'`);
+      console.error(`[Execute] Missing Convex auth token for template 'convex'`);
+      return NextResponse.json({ error: "Convex auth token missing" }, { status: 401 });
     }
 
     // Default model configuration
@@ -58,12 +59,12 @@ export async function POST(req: Request) {
     };
 
     const body = await req.json();
-    const { 
-      canvasId, 
-      executionId: propExecutionId, 
-      prompt, 
-      models, 
-      newNodeId, 
+    const {
+      canvasId,
+      executionId: propExecutionId,
+      prompt,
+      models,
+      newNodeId,
       inputNodeId: providedInputNodeId,
       parentNodeId, // Legacy support
       parentNodeIds, // New array support
@@ -77,11 +78,12 @@ export async function POST(req: Request) {
       fileAttachments, // New array of { storageId, type, name, size, position }
       isBranching, // NEW: Flag for lateral positioning
     } = body;
+    // Note: body.kbIds is used directly in RAG context retrieval below
 
     // 1. Get user record and canvas details in parallel
     const [user, canvas] = await Promise.all([
-      convex.query(api.users.getUserByClerkId, { clerkId }),
-      convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId })
+      convex.query(api.users.users.getUserByClerkId, { clerkId }),
+      convex.query(api.canvas.canvas.getCanvasByClerkId, { canvasId, clerkId })
     ]);
 
     if (!user) {
@@ -100,7 +102,7 @@ export async function POST(req: Request) {
       // Flowith-style dynamic creation: 1 Input Node -> N Response Nodes
       const modelsToProcess = Array.isArray(models) && models.length > 0 ? models : [DEFAULT_MODEL];
 
-      executionId = await convex.mutation(api.canvasExecutions.createCanvasExecutionByClerkId, { canvasId, clerkId });
+      executionId = await convex.mutation(api.canvas.canvasExecutions.createCanvasExecutionByClerkId, { canvasId, clerkId });
 
       // Consolidate parent IDs once
       const parents = parentNodeIds || (parentNodeId ? [parentNodeId] : []);
@@ -190,7 +192,7 @@ export async function POST(req: Request) {
         // Update existing input node's text and attachments if they changed
         // This ensures the DB is consistent with the prompt sent
         try {
-          await convex.mutation(api.canvas.updateNodeDataByClerkId, {
+          await convex.mutation(api.canvas.canvas.updateNodeDataByClerkId, {
             canvasId,
             clerkId,
             nodeId: providedInputNodeId,
@@ -217,8 +219,8 @@ export async function POST(req: Request) {
 
       const responseNodes: CanvasNode[] = [];
       modelsToProcess.forEach((model, i) => {
-        const modelInfo = SPECIALIZED_MODELS.find(m => m.id === model.modelId);
-        const isImageModel = !!modelInfo && modelInfo.category === "image";
+        const modelInfo = modelRegistry.getById(model.modelId);
+        const isImageModel = !!modelInfo && modelInfo.primaryCapability === "image.generation";
         const baseId = newNodeId ?? providedInputNodeId ?? `fallback-${Date.now()}`;
         const responseNodeId = `response-${baseId}-${i}`;
         
@@ -271,7 +273,7 @@ export async function POST(req: Request) {
       });
 
       // 3. Persist nodes and edges to DB
-      await convex.mutation(api.canvas.addNodesAndEdgesByClerkId, {
+      await convex.mutation(api.canvas.canvas.addNodesAndEdgesByClerkId, {
         canvasId,
         clerkId,
         nodes: nodesToAdd,
@@ -279,19 +281,19 @@ export async function POST(req: Request) {
       });
       
       // Re-query canvas to get the latest state with new nodes for context collection
-      const updatedCanvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId });
+      const updatedCanvas = await convex.query(api.canvas.canvas.getCanvasByClerkId, { canvasId, clerkId });
       canvasForContext = updatedCanvas ?? canvas;
 
       nodesToQueue = responseNodes;
     } else if (executionId) {
       // Resume existing execution
-      const execution = await convex.query(api.canvasExecutions.getCanvasExecutionByClerkId, { executionId, clerkId });
+      const execution = await convex.query(api.canvas.canvasExecutions.getCanvasExecutionByClerkId, { executionId, clerkId });
       if (!execution) {
         return NextResponse.json({ error: "Execution not found" }, { status: 404 });
       }
 
       // Re-query canvas to ensure we have the latest state
-      const updatedCanvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId, clerkId });
+      const updatedCanvas = await convex.query(api.canvas.canvas.getCanvasByClerkId, { canvasId, clerkId });
       canvasForContext = updatedCanvas ?? canvas;
 
       // Find pending nodes from this execution
@@ -316,7 +318,7 @@ export async function POST(req: Request) {
 
     // Import context resolution once before processing nodes
     const { resolveNodeContext } = await import("@/lib/reasoning/context");
-    const { redis } = await import("@/lib/redis");
+    const { redis } = await import("@/lib/upstash/redis");
 
     if (!redis) {
       console.warn("[Execute] Redis client not available - file content fetching disabled");
@@ -334,7 +336,7 @@ export async function POST(req: Request) {
       try {
         // 1. Try to find the file in Convex by S3 Key to get the real ID
         console.log(`[Execute] Step 1: Querying Convex for file record...`);
-        const fileRecord = await convex.query(api.files.getFileByS3Key, { s3Key: storageId });
+        const fileRecord = await convex.query(api.system.files.getFileByS3KeyPublic, { s3Key: storageId });
         
         let fileId: string | undefined = fileRecord?._id;
         console.log(`[Execute] Convex query result:`, fileRecord ? `Found file with ID: ${fileId}` : 'No file record found');
@@ -433,6 +435,64 @@ export async function POST(req: Request) {
 
           context: reasoningContext.items, // Pass the structured items
           reasoningContext, // Pass the full object for future proofing
+          
+          // RAG Context
+          kbContext: await (async () => {
+             // 4. RAG Context Retrieval (if KBs selected)
+             const queryText = prompt || node.data?.text || "";
+             // Only search if explicitly selected KB IDs are provided (not canvasId which is wrong table)
+             const kbIdsToSearch = body.kbIds && body.kbIds.length > 0 ? body.kbIds : [];
+
+             if (kbIdsToSearch.length === 0 || !queryText) {
+                return [];
+             }
+
+             // Validate ownership of each KB before searching
+             const validatedKbIds: string[] = [];
+             for (const kbId of kbIdsToSearch) {
+                try {
+                   const kb = await convex.query(api.knowledge_garden.knowledgeBases.get, { id: kbId });
+                   // The get query already validates ownership via auth, returns null if unauthorized
+                   if (kb && kb.userId === user._id) {
+                      validatedKbIds.push(kbId);
+                   } else {
+                      console.warn(`[Execute] KB ${kbId} not owned by user ${user._id}, skipping`);
+                   }
+                } catch (err) {
+                   console.warn(`[Execute] Failed to validate KB ${kbId}:`, err);
+                }
+             }
+
+             if (validatedKbIds.length === 0) {
+                console.log(`[Execute] No valid KBs after ownership check`);
+                return [];
+             }
+
+             console.log(`[Execute] Searching Knowledge Bases: ${validatedKbIds.join(", ")}`);
+             try {
+                const searchResults = await convex.query(api.knowledge_garden.seeds.search, {
+                   query: queryText,
+                   kbIds: validatedKbIds,
+                   limit: 5,
+                });
+
+                if (searchResults && searchResults.length > 0) {
+                   console.log(`[Execute] Found ${searchResults.length} relevant snippets.`);
+                   return searchResults.map(seed => ({
+                      id: seed._id,
+                      title: seed.title,
+                      content: seed.fullText || seed.summary || "",
+                      kbId: seed.kbId,
+                      score: 1 // Placeholder score
+                   }));
+                }
+              } catch (err) {
+                console.error("[Execute] KB Search failed:", err);
+                return [];
+              }
+              return [];
+           })(),
+
           imageSize,
           imageQuality,
           imageBackground,

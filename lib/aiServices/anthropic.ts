@@ -63,16 +63,16 @@ export class AnthropicService extends BaseAIService {
   }
     
   //* Calculate the cost of a request
-  //TODO: Hardcoded prices
+  //TODO: Hardcoded prices (January 2026)
   private calculateCost(model: string, tokens: number): number {
     const pricing: Record<string, number> = {
+      // Claude 4.5 models
       "claude-sonnet-4-5-20250929": 0.003 / 1000,
       "claude-haiku-4-5-20251001": 0.001 / 1000,
       "claude-opus-4-5-20251101": 0.005 / 1000,
-      "claude-3-5-sonnet-20241022": 0.003 / 1000,
-      "claude-3-5-haiku-20241022": 0.001 / 1000,
-      "claude-3-opus-20240229": 0.015 / 1000,
-      "claude-3-sonnet-20240229": 0.003 / 1000,
+      // Legacy models
+      "claude-opus-4-1-20250805": 0.015 / 1000,
+      "claude-sonnet-4-20250514": 0.003 / 1000,
       "claude-3-haiku-20240307": 0.00025 / 1000,
     };
     return tokens * (pricing[model] ?? 0.003);

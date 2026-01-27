@@ -51,8 +51,8 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     onEdgesChange: storeOnEdgesChange 
   } = useCanvasStore();
   
-  const updateCanvas = useMutation(api.canvas.updateCanvas);
-  const createCanvasExecution = useMutation(api.canvasExecutions.createCanvasExecution);
+  const updateCanvas = useMutation(api.canvas.canvas.updateCanvas);
+  const createCanvasExecution = useMutation(api.canvas.canvasExecutions.createCanvasExecution);
   
   const connectingNodeId = useRef<string | null>(null);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
