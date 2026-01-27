@@ -77,22 +77,46 @@ export const search = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Verify caller identity
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated");
+    }
+
+    // Get user record
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Verify ownership of all KBs before searching
+    for (const kbId of args.kbIds) {
+      const kb = await ctx.db.get(kbId);
+      if (!kb || kb.userId !== user._id) {
+        throw new Error(`Unauthorized access to KB ${kbId}`);
+      }
+    }
+
     const limit = args.limit || 5;
     const results = [];
 
-    // Search in each selected KB
+    // Search in each authorized KB
     for (const kbId of args.kbIds) {
       const kbResults = await ctx.db
         .query("seeds")
-        .withSearchIndex("search_body", (q) => 
+        .withSearchIndex("search_body", (q) =>
           q.search("fullText", args.query).eq("kbId", kbId)
         )
         .take(limit);
-      
+
       results.push(...kbResults);
     }
 
-    return results.slice(0, limit * 2); 
+    return results.slice(0, limit * 2);
   },
 });
 
@@ -102,6 +126,21 @@ export const listByKb = query({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Unauthenticated");
+    }
+
+    // Get user record and verify KB ownership
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const kb = await ctx.db.get(args.kbId);
+    if (!kb || kb.userId !== user._id) {
+      throw new Error("Unauthorized access to KB");
     }
 
     return await ctx.db
@@ -115,6 +154,33 @@ export const listByKb = query({
 export const listByFile = query({
   args: { fileId: v.id("files") },
   handler: async (ctx, args) => {
+    // Verify caller identity
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated");
+    }
+
+    // Get user record
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Verify file exists and user owns the associated KB
+    const file = await ctx.db.get(args.fileId);
+    if (!file) {
+      throw new Error("File not found");
+    }
+
+    const kb = await ctx.db.get(file.kbId);
+    if (!kb || kb.userId !== user._id) {
+      throw new Error("Unauthorized access to file");
+    }
+
     return await ctx.db
       .query("seeds")
       .withIndex("by_file", (q) => q.eq("fileId", args.fileId))
@@ -125,6 +191,27 @@ export const listByFile = query({
 export const listTags = query({
   args: { kbId: v.id("knowledgeBases") },
   handler: async (ctx, args) => {
+    // Verify caller identity
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated");
+    }
+
+    // Get user record and verify KB ownership
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const kb = await ctx.db.get(args.kbId);
+    if (!kb || kb.userId !== user._id) {
+      throw new Error("Unauthorized access to KB");
+    }
+
     const seeds = await ctx.db
       .query("seeds")
       .withIndex("by_kb", (q) => q.eq("kbId", args.kbId))

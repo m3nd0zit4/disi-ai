@@ -95,8 +95,8 @@ export const update = mutation({
     }
 
     await ctx.db.patch(args.id, {
-      ...(args.name && { name: args.name }),
-      ...(args.description && { description: args.description }),
+      ...(args.name !== undefined && { name: args.name }),
+      ...(args.description !== undefined && { description: args.description }),
       ...(args.smartSplitEnabled !== undefined && { smartSplitEnabled: args.smartSplitEnabled }),
       updatedAt: Date.now(),
     });
@@ -199,6 +199,13 @@ export const queryAction = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
 
+    // Verify KB ownership before proceeding
+    const kb = await ctx.runQuery(api.knowledge_garden.knowledgeBases.get, { id: args.kbId });
+    if (!kb) {
+      throw new Error("Knowledge Base not found or unauthorized");
+    }
+    // The get query already verifies ownership via auth - if we got here, we have access
+
     const openaiKey = process.env.OPENAI_API_KEY;
     if (!openaiKey) throw new Error("System OpenAI key not configured");
 
@@ -217,11 +224,11 @@ export const queryAction = action({
       };
     }
 
-    // 3. Fetch Seed Details
+    // 3. Fetch Seed Details (we've already verified KB ownership, so seeds from this KB are authorized)
     const seeds = await Promise.all(
       results.map(async (res) => {
-        const seed = await ctx.runQuery(api.knowledge_garden.seeds.getDetail, { 
-          seedId: res.id as Id<"seeds"> 
+        const seed = await ctx.runQuery(api.knowledge_garden.seeds.getDetail, {
+          seedId: res.id as Id<"seeds">
         });
         return seed;
       })

@@ -768,13 +768,16 @@ async function processKnowledgeGardenFeed(params: {
       },
       similarSeedId,
       similarityScore,
-      status: settings.feedMode === "automatic" ? "auto_approved" as const : "pending" as const,
+      // Only auto-approve if feedMode is automatic AND defaultKbId exists
+      status: settings.feedMode === "automatic" && settings.defaultKbId ? "auto_approved" as const : "pending" as const,
       feedMode: settings.feedMode,
     };
 
     if (settings.feedMode === "automatic" && settings.defaultKbId) {
       // Auto mode: Create seed directly + embed
-      const idempotencyKey = `auto-${executionId}-${nodeId}-${Date.now()}`;
+      // Use deterministic idempotency key for retry safety (based on executionId, nodeId, and title hash)
+      const titleHash = evaluation.suggestedTitle.slice(0, 32).replace(/[^a-zA-Z0-9]/g, "");
+      const idempotencyKey = `auto-${executionId}-${nodeId}-${titleHash}`;
 
       const seedId = await convex.action(api.knowledge_garden.seedCandidates.workerAutoCreateSeed, {
         secret,

@@ -8,6 +8,34 @@ import { internal } from "../_generated/api";
 export const listBySeed = query({
   args: { seedId: v.id("seeds") },
   handler: async (ctx, args) => {
+    // Verify caller identity
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated");
+    }
+
+    // Get user record
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Verify seed exists and user owns the parent KB
+    const seed = await ctx.db.get(args.seedId);
+    if (!seed) {
+      throw new Error("Seed not found");
+    }
+
+    const kb = await ctx.db.get(seed.kbId);
+    if (!kb || kb.userId !== user._id) {
+      throw new Error("Unauthorized access to seed links");
+    }
+
+    // User is authorized, fetch the links
     const linksA = await ctx.db
       .query("seedLinks")
       .withIndex("by_seed_a", (q) => q.eq("seedA", args.seedId))

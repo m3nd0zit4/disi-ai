@@ -36,7 +36,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
             metadata: {
                 contextWindow: 200000,
                 maxOutputTokens: 65536,
-                knowledgeCutoff: "January 2025",
+                knowledgeCutoff: "September 2025",
                 inputModalities: ["text", "image"],
                 outputModalities: ["text"],
                 features: {
@@ -603,7 +603,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
                     computerUse: false,
                     mcp: true,
                 },
-                snapshots: ["gpt-4-1", "gpt-4.1-2025-04-14"],
+                snapshots: ["gpt-4.1", "gpt-4.1-2025-04-14"],
                 pricing: {
                     inputPerMillion: 2.00,
                     cachedInputPerMillion: 0.50,
@@ -635,7 +635,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
             provider: "Gemini",
             metadata: {
                 contextWindow: 1048576,
-                maxOutputTokens: 65536,
+                maxOutputTokens: 64000,
                 knowledgeCutoff: "January 2025",
                 latestUpdate: "November 2025",
                 inputModalities: ["text", "image", "video", "audio", "pdf"],
@@ -684,7 +684,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
             provider: "Gemini",
             metadata: {
                 contextWindow: 1048576,
-                maxOutputTokens: 65536,
+                maxOutputTokens: 64000,
                 knowledgeCutoff: "January 2025",
                 latestUpdate: "December 2025",
                 inputModalities: ["text", "image", "video", "audio", "pdf"],
@@ -927,7 +927,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
         providerMetadata: {
             provider: "Grok",
             metadata: {
-                contextWindow: 256000,
+                contextWindow: 131072,
                 maxOutputTokens: 16384,
                 inputModalities: ["text", "image"],
                 outputModalities: ["text"],
