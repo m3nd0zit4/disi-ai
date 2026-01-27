@@ -26,6 +26,20 @@ export default defineSchema({
     // Configuración
     apiKeySource: v.union(v.literal("user"), v.literal("system")), // Por defecto "system"
 
+    // Knowledge Garden Settings
+    gardenSettings: v.optional(v.object({
+      isActive: v.boolean(),
+      feedMode: v.union(
+        v.literal("manual"),
+        v.literal("assisted"),
+        v.literal("automatic")
+      ),
+      defaultKbId: v.optional(v.id("knowledgeBases")),
+      suggestThreshold: v.number(),  // Default 0.6
+      autoThreshold: v.number(),     // Default 0.8
+      duplicateThreshold: v.number(), // Default 0.95
+    })),
+
     // Metadata
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
@@ -337,7 +351,8 @@ export default defineSchema({
   // ===== FILES (File Processing Architecture) =====
   files: defineTable({
     // Relaciones
-    canvasId: v.id("canvas"),
+    canvasId: v.optional(v.id("canvas")), // Made optional to support KB-only files
+    kbId: v.optional(v.id("knowledgeBases")),
     userId: v.id("users"),
 
     // Metadata
@@ -349,6 +364,7 @@ export default defineSchema({
     // Estado
     status: v.union(
       v.literal("uploading"),
+      v.literal("uploaded"),
       v.literal("processing"),
       v.literal("ready"),
       v.literal("error")
@@ -364,7 +380,155 @@ export default defineSchema({
     processedAt: v.optional(v.number()),
   })
     .index("by_canvas", ["canvasId"])
+    .index("by_kb", ["kbId"])
     .index("by_status", ["status"])
     .index("by_user", ["userId"])
     .index("by_s3_key", ["s3Key"]),
+
+  // ===== KNOWLEDGE GARDEN =====
+
+  // Knowledge Bases (Collections)
+  knowledgeBases: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    isPublic: v.optional(v.boolean()),
+    smartSplitEnabled: v.optional(v.boolean()),
+    
+    // Stats
+    fileCount: v.optional(v.number()),
+    seedCount: v.optional(v.number()),
+    
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"]),
+
+  // Seeds (Atomic Knowledge Units)
+  seeds: defineTable({
+    kbId: v.id("knowledgeBases"),
+    fileId: v.optional(v.id("files")), // Optional if created manually or from flow
+    sourceFlowId: v.optional(v.id("canvas")), // If promoted from a flow
+
+    title: v.string(),
+    summary: v.optional(v.string()),
+    fullText: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+
+    // Chunk references (if using chunking)
+    chunkIndices: v.optional(v.array(v.number())),
+
+    // Idempotency key to prevent duplicate seeds on worker retries
+    idempotencyKey: v.optional(v.string()),
+
+    version: v.optional(v.number()),
+    status: v.union(v.literal("draft"), v.literal("ready"), v.literal("archived")),
+
+    provenance: v.optional(v.object({
+      pageNumber: v.optional(v.number()),
+      startChar: v.optional(v.number()),
+      endChar: v.optional(v.number()),
+    })),
+
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_kb", ["kbId"])
+    .index("by_file", ["fileId"])
+    .index("by_idempotency_key", ["idempotencyKey"])
+    .searchIndex("search_title", {
+      searchField: "title",
+      filterFields: ["kbId"],
+    })
+    .searchIndex("search_body", {
+      searchField: "fullText",
+      filterFields: ["kbId"],
+    }),
+
+  // Seed Links (Graph Edges)
+  seedLinks: defineTable({
+    seedA: v.id("seeds"),
+    seedB: v.id("seeds"),
+    relation: v.union(
+      v.literal("RELATED"),
+      v.literal("PART_OF"),
+      v.literal("CONTRADICTS"),
+      v.literal("DERIVED_FROM"),
+      v.literal("USED_IN_FLOW")
+    ),
+    score: v.optional(v.number()), // Similarity score
+    createdAt: v.number(),
+  })
+    .index("by_seed_a", ["seedA"])
+    .index("by_seed_b", ["seedB"])
+    .index("by_seed_pair", ["seedA", "seedB", "relation"]),
+
+  // Seed Candidates (Auto-Feed Staging)
+  seedCandidates: defineTable({
+    userId: v.id("users"),
+    kbId: v.optional(v.id("knowledgeBases")), // Target KB (null = user default)
+
+    // Source provenance
+    canvasId: v.optional(v.id("canvas")),
+    nodeId: v.optional(v.string()),
+    executionId: v.optional(v.id("canvasExecutions")),
+    modelResponseId: v.optional(v.id("modelResponses")),
+
+    // Content
+    title: v.string(),
+    content: v.string(), // The AI response text
+    summary: v.optional(v.string()),
+
+    // Evaluation
+    evaluationScore: v.number(), // 0-1
+    evaluationReasons: v.array(v.string()),
+    evaluationMetrics: v.optional(v.object({
+      wordCount: v.number(),
+      sentenceCount: v.number(),
+      hasStructure: v.boolean(),
+      hasCodeBlocks: v.boolean(),
+      informationDensity: v.number(),
+    })),
+
+    // Duplicate detection
+    similarSeedId: v.optional(v.id("seeds")), // If found similar
+    similarityScore: v.optional(v.number()),
+
+    // Status workflow
+    status: v.union(
+      v.literal("pending"),       // Awaiting user decision (Assisted mode)
+      v.literal("auto_approved"), // Auto-approved (Automatic mode)
+      v.literal("accepted"),      // User accepted
+      v.literal("rejected"),      // User rejected
+      v.literal("converted")      // Converted to seed
+    ),
+
+    // Mode tracking
+    feedMode: v.union(
+      v.literal("manual"),
+      v.literal("assisted"),
+      v.literal("automatic")
+    ),
+
+    createdAt: v.number(),
+    reviewedAt: v.optional(v.number()),
+    convertedSeedId: v.optional(v.id("seeds")),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_status", ["userId", "status"])
+    .index("by_canvas", ["canvasId"])
+    .index("by_kb", ["kbId"]),
+
+  // Node Positions (Persisted layout for Canvas promotion)
+  nodePositions: defineTable({
+    seedId: v.id("seeds"),
+    canvasId: v.id("canvas"), // Context where this position applies
+    x: v.number(),
+    y: v.number(),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    lastViewedAt: v.optional(v.number()),
+  })
+    .index("by_seed_canvas", ["seedId", "canvasId"]),
 });

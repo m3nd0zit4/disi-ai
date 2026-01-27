@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { generatePresignedDownloadUrl } from "@/lib/s3";
+import { generatePresignedDownloadUrl } from "@/lib/aws/s3"; // Forced recompile
 import { auth } from "@clerk/nextjs/server";
 
 export async function GET(req: Request) {

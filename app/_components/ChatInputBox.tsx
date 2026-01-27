@@ -16,14 +16,16 @@ import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useRouter, useParams } from "next/navigation";
+
 import ModelSelector from "./chat/ModelSelector";
+import { KBSelector } from "./chat/KBSelector";
 import ConfigImageSelector from "./chat/ConfigImageSelector";
 import { useDialog } from "@/hooks/useDialog";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
 import { FileNodeData } from "./canvas/types";
 
 import { useNodePreview } from "@/hooks/useNodePreview";
-import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
+import { modelRegistry } from "@/shared/ai";
 
 // Types
 export interface FileWithPreview {
@@ -50,9 +52,6 @@ const PASTE_THRESHOLD = 200; // characters threshold for showing as pasted conte
 
 import { isTextualFile, readFileAsText } from "@/lib/file-utils";
 
-// Components
-
-
 interface ChatInputBoxProps {
   canvasId?: Id<"canvas">;
 }
@@ -74,6 +73,9 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   const [imageN, setImageN] = useState<number>(1);
   const [imageModeration, setImageModeration] = useState<string>("");
   
+  const [selectedKbIds, setSelectedKbIds] = useState<Id<"knowledgeBases">[]>([]);
+
+  
   // State for files that have been turned into nodes but are waiting to be linked to the next prompt
   const [pendingFiles, setPendingFiles] = useState<{ 
     nodeId: string; 
@@ -90,8 +92,8 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   const { showDialog } = useDialog();
 
   // Convex mutations and actions
-  const createCanvas = useMutation(api.canvas.createCanvas);
-  const createFile = useAction(api.files.createFile);
+  const createCanvas = useMutation(api.canvas.canvas.createCanvas);
+  const createFile = useAction(api.system.files.createFile);
 
   // Use custom hook for preview logic
   const { handlePromptChange, cleanupPreview, previewNodeIdRef } = useNodePreview(prompt, setPrompt, selectedModels);
@@ -214,10 +216,13 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   useEffect(() => {
     if (hasModelsSelected && selectedModels.length > 0) {
       const currentModel = selectedModels[0];
-      const modelInfo = SPECIALIZED_MODELS.find(m => m.id === currentModel.modelId);
-      
-      if (modelInfo?.category === "image" && modelInfo.providerMetadata?.provider === "GPT") {
-        const options = modelInfo.providerMetadata.metadata.imageGenerationOptions;
+      const modelInfo = modelRegistry.getById(currentModel.modelId);
+
+      const isImageModel = modelInfo?.primaryCapability === "image.generation";
+      type ImageGenOptions = { sizes?: string[]; quality?: string[]; background?: string[]; output_format?: string[]; moderation?: string[]; modelType?: string };
+      const providerMeta = modelInfo?._providerMetadata as { provider?: string; metadata?: { imageGenerationOptions?: ImageGenOptions } } | undefined;
+      if (isImageModel && providerMeta?.provider === "GPT") {
+        const options = providerMeta.metadata?.imageGenerationOptions;
         if (!options) return;
 
         if (options.sizes && options.sizes.length > 0) {
@@ -542,7 +547,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
 
       const response = await fetch("/api/execute", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Accept": "application/json"
         },
@@ -552,8 +557,10 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           models: modelsToUse,
           newNodeId: newNodeId,
           inputNodeId: selectedInputNode?.id, // If we selected an existing node, use it. Otherwise undefined.
+          kbIds: selectedKbIds.length > 0 ? selectedKbIds : undefined, // Include selected KBs for RAG
           parentNodeIds: parentNodeIds,
           isBranching, // Pass the flag
+
           fileAttachments: pendingFiles
             .filter(f => f.storageId && f.storageId !== "")
             .map(f => {
@@ -616,10 +623,12 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   };
 
   const selectedModel = hasModelsSelected ? selectedModels[0] : null;
-  const modelInfo = selectedModel ? SPECIALIZED_MODELS.find(m => m.id === selectedModel.modelId) : null;
-  const isImageModel = modelInfo?.category === "image";
-  const imageOptions = modelInfo?.providerMetadata?.provider === "GPT" 
-    ? modelInfo.providerMetadata.metadata.imageGenerationOptions 
+  const modelInfo = selectedModel ? modelRegistry.getById(selectedModel.modelId) : null;
+  const isImageModel = modelInfo?.primaryCapability === "image.generation";
+  type ImageGenOptionsBottom = { sizes?: string[]; quality?: string[]; background?: string[]; output_format?: string[]; moderation?: string[]; modelType?: string };
+  const providerMetaBottom = modelInfo?._providerMetadata as { provider?: string; metadata?: { imageGenerationOptions?: ImageGenOptionsBottom } } | undefined;
+  const imageOptions = providerMetaBottom?.provider === "GPT"
+    ? providerMetaBottom.metadata?.imageGenerationOptions
     : null;
 
   return (
@@ -648,6 +657,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           <div className="px-3 pt-1.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <ModelSelector />
+              <KBSelector selectedKbIds={selectedKbIds} onSelect={setSelectedKbIds} />
               
               {isImageModel && imageOptions && (
                 <ConfigImageSelector 

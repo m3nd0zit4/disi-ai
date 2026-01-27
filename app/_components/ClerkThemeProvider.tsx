@@ -2,7 +2,7 @@
 
 import { ClerkProvider } from "@clerk/nextjs";
 import { useTheme } from "next-themes";
-import { clerkThemeDark, clerkThemeLight } from "@/lib/clerk";
+import { clerkThemeDark, clerkThemeLight } from "@/lib/clerk/clerk";
 import { ReactNode } from "react";
 
 export default function ClerkThemeProvider({
@@ -15,6 +15,7 @@ export default function ClerkThemeProvider({
   return (
     <ClerkProvider
       appearance={resolvedTheme === "dark" ? clerkThemeDark : clerkThemeLight}
+      allowedSkew={60}
     >
       {children}
     </ClerkProvider>

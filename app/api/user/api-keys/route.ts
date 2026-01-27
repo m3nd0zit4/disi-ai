@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { storeUserApiKey, deleteUserApiKey, validateApiKey } from "@/lib/aws-secrets";
+import { storeUserApiKey, deleteUserApiKey, validateApiKey } from "@/lib/aws/aws-secrets";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 
@@ -30,7 +30,7 @@ export async function GET() {
     }
 
     const convex = await getAuthenticatedConvexClient();
-    const keys = await convex.query(api.users.getUserApiKeys);
+    const keys = await convex.query(api.users.users.getUserApiKeys);
 
     return NextResponse.json({ keys });
   } catch (error) {
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
 
     // Register in Convex with authenticated client
     const convex = await getAuthenticatedConvexClient();
-    await convex.mutation(api.users.saveApiKey, {
+    await convex.mutation(api.users.users.saveApiKey, {
       clerkId: userId,
       provider,
       secretName,
@@ -129,7 +129,7 @@ export async function DELETE(req: Request) {
 
     // Delete from Convex with authenticated client
     const convex = await getAuthenticatedConvexClient();
-    await convex.mutation(api.users.deleteApiKey, {
+    await convex.mutation(api.users.users.deleteApiKey, {
       clerkId: userId,
       provider,
     });

@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { getUserApiKey } from "@/lib/aws-secrets";
+import { getUserApiKey } from "@/lib/aws/aws-secrets";
 
 //* Endpoint to get API key for a user
 export async function POST(req: Request) {

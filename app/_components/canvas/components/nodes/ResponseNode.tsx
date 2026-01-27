@@ -1,19 +1,25 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useState, useCallback } from "react";
 import { Position, NodeProps } from "@xyflow/react";
-import { Sparkles, Lock, ChevronDown, ChevronUp } from "lucide-react";
+import { Sparkles, Lock, ChevronDown, ChevronUp, Leaf, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import AIThinkingBlock from "@/components/ui/ai-thinking-block";
 import { ShiningText } from "@/components/ui/shining-text";
 import { Markdown } from "@/components/ui/markdown";
 import Image from "next/image";
-import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
+import { modelRegistry } from "@/shared/ai";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
-import { AlertCircle, Settings } from "lucide-react";
+import { AlertCircle, Settings, Check } from "lucide-react";
 import Link from "next/link";
 import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { useToast } from "@/hooks/use-toast";
+import { evaluateForKnowledge } from "@/lib/knowledge/evaluator";
+import { usePathname } from "next/navigation";
+import { Id } from "@/convex/_generated/dataModel";
 
 import { ResponseNodeData } from "../../types";
 
@@ -44,9 +50,71 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
   } = responseData;
   
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isAddingToKG, setIsAddingToKG] = useState(false);
+  const [addedToKG, setAddedToKG] = useState(false);
   const edges = useCanvasStore((state: CanvasState) => state.edges);
+  const pathname = usePathname();
   const theme = useTheme().theme;
+
+  // Extract canvasId from URL path (e.g., /canvas/abc123)
+  const canvasIdFromPath = pathname?.split("/canvas/")?.[1]?.split("/")?.[0];
   const isLocked = isProModel && isUserFree;
+  const { toast } = useToast();
+
+  // Convex mutations for KG
+  const createCandidate = useMutation(api.knowledge_garden.seedCandidates.createCandidate);
+  const gardenSettings = useQuery(api.users.settings.getGardenSettings);
+
+  // Normalize data (moved up for use in callback)
+  const displayMarkdown = content?.markdown || text || "";
+  const displayReasoning = structuredReasoning?.text || reasoning || "";
+
+  // Handle adding to Knowledge Garden
+  const handleAddToKG = useCallback(async () => {
+    if (!displayMarkdown || displayMarkdown.length < 50 || isAddingToKG || addedToKG) return;
+
+    setIsAddingToKG(true);
+    try {
+      // Evaluate content
+      const evaluation = evaluateForKnowledge(displayMarkdown);
+
+      // Create candidate
+      await createCandidate({
+        canvasId: canvasIdFromPath ? canvasIdFromPath as Id<"canvas"> : undefined,
+        nodeId: id,
+        title: evaluation.suggestedTitle,
+        content: displayMarkdown,
+        summary: displayMarkdown.slice(0, 300) + (displayMarkdown.length > 300 ? "..." : ""),
+        evaluationScore: evaluation.score,
+        evaluationReasons: evaluation.reasons,
+        evaluationMetrics: {
+          wordCount: evaluation.metrics.wordCount,
+          sentenceCount: evaluation.metrics.sentenceCount,
+          hasStructure: evaluation.metrics.hasStructure,
+          hasCodeBlocks: evaluation.metrics.hasCodeBlocks,
+          informationDensity: evaluation.metrics.informationDensity,
+        },
+        status: "pending",
+        feedMode: "manual",
+        kbId: gardenSettings?.defaultKbId,
+      });
+
+      setAddedToKG(true);
+      toast({
+        title: "Added to Knowledge Garden",
+        description: "Content saved as a seed candidate for review.",
+      });
+    } catch (error) {
+      console.error("[ResponseNode] Failed to add to KG:", error);
+      toast({
+        title: "Failed to add",
+        description: error instanceof Error ? error.message : "Could not add to Knowledge Garden",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAddingToKG(false);
+    }
+  }, [displayMarkdown, isAddingToKG, addedToKG, createCandidate, canvasIdFromPath, id, gardenSettings, toast]);
 
   const incomingEdges = useMemo(
     () => edges.filter(edge => edge.target === id),
@@ -54,13 +122,9 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
   );
   const hasIncoming = incomingEdges.length > 0;
 
-  const modelInfo = SPECIALIZED_MODELS.find(m => m.id === modelId);
+  const modelInfo = modelRegistry.getById(modelId || "");
   const modelIcon = modelInfo?.icon;
 
-  // Normalize data
-  const displayMarkdown = content?.markdown || text || "";
-  const displayReasoning = structuredReasoning?.text || reasoning || "";
-  
   return (
     <div className="group relative select-none">
       {hasIncoming && (
@@ -105,15 +169,15 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
             <>
               {/* Reasoning Block or Shining Text */}
               {displayReasoning ? (
-                <AIThinkingBlock reasoning={displayReasoning} modelName={modelInfo?.name || modelId} />
+                <AIThinkingBlock reasoning={displayReasoning} modelName={modelInfo?.displayName || modelId} />
               ) : status === "thinking" ? (
                 // If we have structuredReasoning object (even if empty text), it's a reasoning model -> AIThinkingBlock
                 // Otherwise -> ShiningText
                 structuredReasoning ? (
-                   <AIThinkingBlock modelName={modelInfo?.name || modelId} />
+                   <AIThinkingBlock modelName={modelInfo?.displayName || modelId} />
                 ) : (
                    <div className="flex items-center gap-2 p-4">
-                      <ShiningText text={`${modelInfo?.name || modelId} is thinking...`} />
+                      <ShiningText text={`${modelInfo?.displayName || modelId} is thinking...`} />
                    </div>
                 )
               ) : null}
@@ -205,11 +269,11 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
             <div className="flex items-center gap-2">
               <div className="size-5 rounded-full bg-primary/5 flex items-center justify-center overflow-hidden grayscale opacity-80">
                 {modelIcon ? (
-                  <Image 
-                    src={theme === 'dark' ? modelIcon.light : modelIcon.dark} 
-                    alt={modelId} 
-                    width={14} 
-                    height={14} 
+                  <Image
+                    src={theme === 'dark' ? modelIcon.light : modelIcon.dark}
+                    alt={modelId}
+                    width={14}
+                    height={14}
                     className="object-contain opacity-90"
                   />
                 ) : (
@@ -232,8 +296,34 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
                 </div>
               </div>
             </div>
-            <div className="text-[10px] text-muted-foreground/40 font-medium self-end pb-1">
-              {createdAt ? formatDistanceToNow(createdAt, { addSuffix: true }) : 'Just now'}
+            <div className="flex items-center gap-2">
+              {/* Add to Knowledge Garden button */}
+              {displayMarkdown && displayMarkdown.length >= 50 && status === "complete" && (
+                <button
+                  onClick={handleAddToKG}
+                  disabled={isAddingToKG || addedToKG}
+                  className={cn(
+                    "flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all",
+                    addedToKG
+                      ? "bg-emerald-500/10 text-emerald-500 cursor-default"
+                      : "bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-600/60 hover:text-emerald-500",
+                    isAddingToKG && "opacity-50 cursor-wait"
+                  )}
+                  title={addedToKG ? "Added to Knowledge Garden" : "Add to Knowledge Garden"}
+                >
+                  {isAddingToKG ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : addedToKG ? (
+                    <Check className="w-3 h-3" />
+                  ) : (
+                    <Leaf className="w-3 h-3" />
+                  )}
+                  <span className="hidden sm:inline">{addedToKG ? "Added" : "Add to KG"}</span>
+                </button>
+              )}
+              <div className="text-[10px] text-muted-foreground/40 font-medium">
+                {createdAt ? formatDistanceToNow(createdAt, { addSuffix: true }) : 'Just now'}
+              </div>
             </div>
           </div>
         </div>

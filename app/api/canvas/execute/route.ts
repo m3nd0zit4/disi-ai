@@ -1,9 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { sendToQueue } from "@/lib/sqs";
+import { sendToQueue } from "@/lib/aws/sqs";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
-import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
+import { modelRegistry } from "@/shared/ai";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
@@ -38,13 +38,13 @@ export async function POST(req: Request) {
     }
 
     // 1. Get user record
-    const user = await convex.query(api.users.getUserByClerkId, { clerkId });
+    const user = await convex.query(api.users.users.getUserByClerkId, { clerkId });
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     // 2. Get canvas details (Authorized)
-    const canvas = await convex.query(api.canvas.getCanvasByClerkId, { canvasId: canvasId as any, clerkId });
+    const canvas = await convex.query(api.canvas.canvas.getCanvasByClerkId, { canvasId: canvasId as any, clerkId });
     if (!canvas) {
       return NextResponse.json({ error: "Canvas not found or unauthorized" }, { status: 404 });
     }
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
         isEnabled: true,
       }];
 
-      executionId = await convex.mutation(api.canvasExecutions.createCanvasExecutionByClerkId, { 
+      executionId = await convex.mutation(api.canvas.canvasExecutions.createCanvasExecutionByClerkId, { 
         canvasId: canvasId as any,
         clerkId 
       });
@@ -79,8 +79,8 @@ export async function POST(req: Request) {
       };
 
       const responseNodes = modelsToProcess.map((model, i) => {
-        const modelInfo = SPECIALIZED_MODELS.find(m => m.id === model.modelId);
-        const isImageModel = !!modelInfo && modelInfo.category === "image";
+        const modelInfo = modelRegistry.getById(model.modelId);
+        const isImageModel = !!modelInfo && modelInfo.primaryCapability === "image.generation";
 
         return {
           id: `response-${newNodeId}-${i}`,
@@ -108,7 +108,7 @@ export async function POST(req: Request) {
       }));
 
       // Add all at once (Authorized)
-      await convex.mutation(api.canvas.addNodesAndEdgesByClerkId, { 
+      await convex.mutation(api.canvas.canvas.addNodesAndEdgesByClerkId, { 
         canvasId: canvasId as any, 
         clerkId,
         nodes: [inputNode, ...responseNodes],

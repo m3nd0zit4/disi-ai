@@ -1,7 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { SPECIALIZED_MODELS } from '@/shared/AiModelList';
+import React, { createContext, useContext, useState, ReactNode, useMemo } from 'react';
+import { modelRegistry, type RegisteredModel, PROVIDER_LEGACY_MAP } from '@/shared/ai';
 import { SelectedModel, SpecializedModel, Provider } from '@/types/AiModel';
 
 interface AIContextType {
@@ -102,8 +102,25 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
     return selectedModels.some(m => m.modelId === modelId);
   };
 
-  const getModelsByProvider = (provider: Provider) => {
-    return SPECIALIZED_MODELS.filter(m => m.provider === provider);
+  const getModelsByProvider = (provider: Provider): SpecializedModel[] => {
+    // Map legacy provider name to new format and query registry
+    const newProvider = PROVIDER_LEGACY_MAP[provider] || provider.toLowerCase();
+    const models = modelRegistry.getByProvider(newProvider as any);
+    // Map RegisteredModel back to SpecializedModel format for compatibility
+    return models.map(m => ({
+      id: m.id,
+      category: m.primaryCapability === 'image.generation' ? 'image' as const :
+                m.primaryCapability === 'video.generation' ? 'video' as const :
+                m.primaryCapability === 'text.reasoning' ? 'reasoning' as const : 'standard' as const,
+      provider: provider,
+      providerModelId: m.providerModelId,
+      name: m.displayName,
+      description: m.description,
+      premium: m.requiresPremium,
+      enabled: m.enabled,
+      icon: m.icon,
+      providerMetadata: m._providerMetadata as any,
+    }));
   };
 
   const getSelectedModelsByProvider = (provider: Provider) => {
@@ -130,8 +147,28 @@ export function AIContextProvider({ children }: { children: ReactNode }) {
     setSelectedModels(newModels);
   };
 
-  const getAllSpecializedModels = () => {
-    return SPECIALIZED_MODELS.filter(m => m.category === 'image' || m.category === 'video');
+  const getAllSpecializedModels = (): SpecializedModel[] => {
+    // Get all models with image.generation or video.generation capabilities
+    const imageModels = modelRegistry.getByCapability('image.generation');
+    const videoModels = modelRegistry.getByCapability('video.generation');
+    const allModels = [...imageModels, ...videoModels];
+    // Map RegisteredModel back to SpecializedModel format for compatibility
+    return allModels.map(m => ({
+      id: m.id,
+      category: m.primaryCapability === 'image.generation' ? 'image' as const : 'video' as const,
+      provider: m.provider === 'anthropic' ? 'Claude' as Provider :
+                m.provider === 'openai' ? 'GPT' as Provider :
+                m.provider === 'google' ? 'Gemini' as Provider :
+                m.provider === 'xai' ? 'Grok' as Provider :
+                'DeepSeek' as Provider,
+      providerModelId: m.providerModelId,
+      name: m.displayName,
+      description: m.description,
+      premium: m.requiresPremium,
+      enabled: m.enabled,
+      icon: m.icon,
+      providerMetadata: m._providerMetadata as any,
+    }));
   };
 
   // NEW: Restore model configuration from a conversation

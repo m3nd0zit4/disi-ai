@@ -35,6 +35,17 @@ export interface CanvasState {
   viewport: Viewport | null;
   setViewport: (canvasId: string, viewport: Viewport) => void;
   loadViewport: (canvasId: string) => void;
+  isKnowledgePanelOpen: boolean;
+  setKnowledgePanelOpen: (isOpen: boolean) => void;
+  // Knowledge Garden State
+  isGardenActive: boolean;
+  setGardenActive: (active: boolean) => void;
+  gardenStats: {
+    files: number;
+    seeds: number;
+    tokens: number;
+  };
+  updateGardenStats: (stats: Partial<{ files: number; seeds: number; tokens: number }>) => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
@@ -44,7 +55,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setDraggedNodeId: (id: string | null) => set({ draggedNodeId: id }),
   selectedNodeIdForToolbar: null as string | null,
   setSelectedNodeIdForToolbar: (id: string | null) => set({ selectedNodeIdForToolbar: id }),
-  viewport: null as Viewport | null,
+  viewport: { x: 0, y: 0, zoom: 1 },
+  isKnowledgePanelOpen: false,
+  setKnowledgePanelOpen: (isOpen: boolean) => set({ isKnowledgePanelOpen: isOpen }),
+
+  // Knowledge Garden Initial State
+  isGardenActive: false,
+  setGardenActive: (active) => set({ isGardenActive: active }),
+  gardenStats: { files: 0, seeds: 0, tokens: 0 },
+  updateGardenStats: (stats) => set((state) => ({
+    gardenStats: { ...state.gardenStats, ...stats }
+  })),
+
   setViewport: (canvasId: string, viewport: Viewport) => {
     set({ viewport });
     try {

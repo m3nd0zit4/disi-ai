@@ -9,14 +9,9 @@ import { useState, useEffect } from "react";
  */
 export function useSignedUrl(storageId?: string, fallbackUrl?: string | null) {
   const [fetchedUrl, setFetchedUrl] = useState<string | null>(null);
-  const [prevStorageId, setPrevStorageId] = useState<string | undefined>(storageId);
-
-  if (storageId !== prevStorageId) {
-    setPrevStorageId(storageId);
-    setFetchedUrl(null);
-  }
-
   useEffect(() => {
+    setFetchedUrl(null);
+    
     // If we have a fallback URL (like a local blob), we don't need to fetch
     if (fallbackUrl || !storageId) {
       return;

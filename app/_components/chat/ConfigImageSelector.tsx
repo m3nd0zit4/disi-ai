@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAIContext } from "@/context/AIContext";
 import { cn } from "@/lib/utils";
-import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
+import { modelRegistry } from "@/shared/ai";
 
 interface ConfigImageSelectorProps {
   imageSize: string;
@@ -59,12 +59,14 @@ export default function ConfigImageSelector({
   const { selectedModels, hasModelsSelected } = useAIContext();
   
   const currentSelected = hasModelsSelected ? selectedModels[0] : null;
-  const selectedModel = currentSelected 
-    ? SPECIALIZED_MODELS.find(m => m.id === currentSelected.modelId)
+  const selectedModel = currentSelected
+    ? modelRegistry.getById(currentSelected.modelId)
     : null;
 
-  const imageOptions = selectedModel?.providerMetadata?.provider === "GPT" 
-    ? selectedModel.providerMetadata.metadata.imageGenerationOptions 
+  type ImageGenOptions = { sizes?: string[]; quality?: string[]; background?: string[]; output_format?: string[]; moderation?: string[]; n?: number[]; modelType?: string };
+  const providerMeta = selectedModel?._providerMetadata as { provider?: string; metadata?: { imageGenerationOptions?: ImageGenOptions } } | undefined;
+  const imageOptions = providerMeta?.provider === "GPT"
+    ? providerMeta.metadata?.imageGenerationOptions
     : null;
 
   if (!imageOptions) return null;

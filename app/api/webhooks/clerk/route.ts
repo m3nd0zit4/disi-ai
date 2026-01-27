@@ -73,7 +73,7 @@ export async function POST(req: Request) {
 async function handleUserCreated(data: UserJSON) {
   console.log('Creating user in Convex:', data.id);
 
-  await convex.mutation(api.users.createUser, {
+  await convex.mutation(api.users.users.createUser, {
     clerkId: data.id,
     email: data.email_addresses[0]?.email_address || '',
     name: `${data.first_name || ''} ${data.last_name || ''}`.trim() || 'Usuario',
@@ -85,7 +85,7 @@ async function handleUserCreated(data: UserJSON) {
 async function handleUserUpdated(data: UserJSON) {
   console.log('Updating user in Convex:', data.id);
 
-  await convex.mutation(api.users.updateUser, {
+  await convex.mutation(api.users.users.updateUser, {
     clerkId: data.id,
     email: data.email_addresses[0]?.email_address || '',
     name: `${data.first_name || ''} ${data.last_name || ''}`.trim() || 'Usuario',
@@ -97,7 +97,7 @@ async function handleUserUpdated(data: UserJSON) {
 async function handleUserDeleted(userId: string) {
   console.log('Deleting user in Convex:', userId);
 
-  await convex.mutation(api.users.deleteUser, {
+  await convex.mutation(api.users.users.deleteUser, {
     clerkId: userId,
     token: process.env.CLERK_WEBHOOK_SECRET!,
   });

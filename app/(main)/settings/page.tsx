@@ -28,7 +28,7 @@ interface UserApiKey {
 }
 
 export default function SettingsPage() {
-  const user = useQuery(api.users.getCurrentUser);
+  const user = useQuery(api.users.users.getCurrentUser);
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [validating, setValidating] = useState<Record<string, boolean>>({});

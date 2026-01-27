@@ -11,7 +11,7 @@ export default clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {
     await auth.protect()
   }
-})
+}, { clockSkewInMs: 60000 })
 
 export const config = {
   matcher: [

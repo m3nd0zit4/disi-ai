@@ -2,16 +2,17 @@ import { S3Event } from 'aws-lambda';
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../convex/_generated/api";
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { extractTextFromS3 } from "../lib/textract";
-import { transcribeAudio } from "../lib/transcribe";
-import { generateEmbedding } from "../lib/bedrock";
-import { storeEmbedding } from "../lib/upstash-vector";
+import { extractTextFromS3 } from "../lib/aws/textract";
+import { transcribeAudio } from "../lib/aws/transcribe";
+import { generateEmbedding } from "../lib/aws/bedrock";
+import { storeEmbedding } from "../lib/upstash/upstash-vector";
 import { Redis } from "@upstash/redis";
 
 // Initialize clients
 const requiredEnv = [
   'CONVEX_URL',
   'CONVEX_DEPLOY_KEY',
+  'FILE_WORKER_SECRET',
   'UPSTASH_REDIS_REST_URL',
   'UPSTASH_REDIS_REST_TOKEN',
   'UPSTASH_VECTOR_REST_URL',
@@ -47,7 +48,8 @@ export async function handler(event: S3Event) {
 
       // 1. Update status to 'processing'
       // We use 'any' cast because we are importing api from outside and types might be tricky in lambda build
-      await convex.mutation((api.files as any).publicUpdateStatusByS3Key, {
+      await convex.action((api.system.files as any).publicUpdateStatusByS3Key, {
+        secret: process.env.FILE_WORKER_SECRET!,
         s3Key: key,
         status: "processing",
       });
@@ -65,7 +67,8 @@ export async function handler(event: S3Event) {
         text = await response.Body?.transformToString() || "";
       } else {
         console.log(`Unsupported file type: ${extension}`);
-        await convex.mutation((api.files as any).publicUpdateStatusByS3Key, {
+        await convex.action((api.system.files as any).publicUpdateStatusByS3Key, {
+          secret: process.env.FILE_WORKER_SECRET!,
           s3Key: key,
           status: "error",
           errorMessage: `Unsupported file type: ${extension}`,
@@ -85,7 +88,7 @@ export async function handler(event: S3Event) {
       // But we need to associate it with the file. 
       // We can use the S3 key as the ID for Redis/Vector or query Convex to get the real ID.
       // Let's get the real ID from Convex.
-      const fileRecord = await convex.query((api.files as any).getFileByS3Key, { s3Key: key });
+      const fileRecord = await convex.query((api.system.files as any).getFileByS3Key, { s3Key: key });
       const convexFileId = fileRecord?._id || fileId;
 
       console.log(`Generated ${chunks.length} chunks for file ${convexFileId}`);
@@ -119,7 +122,8 @@ export async function handler(event: S3Event) {
       }
 
       // 5. Update status to 'ready'
-      await convex.mutation((api.files as any).publicUpdateStatusByS3Key, {
+      await convex.action((api.system.files as any).publicUpdateStatusByS3Key, {
+        secret: process.env.FILE_WORKER_SECRET!,
         s3Key: key,
         status: "ready",
         extractedTextLength: text.length,
@@ -139,7 +143,8 @@ export async function handler(event: S3Event) {
       console.error(`Error processing ${key}:`, error);
       
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      await convex.mutation((api.files as any).publicUpdateStatusByS3Key, {
+      await convex.action((api.system.files as any).publicUpdateStatusByS3Key, {
+        secret: process.env.FILE_WORKER_SECRET!,
         s3Key: key,
         status: "error",
         errorMessage,

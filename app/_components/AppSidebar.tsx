@@ -15,11 +15,11 @@ import {
   Sun, 
   Plus, 
   Layout, 
-  Leaf, 
-  Compass, 
+  Leaf,  
   History,
   Trash2,
-  MessageSquarePlus
+  MessageSquarePlus,
+  Compass
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { UserButton } from "@clerk/nextjs"
@@ -29,14 +29,45 @@ import { api } from "@/convex/_generated/api"
 import { Doc, Id } from "@/convex/_generated/dataModel"
 import { useRouter } from "next/navigation"
 import { useDialog } from "@/hooks/useDialog"
+import { useKnowledgeCommand } from "@/hooks/useKnowledgeCommand"
+import { useCanvasStore } from "@/hooks/useCanvasStore"
+import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { GardenStatsPanel } from "./GardenStatsPanel"
+import { cn } from "@/lib/utils"
 
 export function AppSidebar() {
     const { theme, setTheme } = useTheme();
-    const canvases = useQuery(api.canvas.listCanvas);
-    const createCanvas = useMutation(api.canvas.createCanvas);
-    const deleteCanvas = useMutation(api.canvas.deleteCanvas);
+    const canvases = useQuery(api.canvas.canvas.listCanvas);
+    const createCanvas = useMutation(api.canvas.canvas.createCanvas);
+    const deleteCanvas = useMutation(api.canvas.canvas.deleteCanvas);
     const router = useRouter();
     const { showDialog } = useDialog();
+    const openKnowledgeCommand = useKnowledgeCommand((state) => state.open);
+    
+    // Knowledge Garden State (from Convex)
+    const gardenSettings = useQuery(api.users.settings.getGardenSettings);
+    const updateGardenSettings = useMutation(api.users.settings.updateGardenSettings);
+    const gardenStats = useCanvasStore((state) => state.gardenStats);
+
+    const isGardenActive = gardenSettings?.isActive ?? false;
+    const feedMode = gardenSettings?.feedMode ?? "manual";
+
+    const handleGardenToggle = async (active: boolean) => {
+        try {
+            await updateGardenSettings({ isActive: active });
+        } catch (error) {
+            console.error("Failed to update garden settings:", error);
+        }
+    };
+
+    const handleFeedModeChange = async (mode: "manual" | "assisted" | "automatic") => {
+        try {
+            await updateGardenSettings({ feedMode: mode });
+        } catch (error) {
+            console.error("Failed to update feed mode:", error);
+        }
+    };
 
     const handleNewWorkflow = async () => {
         try {
@@ -103,11 +134,15 @@ export function AppSidebar() {
                         <MessageSquarePlus className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100 transition-opacity" />
                     </Button>
                     
-                    <Button variant="ghost" className="w-full justify-between h-9 px-3 rounded-lg hover:bg-primary/5 text-muted-foreground hover:text-foreground transition-all group">
+                    <Button 
+                        variant="ghost" 
+                        onClick={() => openKnowledgeCommand()}
+                        className="w-full justify-between h-9 px-3 rounded-lg hover:bg-primary/5 text-muted-foreground hover:text-foreground transition-all group"
+                    >
                         <span className="text-[13px] font-bold tracking-tight">Knowledge Garden</span>
                         <Leaf className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 transition-opacity" />
                     </Button>
-
+                    
                     <Button variant="ghost" className="w-full justify-between h-9 px-3 rounded-lg hover:bg-primary/5 text-muted-foreground hover:text-foreground transition-all group">
                         <div className="flex items-center gap-1.5">
                             <span className="text-[13px] font-bold tracking-tight">Explore More</span>
@@ -115,6 +150,58 @@ export function AppSidebar() {
                         </div>
                         <Compass className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 transition-opacity" />
                     </Button>
+                </div>
+
+                {/* Knowledge Garden Agent Section */}
+                <div className="mt-6 space-y-3">
+                    <div className="px-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <div className={cn("size-2 rounded-full transition-colors", isGardenActive ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-muted-foreground/30")} />
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Feed the Garden</span>
+                        </div>
+                        <Switch
+                            checked={isGardenActive}
+                            onCheckedChange={handleGardenToggle}
+                            className="scale-75 data-[state=checked]:bg-emerald-500"
+                        />
+                    </div>
+
+                    {/* Feed Mode Selector */}
+                    {isGardenActive && (
+                        <div className="px-3">
+                            <Select value={feedMode} onValueChange={handleFeedModeChange}>
+                                <SelectTrigger className="h-7 text-[10px] bg-muted/30 border-none">
+                                    <SelectValue placeholder="Select mode" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="assisted" className="text-[11px]">
+                                        <div className="flex items-center gap-2">
+                                            <div className="size-1.5 rounded-full bg-amber-500" />
+                                            Assisted
+                                        </div>
+                                    </SelectItem>
+                                    <SelectItem value="automatic" className="text-[11px]">
+                                        <div className="flex items-center gap-2">
+                                            <div className="size-1.5 rounded-full bg-emerald-500" />
+                                            Automatic
+                                        </div>
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <p className="text-[9px] text-muted-foreground/50 mt-1.5 leading-tight px-0.5">
+                                {feedMode === "manual" && "Click 'Add to KG' on responses to save"}
+                                {feedMode === "assisted" && "AI suggests valuable content to save"}
+                                {feedMode === "automatic" && "AI automatically saves high-quality content"}
+                            </p>
+                        </div>
+                    )}
+
+                    <div className="px-1">
+                        <GardenStatsPanel
+                            isActive={isGardenActive}
+                            stats={gardenStats}
+                        />
+                    </div>
                 </div>
             </SidebarHeader>
 

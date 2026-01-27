@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { 
-  Sparkles, 
-  Image as ImageIcon, 
-  Video, 
-  Wand2, 
+import {
+  Sparkles,
+  Image as ImageIcon,
+  Video,
+  Wand2,
   Zap,
   ChevronDown,
   Search,
@@ -21,11 +21,14 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import NextImage from "next/image";
-import { SPECIALIZED_MODELS } from "@/shared/AiModelList";
+import { getModelsForUI } from "@/shared/ai";
 import { useAIContext } from "@/context/AIContext";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { SpecializedModel } from "@/types/AiModel";
+
+// Get all models in legacy SpecializedModel format for UI compatibility
+const ADAPTED_MODELS = getModelsForUI();
 
 const modes = [
   { id: "regular", name: "Regular", icon: Sparkles },
@@ -48,7 +51,7 @@ export default function ModelSelector() {
   }, []);
 
   const filteredModels = useMemo(() => {
-    return SPECIALIZED_MODELS.filter(m => {
+    return ADAPTED_MODELS.filter(m => {
       const matchesSearch = m.name.toLowerCase().includes(search.toLowerCase()) || 
                            m.provider.toLowerCase().includes(search.toLowerCase());
       let category: string;
@@ -64,9 +67,9 @@ export default function ModelSelector() {
     });
   }, [mode, search]);
 
-  const currentModel = selectedModels[0] || SPECIALIZED_MODELS[0];
+  const currentModel = selectedModels[0] || ADAPTED_MODELS[0];
   const modelInfo = 'modelId' in currentModel 
-    ? SPECIALIZED_MODELS.find(m => m.id === currentModel.modelId) 
+    ? ADAPTED_MODELS.find(m => m.id === currentModel.modelId) 
     : currentModel;
 
   const modelName = selectedModels.length > 1 

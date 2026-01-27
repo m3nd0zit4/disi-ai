@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { generatePresignedUploadUrl } from "@/lib/s3";
+import { generatePresignedUploadUrl } from "@/lib/aws/s3";
 import { v4 as uuidv4 } from "uuid";
 import { auth } from "@clerk/nextjs/server";
 
