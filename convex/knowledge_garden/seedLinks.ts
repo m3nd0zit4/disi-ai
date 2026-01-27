@@ -2,53 +2,8 @@ import { v } from "convex/values";
 import { mutation, query, internalMutation, action } from "../_generated/server";
 import { internal } from "../_generated/api";
 
-export const create = mutation({
-  args: {
-    seedA: v.id("seeds"),
-    seedB: v.id("seeds"),
-    relation: v.union(
-      v.literal("RELATED"),
-      v.literal("PART_OF"),
-      v.literal("CONTRADICTS"),
-      v.literal("DERIVED_FROM"),
-      v.literal("USED_IN_FLOW")
-    ),
-    score: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    // Internal mutation, usually called by worker
-    // In a real app, we might want to verify the caller is the worker or admin
-
-    // Prevent self-linking
-    if (args.seedA === args.seedB) {
-      console.log(`[SeedLinks] Prevented self-linking: ${args.seedA}`);
-      return null;
-    }
-
-    // Check for existing link (prevent duplicates)
-    const existingLink = await ctx.db
-      .query("seedLinks")
-      .withIndex("by_seed_pair", (q) =>
-        q.eq("seedA", args.seedA).eq("seedB", args.seedB).eq("relation", args.relation)
-      )
-      .first();
-
-    if (existingLink) {
-      console.log(`[SeedLinks] Link already exists: ${args.seedA} -> ${args.seedB}`);
-      return existingLink._id;
-    }
-
-    const linkId = await ctx.db.insert("seedLinks", {
-      seedA: args.seedA,
-      seedB: args.seedB,
-      relation: args.relation,
-      score: args.score,
-      createdAt: Date.now(),
-    });
-
-    return linkId;
-  },
-});
+// Note: The public `create` mutation has been removed for security.
+// Use `internalCreate` for internal code or `workerCreateLink` for worker access with secret auth.
 
 export const listBySeed = query({
   args: { seedId: v.id("seeds") },
@@ -67,7 +22,7 @@ export const listBySeed = query({
   },
 });
 
-export const deleteBySeed = mutation({
+export const deleteBySeed = internalMutation({
   args: { seedId: v.id("seeds") },
   handler: async (ctx, args) => {
     // Delete all links where this seed is seedA

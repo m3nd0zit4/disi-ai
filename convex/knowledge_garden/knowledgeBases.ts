@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, action } from "../_generated/server";
+import { Id, Doc } from "../_generated/dataModel";
 import { OpenAIService } from "../../lib/aiServices/openai";
 import { searchSimilar } from "../../lib/upstash/upstash-vector";
 import { api } from "../_generated/api";

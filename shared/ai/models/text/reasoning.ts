@@ -883,7 +883,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
         providerMetadata: {
             provider: "Grok",
             metadata: {
-                contextWindow: 131072,
+                contextWindow: 256000,
                 maxOutputTokens: 16384,
                 inputModalities: ["text", "image"],
                 outputModalities: ["text"],
@@ -903,7 +903,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
                 },
                 pricing: {
                     inputPerMillion: 3.00,
-                    cachedInputPerMillion: 0.30,
+                    cachedInputPerMillion: 0.75,
                     outputPerMillion: 15.00,
                 }
             },
@@ -927,7 +927,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
         providerMetadata: {
             provider: "Grok",
             metadata: {
-                contextWindow: 131072,
+                contextWindow: 256000,
                 maxOutputTokens: 16384,
                 inputModalities: ["text", "image"],
                 outputModalities: ["text"],
@@ -947,7 +947,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
                 },
                 pricing: {
                     inputPerMillion: 3.00,
-                    cachedInputPerMillion: 0.30,
+                    cachedInputPerMillion: 0.75,
                     outputPerMillion: 15.00,
                 }
             },

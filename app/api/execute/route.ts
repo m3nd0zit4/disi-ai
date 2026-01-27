@@ -447,11 +447,32 @@ export async function POST(req: Request) {
                 return [];
              }
 
-             console.log(`[Execute] Searching Knowledge Bases: ${kbIdsToSearch.join(", ")}`);
+             // Validate ownership of each KB before searching
+             const validatedKbIds: string[] = [];
+             for (const kbId of kbIdsToSearch) {
+                try {
+                   const kb = await convex.query(api.knowledge_garden.knowledgeBases.get, { id: kbId });
+                   // The get query already validates ownership via auth, returns null if unauthorized
+                   if (kb && kb.userId === user._id) {
+                      validatedKbIds.push(kbId);
+                   } else {
+                      console.warn(`[Execute] KB ${kbId} not owned by user ${user._id}, skipping`);
+                   }
+                } catch (err) {
+                   console.warn(`[Execute] Failed to validate KB ${kbId}:`, err);
+                }
+             }
+
+             if (validatedKbIds.length === 0) {
+                console.log(`[Execute] No valid KBs after ownership check`);
+                return [];
+             }
+
+             console.log(`[Execute] Searching Knowledge Bases: ${validatedKbIds.join(", ")}`);
              try {
                 const searchResults = await convex.query(api.knowledge_garden.seeds.search, {
                    query: queryText,
-                   kbIds: kbIdsToSearch,
+                   kbIds: validatedKbIds,
                    limit: 5,
                 });
 

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation, action } from "../_generated/server";
-import { api, internal } from "../_generated/api";
+import { internal } from "../_generated/api";
 
 export const create = mutation({
   args: {
@@ -181,7 +181,7 @@ export const deleteSeed = internalMutation({
     }
 
     // Delete associated seedLinks first
-    await ctx.runMutation(api.knowledge_garden.seedLinks.deleteBySeed, {
+    await ctx.runMutation(internal.knowledge_garden.seedLinks.deleteBySeed, {
       seedId: args.seedId,
     });
 

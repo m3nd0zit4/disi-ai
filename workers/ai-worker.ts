@@ -678,8 +678,9 @@ async function processKnowledgeGardenFeed(params: {
 
     const userId = execution.userId;
 
-    // 2. Get user's garden settings
-    const settings = await convex.query(api.users.settings.getGardenSettingsByUserId, {
+    // 2. Get user's garden settings (via worker action with secret auth)
+    const settings = await convex.action(api.users.settings.workerGetGardenSettings, {
+      secret: process.env.FILE_WORKER_SECRET!,
       userId,
     });
 

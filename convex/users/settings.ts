@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { mutation, query, internalQuery } from "../_generated/server";
+import { mutation, query, internalQuery, action } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 
 /**
  * Default garden settings for new users or when not configured
@@ -47,20 +48,21 @@ export const getGardenSettings = query({
 });
 
 /**
- * Get garden settings by user ID (for worker access)
+ * Get garden settings by user ID (for worker access with secret auth)
  */
-export const getGardenSettingsByUserId = query({
-  args: { userId: v.id("users") },
+export const workerGetGardenSettings = action({
+  args: {
+    secret: v.string(),
+    userId: v.id("users")
+  },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user) {
-      return DEFAULT_GARDEN_SETTINGS;
+    if (args.secret !== process.env.FILE_WORKER_SECRET) {
+      throw new Error("Unauthorized");
     }
 
-    return {
-      ...DEFAULT_GARDEN_SETTINGS,
-      ...user.gardenSettings,
-    };
+    return await ctx.runQuery(internal.users.settings.internalGetGardenSettings, {
+      userId: args.userId,
+    });
   },
 });
 
