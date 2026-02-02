@@ -1,12 +1,11 @@
 "use client"
 
-import { SidebarTrigger } from '@/components/ui/sidebar'
-const AppHeader = () => {
-  return (
-    <div className="p-2 w-full shadow-sm flex items-center justify-between border-b border-primary/5 bg-background/50 backdrop-blur-md">
-        <SidebarTrigger className="size-8" />
-    </div>
-  )
-}
+import { SidebarTrigger } from "@/components/ui/sidebar";
 
-export default AppHeader
+export default function AppHeader() {
+  return (
+    <div className="flex items-center shrink-0 p-1.5">
+      <SidebarTrigger className="size-8 rounded-lg hover:bg-muted/50" />
+    </div>
+  );
+}

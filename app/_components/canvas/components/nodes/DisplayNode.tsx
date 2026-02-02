@@ -3,28 +3,23 @@ import { Position, NodeProps } from "@xyflow/react";
 import { cn, adjustAlpha } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
 import { modelRegistry } from "@/shared/ai";
-import Image from "next/image";
-import { useTheme } from "next-themes";
 import { DisplayNodeData } from "../../types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { formatDistanceToNow } from "date-fns";
 import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
-import { Maximize2 } from "lucide-react";
+import { Maximize2, GripVertical, Trash2, Download, Plus } from "lucide-react";
 import { Dialog } from "../../../ui/Dialog";
 import { useSignedUrl } from "@/hooks/useSignedUrl";
+import { useConnections } from "../../providers/ConnectionsProvider";
+import { LoadingVisualCard } from "../../../ui/LoadingVisualCard";
 
 export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) => {
   const displayData = data as unknown as DisplayNodeData;
   const { type, content, text, mediaUrl, mediaStorageId, status, modelId, createdAt, color, role, importance } = displayData;
-  const edges = useCanvasStore((state: CanvasState) => state.edges);
-  const modelInfo = modelRegistry.getById(modelId || "");
-  const { theme } = useTheme();
-  const modelIcon = modelInfo?.icon;
-
-  const incomingEdges = edges.filter(edge => edge.target === id);
-  const hasIncoming = incomingEdges.length > 0;
+  const { deleteNode } = useConnections();
+  const duplicateNode = useCanvasStore((state: CanvasState) => state.duplicateNode);
 
   const signedUrl = useSignedUrl(mediaStorageId, mediaUrl);
 
@@ -36,11 +31,12 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
 
   // Determine the effective type if missing
   const effectiveType = type || (mediaUrl || mediaStorageId ? "image" : (displayContent ? "text" : undefined));
+  const isMedia = effectiveType === "image" || effectiveType === "video";
 
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
-  // Viewport dimensions for images
-  const VIEWPORT_WIDTH = 300;
+  // Viewport dimensions for images/videos
+  const VIEWPORT_WIDTH = 350;
 
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(
     displayData.metadata?.width && displayData.metadata?.height 
@@ -69,42 +65,52 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
     }
   };
 
+  const handleVideoLoad = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+    const video = e.currentTarget;
+    const { videoWidth, videoHeight } = video;
+    
+    if (!dimensions || dimensions.width !== videoWidth || dimensions.height !== videoHeight) {
+      const newDimensions = { width: videoWidth, height: videoHeight };
+      setDimensions(newDimensions);
+      
+      // Persist to store/DB
+      updateNodeData(id, { 
+        metadata: { 
+          ...displayData.metadata,
+          width: videoWidth, 
+          height: videoHeight 
+        } 
+      });
+    }
+  };
+
   const aspectRatio = (dimensions && dimensions.width > 0) ? dimensions.height / dimensions.width : 1;
   const nodeHeight = (dimensions && dimensions.width > 0) ? VIEWPORT_WIDTH * aspectRatio : 200;
 
   return (
     <div className="group relative select-none">
-      {hasIncoming && (
-        <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 bg-primary/5 backdrop-blur-xl border border-primary/10 rounded-full animate-in fade-in slide-in-from-bottom-1 duration-500 z-30">
-          <div className="size-1 rounded-full bg-primary/60 animate-pulse" />
-          <span className="text-[9px] font-bold text-primary/60 uppercase tracking-wider">
-            {incomingEdges.length}
-          </span>
-        </div>
-      )}
-
       {/* Main Node Content */}
       <div 
         className={cn(
           "relative transition-all duration-500 rounded-[1.5rem] overflow-hidden border border-primary/5",
-          (!color || color === 'transparent') && "bg-white/80 dark:bg-white/[0.05]",
+          (!color || color === 'transparent') && (isMedia ? "bg-black" : "bg-white/80 dark:bg-white/[0.05]"),
           selected ? "ring-2 ring-primary/30 shadow-[0_30px_60px_rgba(0,0,0,0.2)] z-50 scale-[1.02]" : "shadow-lg hover:border-primary/10",
           dragging && "opacity-80"
         )}
         style={{ 
           backgroundColor: color && color !== 'transparent' ? color : undefined,
           borderColor: color && color !== 'transparent' ? adjustAlpha(color, 0.3) : undefined,
-          width: effectiveType === "image" ? VIEWPORT_WIDTH : "auto",
+          width: isMedia ? VIEWPORT_WIDTH : "auto",
+          height: isMedia ? nodeHeight : "auto",
           minWidth: effectiveType === "text" ? "200px" : undefined,
         }}
-      >
-        {/* Top Handle Overlay */}
-        <NodeHandle type="target" position={Position.Top} className="opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-        
+      > 
+        <NodeHandle type="target" position={Position.Top} className="group-hover:!opacity-100 z-10" />
+
         {/* Content Area */}
         <div className="relative w-full h-full">
-          {/* Image Content - The Core Visual */}
-          {effectiveType === "image" && (
+          {/* Media Content - Image or Video */}
+          {isMedia && (
             <div 
               className="relative overflow-hidden bg-muted/5"
               style={{ 
@@ -113,36 +119,80 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
               }}
             >
               {showLoading ? (
-                 <div 
-                   className="w-full h-full flex items-center justify-center bg-muted/5 animate-pulse"
-                 >
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="size-8 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
-                        <div className="size-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-                      </div>
-                      <span className="text-[8px] font-bold text-primary/40 uppercase tracking-[0.2em]">
-                        {status === "thinking" ? "Thinking..." : "Generating..."}
-                      </span>
-                    </div>
-                 </div>
+                <LoadingVisualCard 
+                  mode={effectiveType as 'image' | 'video'}
+                  statusMessage={
+                    status === "thinking" ? "Consulting the digital oracle..." :
+                    status === "streaming" ? "Weaving pixels into reality..." :
+                    effectiveType === "video" ? "Directing your scene..." :
+                    "Painting your imagination..."
+                  }
+                  progress={displayData.progress}
+                  backgroundVisual={signedUrl ? (
+                    effectiveType === "image" ? (
+                      <img src={signedUrl} className="w-full h-full object-cover" alt="Loading preview" />
+                    ) : (
+                      <video src={signedUrl} className="w-full h-full object-cover" />
+                    )
+                  ) : undefined}
+                />
               ) : (
                 signedUrl && (
-                  <div className="relative group/img w-full h-full">
-                    <img 
-                      src={signedUrl} 
-                      alt="Generated content" 
-                      onLoad={handleImageLoad}
-                      className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-[1.02]"
-                    />
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsLightboxOpen(true);
-                      }}
-                      className="absolute top-3 right-3 p-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white opacity-0 group-hover/img:opacity-100 transition-opacity duration-300 hover:bg-black/60"
-                    >
-                      <Maximize2 className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="relative group/media w-full h-full animate-in fade-in zoom-in-95 duration-700">
+                    {effectiveType === "image" ? (
+                      <>
+                        <img
+                          src={signedUrl}
+                          alt="Generated content"
+                          onLoad={handleImageLoad}
+                          className="w-full h-full object-cover transition-transform duration-1000 group-hover/media:scale-[1.02]"
+                        />
+                        {/* Custom Hover Overlay for Actions */}
+                        <div className="absolute inset-0 bg-black/0 group-hover/media:bg-black/20 transition-all duration-300 flex items-center justify-center gap-3 opacity-0 group-hover/media:opacity-100">
+                          <HoverActionButton
+                            icon={<Maximize2 size={16} />}
+                            onClick={() => setIsLightboxOpen(true)}
+                            tooltip="Maximize"
+                          />
+                          <HoverActionButton
+                            icon={<Plus size={16} />}
+                            onClick={() => duplicateNode(id)}
+                            tooltip="Duplicate"
+                          />
+                          <HoverActionButton
+                            icon={<Download size={16} />}
+                            onClick={() => signedUrl && window.open(signedUrl, '_blank')}
+                            tooltip="Download"
+                          />
+                          <HoverActionButton
+                            icon={<Trash2 size={16} />}
+                            onClick={() => deleteNode(id)}
+                            tooltip="Delete"
+                            variant="destructive"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="relative w-full h-full bg-black">
+                        <video 
+                          key={signedUrl}
+                          src={signedUrl} 
+                          controls
+                          autoPlay
+                          muted
+                          playsInline
+                          loop
+                          onLoadedMetadata={handleVideoLoad}
+                          onError={(e) => {
+                            console.error("Video playback error:", e);
+                          }}
+                          className="w-full h-full object-contain"
+                        />
+                        <div className="absolute top-3 right-3 px-2 py-0.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-full text-[8px] font-bold text-white/80 uppercase tracking-wider pointer-events-none">
+                          Video
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               )}
@@ -150,7 +200,7 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
           )}
 
           {/* Lightbox Dialog */}
-          {signedUrl && (
+          {signedUrl && effectiveType === "image" && (
             <Dialog
               isOpen={isLightboxOpen}
               onClose={() => setIsLightboxOpen(false)}
@@ -166,20 +216,6 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
                 />
               </div>
             </Dialog>
-          )}
-
-          {/* Video Content */}
-          {effectiveType === "video" && signedUrl && (
-            <div className="relative w-full bg-black/5">
-              <video 
-                src={signedUrl} 
-                controls
-                muted
-                playsInline
-                loop
-                className="w-full h-auto block"
-              />
-            </div>
           )}
 
           {/* Text Content Overlay (if any) */}
@@ -199,15 +235,6 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
             )}>
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-1.5 bg-black/40 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/10">
-                  {modelIcon && (
-                    <Image 
-                      src={theme === 'dark' ? modelIcon.light : modelIcon.dark} 
-                      alt={modelId} 
-                      width={10} 
-                      height={10}
-                      className="opacity-80"
-                    />
-                  )}
                   <span className="text-[8px] font-bold text-white/70 tracking-tight">
                     {modelId}
                   </span>
@@ -236,10 +263,35 @@ export const DisplayNode = memo(({ id, data, selected, dragging }: NodeProps) =>
         </div>
 
         {/* Bottom Handle Overlay */}
-        <NodeHandle type="source" position={Position.Bottom} className="opacity-0 group-hover:opacity-100 transition-opacity z-10" />
+        <NodeHandle type="source" position={Position.Bottom} className="group-hover:!opacity-100 z-10" />
       </div>
     </div>
   );
 });
 
 DisplayNode.displayName = "DisplayNode";
+
+interface HoverActionButtonProps {
+  icon: React.ReactNode;
+  onClick: (e: React.MouseEvent) => void;
+  tooltip: string;
+  variant?: "default" | "destructive";
+}
+
+const HoverActionButton = ({ icon, onClick, tooltip, variant = "default" }: HoverActionButtonProps) => (
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      onClick(e);
+    }}
+    title={tooltip}
+    className={cn(
+      "p-2.5 rounded-full backdrop-blur-xl border shadow-2xl transform scale-90 group-hover/media:scale-100 transition-all duration-300 hover:scale-110",
+      variant === "default" 
+        ? "bg-white/10 border-white/20 text-white hover:bg-white/20" 
+        : "bg-red-500/20 border-red-500/30 text-red-200 hover:bg-red-500/30"
+    )}
+  >
+    {icon}
+  </button>
+);

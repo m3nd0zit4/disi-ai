@@ -228,8 +228,12 @@ RULES:
       params.quality = "standard";
     }
 
-    // Add new GPT Image parameters if provided
-    if (request.background) params.background = request.background;
+    // Add new GPT Image parameters if provided (OpenAI only accepts transparent | opaque | auto)
+    const VALID_BACKGROUND = ["transparent", "opaque", "auto"] as const;
+    const bg = request.background && VALID_BACKGROUND.includes(request.background as (typeof VALID_BACKGROUND)[number])
+      ? (request.background as (typeof VALID_BACKGROUND)[number])
+      : "opaque";
+    params.background = bg;
     if (request.outputFormat) params.output_format = request.outputFormat;
     if (request.n) params.n = request.n;
     if (request.moderation) params.moderation = request.moderation;
@@ -265,20 +269,31 @@ RULES:
     }
 
     // Map aspect ratio to size
-    const sizeMap: Record<string, string> = {
-      "16:9": "1280x720",
-      "9:16": "720x1280",
-      "1:1": "1024x1024",
+    // Map aspect ratio and resolution to size
+    const getSoraSize = (aspectRatio: string = "16:9", resolution: string = "720p") => {
+      const is1080p = resolution === "1080p";
+      
+      // Handle both formats: "16:9" and "1280x720"
+      if (aspectRatio === "16:9" || aspectRatio === "1280x720") return is1080p ? "1920x1080" : "1280x720";
+      if (aspectRatio === "9:16" || aspectRatio === "720x1280") return is1080p ? "1080x1920" : "720x1280";
+      if (aspectRatio === "1:1" || aspectRatio === "1024x1024") return is1080p ? "1080x1080" : "1024x1024";
+      
+      // Handle Pro specific ratios
+      if (aspectRatio === "1792x1024") return "1792x1024";
+      if (aspectRatio === "1024x1792") return "1024x1792";
+      
+      return is1080p ? "1920x1080" : "1280x720";
     };
-    const size = sizeMap[request.aspectRatio || "16:9"] || "1280x720";
+    
+    const size = getSoraSize(request.aspectRatio, request.resolution);
 
     // Start video generation job
     // @ts-ignore - videos API may not be typed yet
-    const video = await this.client.videos.create({
-      model: request.model,
+    const video = await (this.client.videos as any).create({
+      model: request.model as any,
       prompt: request.prompt,
-      size: size,
-      seconds: request.duration || 4,
+      size: size as any,
+      seconds: (request.duration || 4).toString() as any,
     });
 
     if (!video.id) {
@@ -300,21 +315,7 @@ RULES:
         // @ts-ignore - videos API may not be typed yet
         const content = await this.client.videos.downloadContent(video.id);
 
-        // Convert to base64 or get URL
-        if (content.url) {
-          return {
-            mediaUrl: content.url,
-            mediaType: "video",
-            metadata: {
-              model: request.model,
-              prompt: request.prompt,
-              duration: request.duration,
-              videoId: video.id,
-            },
-          };
-        }
-
-        // If we get binary data, convert to base64
+        // Always convert to base64 to ensure the worker can process it
         const buffer = await content.arrayBuffer();
         const base64 = Buffer.from(buffer).toString("base64");
 

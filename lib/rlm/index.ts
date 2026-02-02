@@ -13,13 +13,23 @@ export type {
   WorkerResult,
   ContextSliceSpec,
   CachedResult,
+  // Streaming types
+  StreamChunkCallback,
+  StreamStatusCallback,
+  StreamStatus,
+  StreamingOptions,
+  RLMStreamPhase,
+  RLMProgress,
 } from "./types";
 
-export { DEFAULT_RLM_CONFIG } from "./types";
+export { DEFAULT_RLM_CONFIG, DEFAULT_STREAMING_OPTIONS } from "./types";
 
 // Core components
-export { RLMOrchestrator, executeRLM } from "./orchestrator";
-export { executeSimpleRLM } from "./simple-rlm";
+export { RLMOrchestrator, executeRLM, executeRLMStreaming } from "./orchestrator";
+export { executeSimpleRLM, executeSimpleRLMStreaming } from "./simple-rlm";
+
+// Stream processing
+export { StreamProcessor, normalizeStream, type NormalizedChunk } from "./stream-normalizer";
 
 // Environment (Prompt-as-Variable)
 export { 
@@ -36,4 +46,4 @@ export { RLMCache, getGlobalCache, clearGlobalCache } from "./cache";
 export { BudgetManager } from "./budget";
 export { runPlanner } from "./planner";
 export { executeWorker } from "./worker";
-export { aggregateResults } from "./aggregator";
+export { aggregateResults, aggregateResultsStreaming } from "./aggregator";

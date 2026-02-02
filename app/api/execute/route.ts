@@ -66,17 +66,18 @@ export async function POST(req: Request) {
       models,
       newNodeId,
       inputNodeId: providedInputNodeId,
+      existingInputNodeId, // OPTIMISTIC UI: ID of node transformed from preview (already exists in frontend)
       parentNodeId, // Legacy support
       parentNodeIds, // New array support
       imageSize,
       imageQuality,
-      imageBackground,
-      imageOutputFormat,
       imageN,
-      imageModeration,
       attachments, // Legacy attachments
       fileAttachments, // New array of { storageId, type, name, size, position }
       isBranching, // NEW: Flag for lateral positioning
+      videoAspectRatio,
+      videoResolution,
+      videoDuration,
     } = body;
     // Note: body.kbIds is used directly in RAG context retrieval below
 
@@ -122,11 +123,14 @@ export async function POST(req: Request) {
       const inputNodeX = inputNodePos.x;
       const inputNodeY = inputNodePos.y;
 
-      const inputNodeId = providedInputNodeId || `input-${newNodeId}`;
+      // OPTIMISTIC UI: If existingInputNodeId is provided, the node already exists (transformed from preview)
+      // We use that ID and just need to update/confirm it in the database
+      const inputNodeId = providedInputNodeId || existingInputNodeId || `input-${newNodeId}`;
       const nodesToAdd: CanvasNode[] = [];
       const newEdges: CanvasEdge[] = [];
+      const isOptimisticNode = !!existingInputNodeId && !providedInputNodeId;
 
-      if (!providedInputNodeId) {
+      if (!providedInputNodeId && !existingInputNodeId) {
         // Create nodes and edges for file attachments (Files -> Hub)
         // Position files ABOVE the input node
         if (Array.isArray(fileAttachments)) {
@@ -138,14 +142,14 @@ export async function POST(req: Request) {
           fileAttachments.forEach((fa, i) => {
             // Use provided ID if it's a short identifier (not a full S3 key path)
             const MAX_NODE_ID_LENGTH = 100;
-            const fileNodeId = fa.id && typeof fa.id === 'string' && fa.id.length < MAX_NODE_ID_LENGTH 
-              ? fa.id 
+            const fileNodeId = fa.id && typeof fa.id === 'string' && fa.id.length < MAX_NODE_ID_LENGTH
+              ? fa.id
               : `file-${newNodeId}-${i}`;
             nodesToAdd.push({
               id: fileNodeId,
               type: "file",
-              position: fa.position || { 
-                x: filesStartX + i * (FILE_WIDTH + FILE_SPACING), 
+              position: fa.position || {
+                x: filesStartX + i * (FILE_WIDTH + FILE_SPACING),
                 y: inputNodeY - 250 // Above input node
               },
               data: {
@@ -167,7 +171,7 @@ export async function POST(req: Request) {
           });
         }
 
-        // Create new input node
+        // Create new input node (only if not optimistic and not provided)
         nodesToAdd.push({
           id: inputNodeId,
           type: "input",
@@ -188,6 +192,70 @@ export async function POST(req: Request) {
             animated: true,
           });
         });
+      } else if (isOptimisticNode) {
+        // OPTIMISTIC UI: Node already exists from frontend transformation
+        // We need to persist it to the database and confirm it
+        console.log(`[Execute] Optimistic UI: Persisting transformed node ${existingInputNodeId}`);
+
+        // Add the optimistic node to the database (it exists in frontend but not DB yet)
+        nodesToAdd.push({
+          id: inputNodeId,
+          type: "input",
+          position: { x: inputNodeX, y: inputNodeY },
+          data: {
+            text: prompt,
+            attachments,
+            createdAt: Date.now(),
+          }
+        });
+
+        // Create edges from all parent nodes to the optimistic input node
+        parents.forEach((pid: string) => {
+          newEdges.push({
+            id: `edge-${pid}-${inputNodeId}`,
+            source: pid,
+            target: inputNodeId,
+            animated: true,
+          });
+        });
+
+        // Handle file attachments for optimistic nodes too
+        if (Array.isArray(fileAttachments)) {
+          const FILE_WIDTH = 350;
+          const FILE_SPACING = 20;
+          const totalFilesWidth = fileAttachments.length * FILE_WIDTH + (fileAttachments.length - 1) * FILE_SPACING;
+          const filesStartX = inputNodeX + (350 / 2) - (totalFilesWidth / 2);
+
+          fileAttachments.forEach((fa, i) => {
+            const MAX_NODE_ID_LENGTH = 100;
+            const fileNodeId = fa.id && typeof fa.id === 'string' && fa.id.length < MAX_NODE_ID_LENGTH
+              ? fa.id
+              : `file-${newNodeId}-${i}`;
+            nodesToAdd.push({
+              id: fileNodeId,
+              type: "file",
+              position: fa.position || {
+                x: filesStartX + i * (FILE_WIDTH + FILE_SPACING),
+                y: inputNodeY - 250
+              },
+              data: {
+                fileName: fa.name,
+                fileType: fa.type,
+                fileSize: fa.size || 0,
+                storageId: fa.storageId,
+                uploadStatus: "complete",
+                createdAt: Date.now(),
+              }
+            });
+
+            newEdges.push({
+              id: `edge-${fileNodeId}-${inputNodeId}`,
+              source: fileNodeId,
+              target: inputNodeId,
+              animated: true,
+            });
+          });
+        }
       } else {
         // Update existing input node's text and attachments if they changed
         // This ensures the DB is consistent with the prompt sent
@@ -218,26 +286,55 @@ export async function POST(req: Request) {
       }
 
       const responseNodes: CanvasNode[] = [];
+      const responseEdges: CanvasEdge[] = []; // Track edges for response positioning
+
       modelsToProcess.forEach((model, i) => {
         const modelInfo = modelRegistry.getById(model.modelId);
         const isImageModel = !!modelInfo && modelInfo.primaryCapability === "image.generation";
+        const isVideoModel = !!modelInfo && modelInfo.primaryCapability === "video.generation";
+        const isDisplayModel = isImageModel || isVideoModel;
+
         const baseId = newNodeId ?? providedInputNodeId ?? `fallback-${Date.now()}`;
         const responseNodeId = `response-${baseId}-${i}`;
-        
+
         const responseNodeSize = { width: 500, height: 400 };
+
+        // Calculate position using the same logic as input nodes
+        // Include all edges (existing + new input edges + already created response edges)
+        const allEdges = [...canvas.edges, ...newEdges, ...responseEdges];
+        const allNodes = [...canvas.nodes, ...nodesToAdd, ...responseNodes];
+
+        // Check if the input node already has response children (for branching detection)
+        const existingResponseChildren = canvas.nodes.filter(n =>
+          canvas.edges.some(e => e.source === inputNodeId && e.target === n.id) &&
+          (n.type === 'response' || n.type === 'display')
+        );
+        const hasExistingResponses = existingResponseChildren.length > 0 || responseNodes.length > 0;
+
         const responseNodePos = findBestPosition({
-          nodes: [...canvas.nodes, ...nodesToAdd], // Include the newly created input node
+          nodes: allNodes,
+          edges: allEdges, // Pass edges so siblings can be detected
           anchorNodeId: inputNodeId,
+          newNodeId: responseNodeId, // Pass the ID so it can be excluded from siblings check
           newNodeSize: responseNodeSize,
-          newNodeType: isImageModel ? "display" : "response",
-          isParallel: true,
+          newNodeType: isDisplayModel ? "display" : "response",
+          isParallel: modelsToProcess.length > 1, // Only parallel if multiple models
           parallelIndex: i,
-          totalParallel: modelsToProcess.length
+          totalParallel: modelsToProcess.length,
+          isExplicitSelection: hasExistingResponses // Use lateral layout if already has responses
         });
 
-        const data: NodeData = isImageModel 
+        // Add the edge for this response node so subsequent nodes can detect it
+        responseEdges.push({
+          id: `edge-${inputNodeId}-${responseNodeId}`,
+          source: inputNodeId,
+          target: responseNodeId,
+          animated: true,
+        });
+
+        const data: NodeData = isDisplayModel 
           ? {
-              type: "image",
+              type: isImageModel ? "image" : "video",
               executionId,
               modelId: model.modelId,
               status: "pending",
@@ -254,7 +351,7 @@ export async function POST(req: Request) {
 
         responseNodes.push({
           id: responseNodeId,
-          type: isImageModel ? "display" : "response",
+          type: isDisplayModel ? "display" : "response",
           position: responseNodePos,
           data
         });
@@ -262,15 +359,8 @@ export async function POST(req: Request) {
 
       nodesToAdd.push(...responseNodes);
 
-      // Create edges from the input node (new or existing) to response nodes
-      responseNodes.forEach(node => {
-        newEdges.push({
-          id: `edge-${inputNodeId}-${node.id}`,
-          source: inputNodeId,
-          target: node.id,
-          animated: true,
-        });
-      });
+      // Add response edges (already created in the loop for proper sibling detection)
+      newEdges.push(...responseEdges);
 
       // 3. Persist nodes and edges to DB
       await convex.mutation(api.canvas.canvas.addNodesAndEdgesByClerkId, {
@@ -495,10 +585,10 @@ export async function POST(req: Request) {
 
           imageSize,
           imageQuality,
-          imageBackground,
-          imageOutputFormat,
           imageN,
-          imageModeration,
+          videoAspectRatio,
+          videoResolution,
+          videoDuration,
           attachments,
         };
         

@@ -359,6 +359,8 @@ export function KBDetailView({ kbId, selectedFileId, onFileSelect }: KBDetailVie
                 status={file.status as "uploading" | "uploaded" | "processing" | "ready" | "error"}
                 createdAt={file.createdAt}
                 seedCount={file.totalChunks}
+                s3Key={file.s3Key}
+                fileType={file.fileType}
                 onOpen={(id) => {
                   const selectedFile = files?.find(f => f._id === id);
                   onFileSelect(id, selectedFile?.fileName);

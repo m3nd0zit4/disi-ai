@@ -17,6 +17,7 @@ export function useNodePreview(
   const removeNode = useCanvasStore(state => state.removeNode);
   const addEdge = useCanvasStore(state => state.addEdge);
   const removeEdge = useCanvasStore(state => state.removeEdge);
+  const transformNode = useCanvasStore(state => state.transformNode);
   
   const previewNodeIdRef = useRef<string | null>(null);
   const previewEdgeIdRef = useRef<string | null>(null);
@@ -32,11 +33,14 @@ export function useNodePreview(
   const selectedModelsRef = useRef<SelectedModel[]>(selectedModels);
   const prevSelectedModelsJsonRef = useRef<string>("");
 
-  const cleanupPreview = useCallback(() => {
+  const cleanupPreview = useCallback((force: boolean = false) => {
     // Don't cleanup if the preview node is currently selected (user might be editing it)
-    const currentNodes = useCanvasStore.getState().nodes;
-    const isPreviewSelected = currentNodes.some(n => n.id === previewNodeIdRef.current && n.selected);
-    if (isPreviewSelected) return;
+    // UNLESS force is true (e.g., when submitting)
+    if (!force) {
+      const currentNodes = useCanvasStore.getState().nodes;
+      const isPreviewSelected = currentNodes.some(n => n.id === previewNodeIdRef.current && n.selected);
+      if (isPreviewSelected) return;
+    }
 
     if (previewNodeIdRef.current) {
       removeNode(previewNodeIdRef.current);
@@ -46,15 +50,15 @@ export function useNodePreview(
       removeEdge(previewEdgeIdRef.current);
       previewEdgeIdRef.current = null;
     }
-    
+
     // Cleanup file previews
     previewFileNodeIdsRef.current.forEach(id => removeNode(id));
     previewFileNodeIdsRef.current.clear();
     previewFileEdgeIdsRef.current.forEach(id => removeEdge(id));
     previewFileEdgeIdsRef.current.clear();
-    
-    // We don't necessarily need to clear the map, but we can if we want to reset state for this preview session
-    // hasManuallyMovedPerAnchorMap.current = {}; 
+
+    // Clear the manual movement map to reset state for next preview session
+    hasManuallyMovedPerAnchorMap.current = {};
   }, [removeNode, removeEdge]);
 
   const ensureInputPreview = useCallback((currentNodes: Node[], currentPrompt?: string) => {
@@ -316,10 +320,74 @@ export function useNodePreview(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prompt]);
 
+  /**
+   * Transform the preview node into a real input node (Flowith Pattern - Optimistic UI)
+   * Instead of deleting the preview and creating a new node, we transform it in place.
+   * This prevents flickering and provides a seamless user experience.
+   *
+   * @returns The new permanent node ID, or null if no preview exists
+   */
+  const transformPreviewToReal = useCallback((): { nodeId: string; position: { x: number; y: number }; parentNodeIds: string[] } | null => {
+    const currentNodes = useCanvasStore.getState().nodes;
+    const currentEdges = useCanvasStore.getState().edges;
+
+    // Find the preview node
+    const previewNode = currentNodes.find(n => n.id === previewNodeIdRef.current);
+    if (!previewNode || !previewNodeIdRef.current) {
+      return null;
+    }
+
+    // Generate permanent ID (strip 'preview-' prefix and create input ID)
+    const baseId = previewNodeIdRef.current.replace('preview-', '');
+    const permanentId = `input-${baseId}`;
+
+    // Find parent nodes from the preview edges
+    const previewEdges = currentEdges.filter(e => e.target === previewNodeIdRef.current);
+    const parentNodeIds = [...new Set(previewEdges.map(e => e.source))];
+
+    // Store position before transformation
+    const position = { ...previewNode.position };
+
+    // Transform the preview node into a real input node
+    transformNode(
+      previewNodeIdRef.current,
+      permanentId,
+      'input',
+      {
+        status: 'optimistic', // Mark as optimistic until backend confirms
+        transformedAt: Date.now()
+      }
+    );
+
+    // Also transform any preview file nodes connected to this preview
+    previewFileNodeIdsRef.current.forEach(filePreviewId => {
+      const fileNode = currentNodes.find(n => n.id === filePreviewId);
+      if (fileNode) {
+        const permanentFileId = filePreviewId.replace('preview-file-', 'file-');
+        transformNode(
+          filePreviewId,
+          permanentFileId,
+          'file',
+          { status: 'optimistic', isPreview: false }
+        );
+      }
+    });
+
+    // Clear refs (the nodes still exist, just with new IDs)
+    previewNodeIdRef.current = null;
+    previewEdgeIdRef.current = null;
+    previewFileNodeIdsRef.current.clear();
+    previewFileEdgeIdsRef.current.clear();
+    hasManuallyMovedPerAnchorMap.current = {};
+
+    return { nodeId: permanentId, position, parentNodeIds };
+  }, [transformNode]);
+
   return {
     handlePromptChange,
     cleanupPreview,
     addPreviewFile,
     previewNodeIdRef,
+    transformPreviewToReal,
   };
 }

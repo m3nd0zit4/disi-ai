@@ -1,11 +1,11 @@
 import { BaseEdge, EdgeProps, getBezierPath, EdgeLabelRenderer } from '@xyflow/react';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useCanvasStore } from '@/hooks/useCanvasStore';
+import { useCanvasStore, CanvasState } from '@/hooks/useCanvasStore';
 import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useParams } from 'next/navigation';
-import { Scissors } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Id } from '@/convex/_generated/dataModel';
 
 export default function CustomEdge({
@@ -24,12 +24,23 @@ export default function CustomEdge({
 }: EdgeProps) {
   const params = useParams();
   const canvasId = params.canvasId as Id<"canvas">;
-  
+
   const addEdgeToStore = useCanvasStore(state => state.addEdge);
   const removeEdgeFromStore = useCanvasStore(state => state.removeEdge);
+  const nodes = useCanvasStore((state: CanvasState) => state.nodes);
   const removeEdgeMutation = useMutation(api.canvas.removeEdge);
-  
+
   const [isHovered, setIsHovered] = React.useState(false);
+
+  // Check if source or target node is selected
+  const isConnectedNodeSelected = useMemo(() => {
+    return nodes.some(node =>
+      (node.id === source || node.id === target) && node.selected
+    );
+  }, [nodes, source, target]);
+
+  // Combined highlight state
+  const isHighlighted = selected || isHovered || isConnectedNodeSelected;
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -40,9 +51,10 @@ export default function CustomEdge({
     targetPosition,
   });
 
-  const onDoubleClick = async (event: React.MouseEvent) => {
+  const onRemoveEdge = async (event: React.MouseEvent) => {
     event.stopPropagation();
-    
+    event.preventDefault();
+
     // Backend update
     if (canvasId) {
         // Optimistic update
@@ -57,8 +69,8 @@ export default function CustomEdge({
                 id,
                 source,
                 target,
-                type: 'custom', 
-                animated: true 
+                type: 'custom',
+                animated: true
             });
         }
     }
@@ -73,46 +85,55 @@ export default function CustomEdge({
         strokeOpacity={0}
         strokeWidth={20}
         className="cursor-pointer interactive-edge"
-        onDoubleClick={onDoubleClick}
+        onDoubleClick={onRemoveEdge}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       />
+      {/* Minimalist edge - thin and subtle */}
       <BaseEdge
         path={edgePath}
         markerEnd={markerEnd}
         style={{
           ...style,
-          strokeWidth: (selected || isHovered) ? 3 : 2,
-          stroke: (selected || isHovered) ? 'var(--primary)' : style.stroke,
-          opacity: (selected || isHovered) ? 0.8 : 0.4,
-          transition: 'stroke 0.2s, stroke-width 0.2s, opacity 0.2s',
+          strokeWidth: isHighlighted ? 1.5 : 1,
+          stroke: isHighlighted ? 'var(--primary)' : (style.stroke || 'var(--muted-foreground)'),
+          opacity: isHighlighted ? 0.6 : 0.25,
+          transition: 'stroke 0.2s ease, stroke-width 0.2s ease, opacity 0.2s ease',
         }}
-        className={cn(
-          "transition-all duration-300",
-          (selected || isHovered) ? "opacity-100" : "opacity-60"
-        )}
+        className="transition-all duration-200"
       />
-      
-      {/* Scissors Icon on Hover */}
+
+      {/* Delete Button - ALWAYS visible, minimalist style */}
       <EdgeLabelRenderer>
         <div
             style={{
                 position: 'absolute',
                 transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
                 pointerEvents: 'all',
-                opacity: isHovered ? 1 : 0,
-                transition: 'opacity 0.2s',
             }}
             className="nodrag nopan"
         >
             <button
                 type="button"
-                aria-label="Disconnect edge"
-                className="bg-background border border-border rounded-full p-1 shadow-sm hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                onClick={onDoubleClick} 
-                title="Double-click edge or click here to disconnect"
+                aria-label="Remove connection"
+                className={cn(
+                  "group/btn flex items-center justify-center",
+                  "w-5 h-5 rounded-full",
+                  "bg-background/80 backdrop-blur-sm",
+                  "border border-border/50",
+                  "text-muted-foreground/50",
+                  "transition-all duration-200 ease-out",
+                  // Hover state - more prominent
+                  "hover:w-6 hover:h-6",
+                  "hover:bg-red-500/10 hover:border-red-500/50",
+                  "hover:text-red-500",
+                  "hover:shadow-sm",
+                  "active:scale-90"
+                )}
+                onClick={onRemoveEdge}
+                title="Click to disconnect"
             >
-                <Scissors size={14} />
+                <X size={10} className="transition-all duration-200 group-hover/btn:scale-110" />
             </button>
         </div>
       </EdgeLabelRenderer>

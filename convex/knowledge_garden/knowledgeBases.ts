@@ -1,9 +1,9 @@
 import { v } from "convex/values";
-import { mutation, query, action } from "../_generated/server";
+import { mutation, query, action, internalMutation } from "../_generated/server";
 import { Id, Doc } from "../_generated/dataModel";
 import { OpenAIService } from "../../lib/aiServices/openai";
 import { searchSimilar } from "../../lib/upstash/upstash-vector";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 
 export const list = query({
   args: {},
@@ -145,13 +145,13 @@ export const deleteKb = action({
     }
 
     // 3. Delete the KB record
-    await ctx.runMutation(api.knowledge_garden.knowledgeBases.deleteKbInternal, { id: args.id });
+    await ctx.runMutation(internal.knowledge_garden.knowledgeBases.deleteKbInternal, { id: args.id });
 
     console.log(`[KnowledgeBases] Successfully deleted KB ${args.id} with cascade`);
   },
 });
 
-export const deleteKbInternal = mutation({
+export const deleteKbInternal = internalMutation({
   args: { id: v.id("knowledgeBases") },
   handler: async (ctx, args) => {
     // Internal mutation called by deleteKb action after cleanup

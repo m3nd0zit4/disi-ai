@@ -14,6 +14,7 @@
 
 import { getAIService } from "@/lib/aiServices";
 import { RLMCache, getGlobalCache } from "./cache";
+import { resolveModelId, getApiKeyForProvider, normalizeProvider } from "./model-resolver";
 
 // =============================================================================
 // Types
@@ -344,12 +345,12 @@ ${targetSlice.content}
 Answer concisely and accurately.`;
 
     // Call LLM
-    const provider = this.config.provider;
-    const apiKey = this.config.apiKey || process.env[`${provider.toUpperCase()}_API_KEY`] || "";
+    const provider = normalizeProvider(this.config.provider);
+    const apiKey = getApiKeyForProvider(this.config.provider, this.config.apiKey);
     const service = getAIService(provider, apiKey);
 
     const response = await service.generateResponse({
-      model: this.config.modelId,
+      model: resolveModelId(this.config.modelId),
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: queryTemplate },

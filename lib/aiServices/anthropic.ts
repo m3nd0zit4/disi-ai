@@ -11,8 +11,12 @@ export class AnthropicService extends BaseAIService {
 
   //* Generate a response
   async generateResponse(request: AIRequest): Promise<AIResponse> {
+    console.log("[AnthropicService] generateResponse called:", {
+      model: request.model,
+      messageCount: request.messages.length,
+      maxTokens: request.maxTokens,
+    });
 
-    
     // Format messages
     const messages = request.messages
       .filter(m => m.role !== "system")
@@ -20,8 +24,10 @@ export class AnthropicService extends BaseAIService {
         role: m.role as "user" | "assistant",
         content: m.content
       }));
-  
+
     const systemMessage: string | undefined = request.messages.find(m => m.role === "system")?.content;
+
+    console.log("[AnthropicService] Calling Anthropic API with model:", request.model);
 
     const completion = await this.client.messages.create({
       model: request.model,
@@ -30,6 +36,8 @@ export class AnthropicService extends BaseAIService {
       messages,
       stream: false,
     }, { signal: request.signal });
+
+    console.log("[AnthropicService] Response received, stop_reason:", completion.stop_reason);
 
     const tokens = completion.usage.input_tokens + completion.usage.output_tokens;
     

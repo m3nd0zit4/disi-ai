@@ -280,13 +280,17 @@ export default defineSchema({
     // Stats
     executionCount: v.optional(v.number()),
     lastExecutedAt: v.optional(v.number()),
-    
+
+    // Pinned
+    isPinned: v.optional(v.boolean()),
+
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
     viewport: v.optional(v.any()),
   })
     .index("by_user", ["userId"])
     .index("by_user_and_updated", ["userId", "updatedAt"])
+    .index("by_user_pinned", ["userId", "isPinned"])
     .searchIndex("search_name", {
       searchField: "name",
       filterFields: ["userId", "isPublic"],

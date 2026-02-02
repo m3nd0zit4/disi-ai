@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
 import { AlertCircle, Settings, Check } from "lucide-react";
 import Link from "next/link";
-import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +38,8 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
     reasoning, 
     structuredReasoning,
     content,
+    thinkingContent,
+    progressMessage,
     isProModel, 
     isUserFree, 
     status, 
@@ -52,7 +53,6 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isAddingToKG, setIsAddingToKG] = useState(false);
   const [addedToKG, setAddedToKG] = useState(false);
-  const edges = useCanvasStore((state: CanvasState) => state.edges);
   const pathname = usePathname();
   const theme = useTheme().theme;
 
@@ -65,9 +65,9 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
   const createCandidate = useMutation(api.knowledge_garden.seedCandidates.createCandidate);
   const gardenSettings = useQuery(api.users.settings.getGardenSettings);
 
-  // Normalize data (moved up for use in callback)
+  // Normalize data: content = final answer (markdown), reasoning = thinking/reasoning (separate, markdown)
   const displayMarkdown = content?.markdown || text || "";
-  const displayReasoning = structuredReasoning?.text || reasoning || "";
+  const displayReasoning = structuredReasoning?.text || reasoning || thinkingContent || "";
 
   // Handle adding to Knowledge Garden
   const handleAddToKG = useCallback(async () => {
@@ -116,26 +116,11 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
     }
   }, [displayMarkdown, isAddingToKG, addedToKG, createCandidate, canvasIdFromPath, id, gardenSettings, toast]);
 
-  const incomingEdges = useMemo(
-    () => edges.filter(edge => edge.target === id),
-    [edges, id]
-  );
-  const hasIncoming = incomingEdges.length > 0;
-
   const modelInfo = modelRegistry.getById(modelId || "");
   const modelIcon = modelInfo?.icon;
 
   return (
     <div className="group relative select-none">
-      {hasIncoming && (
-        <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 bg-primary/5 backdrop-blur-xl border border-primary/10 rounded-full animate-in fade-in slide-in-from-bottom-1 duration-500">
-          <div className="size-1 rounded-full bg-primary/60 animate-pulse" />
-          <span className="text-[9px] font-bold text-primary/60 uppercase tracking-wider">
-            {incomingEdges.length}
-          </span>
-        </div>
-      )}
-
       <div 
         className={cn(
           "w-[350px] backdrop-blur-2xl transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5",
@@ -147,7 +132,7 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
           borderColor: color && color !== 'transparent' ? color.replace('0.15', '0.3') : undefined
         }}
       >
-        <NodeHandle type="target" position={Position.Top} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+        <NodeHandle type="target" position={Position.Top} className="group-hover:!opacity-100" />
         
         <div className="p-6 space-y-4">
           {isLocked ? (
@@ -167,7 +152,14 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
             </div>
           ) : (
             <>
-              {/* Reasoning Block or Shining Text */}
+              {/* Progress message (multi-step / RLM) */}
+              {progressMessage && (status === "thinking" || status === "streaming") && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/5 border border-primary/10 text-[11px] font-medium text-primary/80 mb-3">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  <span>{progressMessage}</span>
+                </div>
+              )}
+              {/* Reasoning Block or Shining Text — never mixed with final content */}
               {displayReasoning ? (
                 <AIThinkingBlock reasoning={displayReasoning} modelName={modelInfo?.displayName || modelId} />
               ) : status === "thinking" ? (
@@ -328,7 +320,7 @@ export const ResponseNode = memo(({ id, data, selected }: NodeProps) => {
           </div>
         </div>
 
-        <NodeHandle type="source" position={Position.Bottom} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+        <NodeHandle type="source" position={Position.Bottom} className="group-hover:!opacity-100" />
       </div>
     </div>
   );

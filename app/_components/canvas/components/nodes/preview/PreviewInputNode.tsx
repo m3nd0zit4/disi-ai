@@ -27,7 +27,7 @@ export const PreviewInputNode = memo(({ data, selected }: NodeProps) => {
           borderColor: color && color !== 'transparent' ? adjustAlpha(color, 0.3) : undefined
         }}
       >
-        <NodeHandle type="target" position={Position.Top} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+        <NodeHandle type="target" position={Position.Top} className="group-hover:!opacity-100" />
         
         <div className="p-6 space-y-4">
           <div className="prose prose-sm dark:prose-invert max-w-none text-[14px] leading-relaxed text-foreground/90 font-medium whitespace-pre-wrap selection:bg-primary/20">
@@ -90,7 +90,7 @@ export const PreviewInputNode = memo(({ data, selected }: NodeProps) => {
           </div>
         </div>
 
-        <NodeHandle type="source" position={Position.Bottom} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+        <NodeHandle type="source" position={Position.Bottom} className="group-hover:!opacity-100" />
       </div>
     </div>
   );

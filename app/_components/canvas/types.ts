@@ -10,6 +10,10 @@ export interface BaseNodeData {
   status?: "pending" | "thinking" | "streaming" | "complete" | "error" | "uploading";
   prompt?: string;
   text?: string;
+  /** Live reasoning/thinking from provider (streaming); rendered separately from content */
+  thinkingContent?: string;
+  /** Progress message for multi-step generation (e.g. "Step 2/3: Researching...") */
+  progressMessage?: string;
 }
 
 
@@ -44,6 +48,7 @@ export interface DisplayNodeData extends BaseNodeData {
     width?: number;
     height?: number;
   };
+  progress?: number;
 }
 
 export interface FileNodeData extends BaseNodeData {

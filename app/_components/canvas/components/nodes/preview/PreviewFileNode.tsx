@@ -42,7 +42,7 @@ export const PreviewFileNode = memo(({ data, selected }: NodeProps) => {
           selected ? "ring-1 ring-primary/30 shadow-lg" : "shadow-sm hover:border-primary/20"
         )}
       >
-        <NodeHandle type="target" position={Position.Top} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+        <NodeHandle type="target" position={Position.Top} className="group-hover:!opacity-100" />
         
         {/* Minimalist Content */}
         <div className="p-3 flex flex-col gap-2">
@@ -132,7 +132,7 @@ export const PreviewFileNode = memo(({ data, selected }: NodeProps) => {
           </div>
         </div>
 
-        <NodeHandle type="source" position={Position.Bottom} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+        <NodeHandle type="source" position={Position.Bottom} className="group-hover:!opacity-100" />
       </div>
     </div>
   );

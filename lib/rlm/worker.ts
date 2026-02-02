@@ -10,6 +10,7 @@ import { distillContext } from "@/lib/reasoning/distillation";
 import { getAIService } from "@/lib/aiServices";
 import { WorkerResult, RLMConfig, SubQueryProposal } from "./types";
 import { RLMCache } from "./cache";
+import { resolveModelId, getApiKeyForProvider, normalizeProvider } from "./model-resolver";
 
 const WORKER_SYSTEM_PROMPT = `You are a focused worker in a Recursive Language Model (RLM) system.
 Your task: Answer the specific question using ONLY the provided context.
@@ -74,12 +75,12 @@ ${contextStr}
 Answer the question based on the context above.`;
 
     // Call LLM
-    const provider = config.provider || "openai";
-    const key = apiKey || process.env[`${provider.toUpperCase()}_API_KEY`] || "";
+    const provider = normalizeProvider(config.provider);
+    const key = getApiKeyForProvider(config.provider, apiKey);
     const service = getAIService(provider, key);
 
     const response = await service.generateResponse({
-      model: config.modelId || "gpt-4o",
+      model: resolveModelId(config.modelId),
       messages: [
         { role: "system", content: WORKER_SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
