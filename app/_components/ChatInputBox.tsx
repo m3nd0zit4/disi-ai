@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ArrowUp, Mic, Plus, Github, Figma, FolderOpen, X } from "lucide-react";
 import Image from "next/image";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import { cn } from "@/lib/utils";
 import { useAIContext } from "@/context/AIContext";
 import { useMutation, useAction } from "convex/react";
@@ -20,6 +20,7 @@ import { useRouter, useParams } from "next/navigation";
 import ModelSelector from "./chat/ModelSelector";
 import { KBSelector } from "./chat/KBSelector";
 import ConfigImageSelector from "./chat/ConfigImageSelector";
+import ConfigVideoSelector from "./chat/ConfigVideoSelector";
 import { useDialog } from "@/hooks/useDialog";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
 import { FileNodeData } from "./canvas/types";
@@ -52,11 +53,18 @@ const PASTE_THRESHOLD = 200; // characters threshold for showing as pasted conte
 
 import { isTextualFile, readFileAsText } from "@/lib/file-utils";
 
+export interface ChatInputBoxHandle {
+  setPrompt: (text: string) => void;
+}
+
 interface ChatInputBoxProps {
   canvasId?: Id<"canvas">;
 }
 
-export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxProps) {
+const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function ChatInputBox(
+  { canvasId: propCanvasId },
+  ref
+) {
   const { selectedModels, hasModelsSelected } = useAIContext();
   const router = useRouter();
   const params = useParams();
@@ -65,13 +73,16 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
 
   const [prompt, setPrompt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  useImperativeHandle(ref, () => ({ setPrompt }), []);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [imageSize, setImageSize] = useState<string>("");
   const [imageQuality, setImageQuality] = useState<string>("");
-  const [imageBackground, setImageBackground] = useState<string>("");
-  const [imageOutputFormat, setImageOutputFormat] = useState<string>("");
   const [imageN, setImageN] = useState<number>(1);
-  const [imageModeration, setImageModeration] = useState<string>("");
+  
+  const [videoAspectRatio, setVideoAspectRatio] = useState("16:9");
+  const [videoResolution, setVideoResolution] = useState("720p");
+  const [videoDuration, setVideoDuration] = useState(4);
   
   const [selectedKbIds, setSelectedKbIds] = useState<Id<"knowledgeBases">[]>([]);
 
@@ -96,7 +107,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   const createFile = useAction(api.system.files.createFile);
 
   // Use custom hook for preview logic
-  const { handlePromptChange, cleanupPreview, previewNodeIdRef } = useNodePreview(prompt, setPrompt, selectedModels);
+  const { handlePromptChange, cleanupPreview, previewNodeIdRef, transformPreviewToReal } = useNodePreview(prompt, setPrompt, selectedModels);
 
   // Track object URLs for revocation
   const objectUrlsRef = useRef<Set<string>>(new Set());
@@ -123,6 +134,41 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
       urls.clear();
     };
   }, []);
+
+  // Track previous model ID to reset settings on change
+  const prevModelIdRef = useRef<string | null>(null);
+
+  // Set default image settings when model changes
+  useEffect(() => {
+    if (hasModelsSelected) {
+      const currentModelId = selectedModels[0].modelId;
+      
+      // Only reset if the model actually changed
+      if (currentModelId !== prevModelIdRef.current) {
+        const model = modelRegistry.getById(currentModelId);
+        const options = model?._providerMetadata?.imageGenerationOptions;
+        
+        if (options) {
+          if (options.sizes?.length) setImageSize(options.sizes[0]);
+          // Always pick the last (highest) quality option if available
+          if (options.quality?.length) setImageQuality(options.quality[options.quality.length - 1]);
+          if (options.n?.length) setImageN(options.n[0]);
+        }
+        
+        // Handle video options if present
+        const videoOptions = model?._providerMetadata?.metadata?.videoGenerationOptions || model?._providerMetadata?.videoGenerationOptions;
+        if (videoOptions) {
+          if (videoOptions.aspectRatios?.length) setVideoAspectRatio(videoOptions.aspectRatios[0]);
+          if (videoOptions.resolutions?.length) setVideoResolution(videoOptions.resolutions[0]);
+          if (videoOptions.durationSeconds?.length) setVideoDuration(videoOptions.durationSeconds[0]);
+        }
+        
+        prevModelIdRef.current = currentModelId;
+      }
+    } else {
+      prevModelIdRef.current = null;
+    }
+  }, [selectedModels, hasModelsSelected]);
 
   const nodes = useCanvasStore(state => state.nodes);
   
@@ -229,7 +275,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           setImageSize(prev => prev || options.sizes?.[0] || "");
         }
         if (options.quality && options.quality.length > 0) {
-          setImageQuality(prev => prev || options.quality?.[0] || "");
+          setImageQuality(prev => prev || options.quality?.[options.quality.length - 1] || "");
         }
 
         if (options.modelType === "gpt-image") {
@@ -242,6 +288,25 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           if (options.moderation && options.moderation.length > 0) {
             setImageModeration(prev => prev || options.moderation?.[0] || "");
           }
+        }
+      }
+
+      const isVideoModel = modelInfo?.primaryCapability === "video.generation";
+      const videoProviderMeta = modelInfo?._providerMetadata as { 
+        provider?: string; 
+        metadata?: { videoGenerationOptions?: { aspectRatios?: string[]; resolutions?: string[]; durationSeconds?: number[] } } 
+      } | undefined;
+
+      if (isVideoModel && videoProviderMeta?.metadata?.videoGenerationOptions) {
+        const options = videoProviderMeta.metadata.videoGenerationOptions;
+        if (options.aspectRatios && options.aspectRatios.length > 0) {
+          setVideoAspectRatio(prev => prev || options.aspectRatios?.[0] || "");
+        }
+        if (options.resolutions && options.resolutions.length > 0) {
+          setVideoResolution(prev => prev || options.resolutions?.[0] || "");
+        }
+        if (options.durationSeconds && options.durationSeconds.length > 0) {
+          setVideoDuration(prev => prev || options.durationSeconds?.[0] || 0);
         }
       }
     }
@@ -443,9 +508,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
 
     setIsLoading(true);
     isSubmittingRef.current = true;
-    
-    let optimisticInputId: string | undefined = undefined;
-    
+
     try {
       let currentCanvasId = canvasId;
 
@@ -470,80 +533,51 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
       // Determine parent nodes
       const currentEdges = useCanvasStore.getState().edges;
       const currentNodes = useCanvasStore.getState().nodes;
-      
+
       // Check if we have a selected input node (Free Node or existing Input Node)
       const selectedInputNode = currentNodes.find(n => n.selected && n.type === 'input' && !n.id.startsWith('preview-'));
-      
+
       let parentNodeIds: string[] = [];
-      let previewPosition = undefined;
+      let nodePosition = undefined;
+      let existingInputNodeId: string | undefined = undefined;
 
       if (selectedInputNode) {
         // If a node is selected, it is our parent
         parentNodeIds = [selectedInputNode.id];
-        previewPosition = selectedInputNode.position;
+        nodePosition = selectedInputNode.position;
       } else {
-        // Fallback to preview node logic
-        const previewEdges = currentEdges.filter(e => e.target === previewNodeIdRef.current);
-        parentNodeIds = [...new Set(previewEdges.map(e => e.source))];
-        
-        if (parentNodeIds.length === 0) {
-          const selectedNode = currentNodes.find(n => n.selected && n.id !== previewNodeIdRef.current);
-          if (selectedNode) {
-              parentNodeIds.push(selectedNode.id);
-          }
-        }
+        // OPTIMISTIC UI (Flowith Pattern): Transform preview into real node
+        // Instead of deleting and recreating, we transform in place to prevent flickering
+        const transformResult = transformPreviewToReal();
 
-        const previewNode = currentNodes.find(n => n.id === previewNodeIdRef.current);
-        // CRITICAL: Use the preview node's position if it exists (handles manual movement)
-        if (previewNode) {
-            previewPosition = previewNode.position;
+        if (transformResult) {
+          // Preview was transformed into a real node
+          existingInputNodeId = transformResult.nodeId;
+          nodePosition = transformResult.position;
+          parentNodeIds = transformResult.parentNodeIds;
+        } else {
+          // No preview exists - fallback to old logic for edge cases
+          const previewEdges = currentEdges.filter(e => e.target === previewNodeIdRef.current);
+          parentNodeIds = [...new Set(previewEdges.map(e => e.source))];
+
+          if (parentNodeIds.length === 0) {
+            const selectedNode = currentNodes.find(n => n.selected && n.id !== previewNodeIdRef.current);
+            if (selectedNode) {
+              parentNodeIds.push(selectedNode.id);
+            }
+          }
+
+          // Generate a new ID since there's no preview to transform
+          cleanupPreview(true);
         }
       }
 
-      const previewId = previewNodeIdRef.current;
-      // Generate a base ID for the new operation
-      const baseId = previewId ? previewId.replace('preview-', '') : `${Date.now()}`;
+      // Generate node ID - use existing transformed node or create new
+      const baseId = existingInputNodeId?.replace('input-', '') || `${Date.now()}`;
       const newNodeId = baseId;
-      optimisticInputId = `input-${baseId}`;
-      
-      // Files are now nodes on canvas, no need to pass attachments
 
       // Determine if this is a branching action (explicit selection)
       const isBranching = !!selectedInputNode;
-
-      // OPTIMISTIC UI: Create the input node immediately if it doesn't exist
-      if (!selectedInputNode) {
-         const viewport = useCanvasStore.getState().viewport || { x: 0, y: 0, zoom: 1 };
-         const inputNodePos = previewPosition || { 
-            x: -viewport.x / viewport.zoom + 100, 
-            y: -viewport.y / viewport.zoom + 100 
-         };
-         
-         const optimisticInputNode = {
-            id: optimisticInputId,
-            type: "input",
-            position: inputNodePos,
-            data: {
-               text: prompt,
-               createdAt: Date.now(),
-            }
-         };
-         useCanvasStore.getState().addNode(optimisticInputNode);
-         
-         // Create edges from files to this new input node
-         if (optimisticInputId) {
-           const targetId = optimisticInputId;
-           pendingFiles.forEach(pf => {
-              const edgeId = `edge-${pf.nodeId}-${targetId}`;
-              useCanvasStore.getState().addEdge({
-                 id: edgeId,
-                 source: pf.nodeId,
-                 target: targetId,
-                 animated: true
-              });
-           });
-         }
-      }
 
       const response = await fetch("/api/execute", {
         method: "POST",
@@ -557,6 +591,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           models: modelsToUse,
           newNodeId: newNodeId,
           inputNodeId: selectedInputNode?.id, // If we selected an existing node, use it. Otherwise undefined.
+          existingInputNodeId, // OPTIMISTIC UI: If we transformed a preview, pass its new ID so backend doesn't create duplicate
           kbIds: selectedKbIds.length > 0 ? selectedKbIds : undefined, // Include selected KBs for RAG
           parentNodeIds: parentNodeIds,
           isBranching, // Pass the flag
@@ -564,7 +599,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
           fileAttachments: pendingFiles
             .filter(f => f.storageId && f.storageId !== "")
             .map(f => {
-              const node = currentNodes.find(n => n.id === f.nodeId);
+              const node = useCanvasStore.getState().nodes.find(n => n.id === f.nodeId);
               return {
                 id: f.nodeId, // PASS THE ID!
                 storageId: f.storageId,
@@ -574,13 +609,13 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
               };
             }),
 
-          position: previewPosition,
+          position: nodePosition,
           imageSize,
           imageQuality,
-          imageBackground,
-          imageOutputFormat,
           imageN,
-          imageModeration,
+          videoAspectRatio,
+          videoResolution,
+          videoDuration,
         })
       });
 
@@ -589,7 +624,7 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
         throw new Error(error.error || "Failed to process request");
       }
 
-      cleanupPreview();
+      // Cleanup already done before API call, but ensure it's clean
       setPrompt("");
       setPendingFiles([]); // Clear pending files after they are linked
 
@@ -599,17 +634,6 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
 
     } catch (error) {
       console.error("Error sending message:", error);
-      
-      // ROLLBACK: Remove optimistic node and edges if API call fails
-      if (optimisticInputId) {
-        const store = useCanvasStore.getState();
-        store.removeNode(optimisticInputId);
-        
-        pendingFiles.forEach(pf => {
-          const edgeId = `edge-${pf.nodeId}-${optimisticInputId}`;
-          store.removeEdge(edgeId);
-        });
-      }
 
       showDialog({
         title: "Error",
@@ -625,11 +649,11 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
   const selectedModel = hasModelsSelected ? selectedModels[0] : null;
   const modelInfo = selectedModel ? modelRegistry.getById(selectedModel.modelId) : null;
   const isImageModel = modelInfo?.primaryCapability === "image.generation";
-  type ImageGenOptionsBottom = { sizes?: string[]; quality?: string[]; background?: string[]; output_format?: string[]; moderation?: string[]; modelType?: string };
-  const providerMetaBottom = modelInfo?._providerMetadata as { provider?: string; metadata?: { imageGenerationOptions?: ImageGenOptionsBottom } } | undefined;
-  const imageOptions = providerMetaBottom?.provider === "GPT"
-    ? providerMetaBottom.metadata?.imageGenerationOptions
-    : null;
+  const imageOptions = (modelInfo?._providerMetadata as { imageGenerationOptions?: unknown })?.imageGenerationOptions;
+
+  const isVideoModel = modelInfo?.primaryCapability === "video.generation";
+  const videoOptions = (modelInfo?._providerMetadata as { videoGenerationOptions?: unknown })?.videoGenerationOptions;
+  const hasVideoOptions = !!videoOptions;
 
   return (
     <div 
@@ -651,28 +675,35 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
         value={prompt}
         onValueChange={handlePromptChange}
         onSubmit={handleSubmit}
-        className="border-primary/5 bg-card/70 backdrop-blur-3xl relative z-10 w-full rounded-2xl border p-0 pt-0.5 shadow-xl"
+        className="border border-border/30 dark:border-transparent bg-card/70 dark:bg-card/80 backdrop-blur-3xl relative z-10 w-full rounded-2xl p-0 pt-0.5 shadow-xl"
       >
         <div className="flex flex-col">
           <div className="px-3 pt-1.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <ModelSelector />
-              <KBSelector selectedKbIds={selectedKbIds} onSelect={setSelectedKbIds} />
-              
+              {!isImageModel && !isVideoModel && (
+                <KBSelector selectedKbIds={selectedKbIds} onSelect={setSelectedKbIds} />
+              )}
+
               {isImageModel && imageOptions && (
                 <ConfigImageSelector 
                   imageSize={imageSize}
                   setImageSize={setImageSize}
                   imageQuality={imageQuality}
                   setImageQuality={setImageQuality}
-                  imageBackground={imageBackground}
-                  setImageBackground={setImageBackground}
-                  imageOutputFormat={imageOutputFormat}
-                  setImageOutputFormat={setImageOutputFormat}
                   imageN={imageN}
                   setImageN={setImageN}
-                  imageModeration={imageModeration}
-                  setImageModeration={setImageModeration}
+                />
+              )}
+
+              {isVideoModel && hasVideoOptions && (
+                <ConfigVideoSelector 
+                  videoAspectRatio={videoAspectRatio}
+                  setVideoAspectRatio={setVideoAspectRatio}
+                  videoDuration={videoDuration}
+                  setVideoDuration={setVideoDuration}
+                  videoResolution={videoResolution}
+                  setVideoResolution={setVideoResolution}
                 />
               )}
             </div>
@@ -691,12 +722,10 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
                 <div key={pf.nodeId} className="relative group">
                   <div className="h-12 w-12 rounded-lg border border-border bg-muted/50 overflow-hidden flex items-center justify-center relative">
                     {pf.preview ? (
-                      <Image 
+                      <img 
                         src={pf.preview.startsWith('blob:') || pf.preview.startsWith('http') ? pf.preview : `/api/file?key=${encodeURIComponent(pf.preview)}&redirect=true`} 
                         alt={pf.fileName} 
-                        fill
-                        className="object-cover" 
-                        unoptimized
+                        className="h-full w-full object-cover"
                       />
                     ) : (
                       <span className="text-[9px] text-muted-foreground uppercase">{pf.fileName.split('.').pop()}</span>
@@ -803,4 +832,6 @@ export default function ChatInputBox({ canvasId: propCanvasId }: ChatInputBoxPro
       </PromptInput>
     </div>
   );
-}
+});
+
+export default ChatInputBox;

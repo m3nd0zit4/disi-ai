@@ -15,7 +15,13 @@ export class XAIService extends BaseAIService {
   //* Generate a response (non-streaming)
   async generateResponse(request: AIRequest): Promise<AIResponse> {
     const startTime = Date.now();
-    
+
+    console.log("[XAIService] generateResponse called:", {
+      model: request.model,
+      messageCount: request.messages.length,
+      temperature: request.temperature,
+    });
+
     const completion = await this.client.chat.completions.create({
       model: request.model,
       messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
@@ -23,6 +29,8 @@ export class XAIService extends BaseAIService {
       max_tokens: request.maxTokens,
       stream: false,
     });
+
+    console.log("[XAIService] Response received, finish_reason:", completion.choices[0]?.finish_reason);
 
     const responseTime = (Date.now() - startTime) / 1000;
     const tokens = completion.usage?.total_tokens ?? 0;

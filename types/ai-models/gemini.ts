@@ -45,6 +45,10 @@ export interface GeminiMetadata {
   
   // For image generation models (Nano Banana)
   imageGenerationOptions?: {
+    modelType?: string;
+    sizes?: string[];
+    quality?: string[];
+    n?: number[];
     modelName: "Nano Banana" | "Nano Banana Pro";
     aspectRatios: {
       ratio: string;                  // e.g., "1:1", "16:9"

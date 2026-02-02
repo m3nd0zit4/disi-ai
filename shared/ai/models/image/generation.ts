@@ -272,70 +272,6 @@ export const IMAGE_GENERATION_MODELS: SpecializedModel[] = [
         },
     },
 
-    //* DALL-E 3
-    {
-        id: "dall-e-3",
-        category: "image",
-        provider: "GPT",
-        providerModelId: "dall-e-3",
-        name: "DALL-E 3",
-        description: "The latest DALL-E model that understands significantly more nuance and detail than previous systems",
-        premium: true,
-        enabled: true,
-        icon: {
-            light: "/icons/gpt-claro.svg",
-            dark: "/icons/gpt-oscuro.svg",
-        },
-        providerMetadata: {
-            provider: "GPT",
-            metadata: {
-                contextWindow: 0,
-                maxOutputTokens: 0,
-                inputModalities: ["text"],
-                outputModalities: ["image"],
-                endpoints: {
-                    chatCompletions: false,
-                    responses: false,
-                    realtime: false,
-                    assistants: false,
-                    batch: false,
-                    fineTuning: false,
-                    embeddings: false,
-                    imageGeneration: true,
-                    videos: false,
-                    imageEdit: false,
-                    speechGeneration: false,
-                    transcription: false,
-                    translation: false,
-                    moderation: false,
-                },
-                snapshots: ["dall-e-3"],
-                pricing: {
-                    inputPerMillion: 0,
-                    outputPerMillion: 0,
-                    imageGenerationPerImage: {
-                        High: {
-                            "1024x1024": 0.04,
-                            "1024x1792": 0.08,
-                            "1792x1024": 0.08,
-                        },
-                    },
-                },
-                imageGenerationOptions: {
-                    modelType: "dalle",
-                    sizes: ["1024x1024", "1024x1792", "1792x1024"],
-                    quality: ["standard", "hd"],
-                    n: [1],
-                },
-            },
-        },
-        metadata: {
-            qualityResolutions: ["Standard", "HD"],
-            aspectRatios: ["1024x1024", "1024x1792", "1792x1024"],
-            supportedFormats: ["png"],
-        },
-    },
-
     // ========================================================================
     // GOOGLE GEMINI - Image Generation Models
     // ========================================================================
@@ -386,6 +322,10 @@ export const IMAGE_GENERATION_MODELS: SpecializedModel[] = [
                     deepResearch: false,
                 },
                 imageGenerationOptions: {
+                    modelType: "gemini",
+                    sizes: ["1:1", "16:9", "9:16", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "21:9"],
+                    quality: ["1K", "2K", "4K"],
+                    n: [1, 2, 3, 4],
                     modelName: "Nano Banana Pro",
                     supportsTextGeneration: true,
                     resolutionTiers: ["1K", "2K", "4K"],
@@ -449,6 +389,10 @@ export const IMAGE_GENERATION_MODELS: SpecializedModel[] = [
                     deepResearch: false,
                 },
                 imageGenerationOptions: {
+                    modelType: "gemini",
+                    sizes: ["1:1", "2:3", "3:2", "16:9", "9:16", "21:9"],
+                    quality: ["1K", "2K", "4K"],
+                    n: [1, 2, 3, 4],
                     modelName: "Nano Banana",
                     supportsTextGeneration: true,
                     aspectRatios: [

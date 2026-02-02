@@ -1,15 +1,20 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { 
-  PanelLeft, 
-  MessageSquare, 
-  Plus, 
+import {
+  PanelLeft,
+  MessageSquare,
+  Plus,
   Search,
   FilePlus,
   Bean
 } from "lucide-react";
 import { useSidebar } from "@/components/ui/sidebar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
 import { Node } from "@xyflow/react";
 import { useRef } from "react";
@@ -148,60 +153,95 @@ export function CanvasToolbar() {
 
   return (
     <div className="flex items-center gap-1 p-1.5 rounded-2xl bg-popover/80 backdrop-blur-xl border border-border shadow-2xl">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
-        onClick={toggleSidebar}
-        aria-label="Toggle sidebar"
-      >
-        <PanelLeft className="size-4" />
-      </Button>
-      
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
-        aria-label="Messages"
-      >
-        <MessageSquare className="size-4" />
-      </Button>
- 
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
-        aria-label="Add new text node"
-        onClick={handleAddFreeNode}
-      >
-        <Plus className="size-4" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
+            onClick={toggleSidebar}
+            aria-label="Toggle sidebar"
+          >
+            <PanelLeft className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-[10px] py-1 px-2">
+          Toggle Sidebar
+        </TooltipContent>
+      </Tooltip>
 
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
-        aria-label="Add new file node"
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <FilePlus className="size-4" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
+            aria-label="Messages"
+          >
+            <MessageSquare className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-[10px] py-1 px-2">
+          Messages
+        </TooltipContent>
+      </Tooltip>
 
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        className="hidden" 
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
+            aria-label="Add new text node"
+            onClick={handleAddFreeNode}
+          >
+            <Plus className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-[10px] py-1 px-2">
+          Add Text Node
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
+            aria-label="Add new file node"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <FilePlus className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-[10px] py-1 px-2">
+          Add File
+        </TooltipContent>
+      </Tooltip>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
         onChange={handleFileSelect}
       />
 
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
-        aria-label="Search"
-      >
-        <Search className="size-4" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-xl text-muted-foreground hover:text-accent-foreground hover:bg-accent transition-all"
+            aria-label="Search"
+          >
+            <Search className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-[10px] py-1 px-2">
+          Search
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }

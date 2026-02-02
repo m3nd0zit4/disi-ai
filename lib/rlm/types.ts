@@ -144,6 +144,80 @@ export interface RLMOutput {
 }
 
 // =============================================================================
+// Streaming Support
+// =============================================================================
+
+/** Callback for streaming text chunks */
+export type StreamChunkCallback = (chunk: string) => void | Promise<void>;
+
+/** Callback for streaming status updates */
+export type StreamStatusCallback = (status: StreamStatus) => void | Promise<void>;
+
+/** RLM execution phases for streaming */
+export type RLMStreamPhase =
+  | "thinking"      // Initial thinking (simple mode)
+  | "planning"      // Planner is analyzing query (full mode)
+  | "researching"   // Workers are answering sub-queries (full mode)
+  | "synthesizing"  // Aggregator is combining results (full mode)
+  | "streaming"     // Final response is being streamed
+  | "complete"      // Execution finished
+  | "error";        // Error occurred
+
+/** Progress information for full RLM mode */
+export interface RLMProgress {
+  /** Current step in the process */
+  currentStep: number;
+  /** Total steps expected */
+  totalSteps: number;
+  /** Description of current activity */
+  stepDescription: string;
+  /** Sub-queries being processed */
+  subQueries?: string[];
+  /** Current worker index (1-based) */
+  currentWorker?: number;
+  /** Total workers */
+  totalWorkers?: number;
+}
+
+/** Stream status for UI updates */
+export interface StreamStatus {
+  /** Current phase of execution */
+  phase: RLMStreamPhase;
+  /** Accumulated text so far */
+  currentText: string;
+  /** Reasoning/thinking content (if separate from main response) */
+  thinkingContent?: string;
+  /** Estimated tokens so far */
+  tokensUsed: number;
+  /** Whether this is a final update */
+  isFinal: boolean;
+  /** Error message if phase is "error" */
+  error?: string;
+  /** Progress info for full RLM mode */
+  progress?: RLMProgress;
+}
+
+/** Options for streaming execution */
+export interface StreamingOptions {
+  /** Enable streaming (default: true) */
+  enabled: boolean;
+  /** Callback for each text chunk */
+  onChunk?: StreamChunkCallback;
+  /** Callback for status updates */
+  onStatus?: StreamStatusCallback;
+  /** Batch size for Convex updates (chars) - reduces update frequency */
+  batchSize?: number;
+  /** Minimum interval between status updates (ms) */
+  updateInterval?: number;
+}
+
+export const DEFAULT_STREAMING_OPTIONS: StreamingOptions = {
+  enabled: true,
+  batchSize: 50, // Send updates every 50 chars
+  updateInterval: 100, // Or every 100ms, whichever comes first
+};
+
+// =============================================================================
 // Cache
 // =============================================================================
 

@@ -36,18 +36,22 @@ export const FileNode = memo(({ data, selected }: NodeProps) => {
           selected ? "ring-1 ring-primary/30 shadow-lg" : "shadow-sm hover:border-primary/20"
         )}
       >
-        <NodeHandle type="target" position={Position.Top} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+        <NodeHandle type="target" position={Position.Top} className="group-hover:!opacity-100" />
         
         {/* Minimalist Content */}
         <div className="p-3 flex flex-col gap-2">
           {/* Preview Area */}
           {isImageType(fileType) && signedUrl ? (
             <div 
-              className="relative w-full aspect-auto min-h-[100px] max-h-[300px] rounded-lg overflow-hidden bg-muted/50 cursor-pointer group/preview flex items-center justify-center"
+              className="relative w-full aspect-auto min-h-[100px] max-h-[300px] rounded-lg overflow-hidden bg-muted/50 cursor-pointer group/preview flex items-center justify-center animate-in fade-in duration-500"
               onClick={() => setIsExpanded(!isExpanded)}
             >
-              <Image src={signedUrl} alt={fileName} width={400} height={300} className="w-full h-auto max-h-full object-contain transition-transform duration-500 group-hover/preview:scale-105" unoptimized />
-              <div className="absolute inset-0 bg-black/0 group-hover/preview:bg-black/10 transition-colors" />
+              <img 
+                src={signedUrl} 
+                alt={fileName} 
+                style={{ objectFit: 'contain', maxHeight: '300px' }}
+                className="w-full h-auto transition-transform duration-500 group-hover/preview:scale-105" 
+              />
             </div>
           ) : isTextualType(fileType) && textContent ? (
             <div 
@@ -105,7 +109,7 @@ export const FileNode = memo(({ data, selected }: NodeProps) => {
           </div>
         </div>
 
-        <NodeHandle type="source" position={Position.Bottom} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+        <NodeHandle type="source" position={Position.Bottom} className="group-hover:!opacity-100" />
       </div>
     </div>
   );

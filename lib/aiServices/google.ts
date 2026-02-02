@@ -15,7 +15,14 @@ export class GoogleService extends BaseAIService {
     async generateResponse(request: AIRequest): Promise<AIResponse> {
         const startTime = Date.now();
 
+        console.log("[GoogleService] generateResponse called:", {
+            model: request.model,
+            messageCount: request.messages.length,
+            temperature: request.temperature,
+        });
+
         const model = this.client.getGenerativeModel({ model: request.model });
+        console.log("[GoogleService] Got generative model for:", request.model);
 
         // Format the prompt for gemini
         const chat = model.startChat({
@@ -104,24 +111,52 @@ export class GoogleService extends BaseAIService {
             throw new Error(`Model ${request.model} is not an image generation model`);
         }
 
+        // Map size to aspectRatio and imageSize
+        let aspectRatio = "1:1";
+        let imageSize = "1K";
+
+        if (request.size) {
+            if (request.size.includes(":")) {
+                // Direct aspect ratio string (e.g. "16:9")
+                aspectRatio = request.size;
+            } else if (request.size.includes("x")) {
+                // Legacy pixel resolution string (e.g. "1024x1024")
+                if (request.size.includes("1024x1024")) aspectRatio = "1:1";
+                else if (request.size.includes("1536x1024") || request.size.includes("1248x832") || request.size.includes("1376x768")) aspectRatio = "3:2";
+                else if (request.size.includes("1024x1536") || request.size.includes("832x1248") || request.size.includes("768x1376")) aspectRatio = "2:3";
+            }
+        }
+
+        // Map quality to imageSize (resolution) if needed, or just use it if Gemini supports it
+        // According to docs, imageSize is 1K, 2K, 4K
+        if (request.quality === "2K") imageSize = "2K";
+        else if (request.quality === "4K") imageSize = "4K";
+
         // Use the Gemini SDK for native image generation
         const model = this.client.getGenerativeModel({
             model: request.model,
+        });
+
+        const result = await model.generateContent({
+            contents: [{ role: "user", parts: [{ text: request.prompt }] }],
             generationConfig: {
-                // Response modalities for image output
-                // @ts-ignore - responseModalities is supported for image models
-                responseModalities: ["image", "text"],
+                // @ts-ignore
+                responseModalities: ["IMAGE"],
+                // @ts-ignore
+                imageConfig: {
+                    aspectRatio,
+                    imageSize,
+                },
+                // @ts-ignore
+                candidateCount: request.n || 1,
             }
         });
 
-        const result = await model.generateContent(request.prompt);
         const response = result.response;
-
-        // Extract image from response
         const parts = response.candidates?.[0]?.content?.parts || [];
 
         for (const part of parts) {
-            // @ts-ignore - inlineData contains image data
+            // @ts-ignore
             if (part.inlineData) {
                 // @ts-ignore
                 const mimeType = part.inlineData.mimeType || "image/png";
@@ -135,6 +170,8 @@ export class GoogleService extends BaseAIService {
                     metadata: {
                         model: request.model,
                         prompt: request.prompt,
+                        aspectRatio,
+                        imageSize,
                     },
                 };
             }
@@ -166,7 +203,13 @@ export class GoogleService extends BaseAIService {
                     prompt: request.prompt,
                 }],
                 parameters: {
-                    aspectRatio: request.aspectRatio || "16:9",
+                    aspectRatio: (() => {
+                        const ar = request.aspectRatio || "16:9";
+                        if (ar === "1280x720") return "16:9";
+                        if (ar === "720x1280") return "9:16";
+                        return ar;
+                    })(),
+                    resolution: request.resolution || "720p",
                     durationSeconds: request.duration || 4,
                     sampleCount: 1,
                 },

@@ -20,6 +20,7 @@ import type * as system_files from "../system/files.js";
 import type * as system_storage from "../system/storage.js";
 import type * as system_worker from "../system/worker.js";
 import type * as users_settings from "../users/settings.js";
+import type * as users_settings_actions from "../users/settings_actions.js";
 import type * as users_users from "../users/users.js";
 
 import type {
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   "system/storage": typeof system_storage;
   "system/worker": typeof system_worker;
   "users/settings": typeof users_settings;
+  "users/settings_actions": typeof users_settings_actions;
   "users/users": typeof users_users;
 }>;
 

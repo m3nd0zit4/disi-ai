@@ -9,6 +9,7 @@
 import { ReasoningContext } from "@/lib/reasoning/types";
 import { getAIService } from "@/lib/aiServices";
 import { PlannerResult, SubQueryProposal, RLMConfig } from "./types";
+import { resolveModelId, getApiKeyForProvider, normalizeProvider } from "./model-resolver";
 
 const PLANNER_SYSTEM_PROMPT = `You are a planner in a Recursive Language Model (RLM) system.
 Your task: Analyze the query and context, determine if sub-queries are needed.
@@ -60,12 +61,12 @@ ${contextSummary}
 Analyze this query and context. Respond with JSON only.`;
 
   try {
-    const provider = config.provider || "openai";
-    const key = apiKey || process.env[`${provider.toUpperCase()}_API_KEY`] || "";
+    const provider = normalizeProvider(config.provider);
+    const key = getApiKeyForProvider(config.provider, apiKey);
     const service = getAIService(provider, key);
 
     const response = await service.generateResponse({
-      model: config.modelId || "gpt-4o",
+      model: resolveModelId(config.modelId),
       messages: [
         { role: "system", content: PLANNER_SYSTEM_PROMPT },
         { role: "user", content: userPrompt },

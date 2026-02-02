@@ -6,7 +6,9 @@
  */
 
 import { getAIService } from "@/lib/aiServices";
-import { WorkerResult, RLMConfig, RLMOutput } from "./types";
+import { WorkerResult, RLMConfig, RLMOutput, StreamingOptions, DEFAULT_STREAMING_OPTIONS } from "./types";
+import { resolveModelId, getApiKeyForProvider, normalizeProvider } from "./model-resolver";
+import { StreamProcessor } from "./stream-normalizer";
 
 const AGGREGATOR_SYSTEM_PROMPT = `You are an aggregator in a Recursive Language Model (RLM) system.
 Your task: Synthesize multiple sub-answers into a cohesive final response.
@@ -62,12 +64,12 @@ Synthesize these sub-answers into a cohesive markdown response for the original 
 
 
     // Call LLM
-    const provider = config.provider || "openai";
-    const key = apiKey || process.env[`${provider.toUpperCase()}_API_KEY`] || "";
+    const provider = normalizeProvider(config.provider);
+    const key = getApiKeyForProvider(config.provider, apiKey);
     const service = getAIService(provider, key);
 
     const response = await service.generateResponse({
-      model: config.modelId || "gpt-4o",
+      model: resolveModelId(config.modelId),
       messages: [
         { role: "system", content: AGGREGATOR_SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
@@ -184,6 +186,141 @@ function createFallbackOutput(results: WorkerResult[], config: RLMConfig): RLMOu
 function buildReasoningSummary(results: WorkerResult[]): string {
   const avgConfidence = results.reduce((sum, r) => sum + r.confidence, 0) / results.length;
   const cacheHits = results.filter(r => r.fromCache).length;
-  
+
   return `Synthesized ${results.length} sub-queries. Average confidence: ${avgConfidence.toFixed(2)}. Cache hits: ${cacheHits}.`;
+}
+
+/**
+ * Streaming aggregator options
+ */
+interface StreamingAggregatorOptions extends AggregatorOptions {
+  streaming?: StreamingOptions;
+}
+
+/**
+ * Aggregate worker results with streaming output
+ *
+ * This version streams the final synthesized response progressively,
+ * providing real-time updates to the UI.
+ */
+export async function aggregateResultsStreaming(
+  results: WorkerResult[],
+  options: StreamingAggregatorOptions
+): Promise<RLMOutput> {
+  const { config, originalQuery, apiKey, streaming } = options;
+  const streamingOpts = { ...DEFAULT_STREAMING_OPTIONS, ...streaming };
+
+  // For single result or low complexity, use non-streaming (fast path)
+  if (results.length === 1) {
+    const output = createSimpleOutput(results[0], config);
+    // Emit final status with the answer
+    if (streamingOpts.onStatus) {
+      await streamingOpts.onStatus({
+        phase: "streaming",
+        currentText: output.content.markdown,
+        tokensUsed: output.metadata?.tokensUsed || 0,
+        isFinal: false,
+      });
+    }
+    return output;
+  }
+
+  // If all results are low confidence, return error output
+  const validResults = results.filter(r => r.confidence > 0.1);
+  if (validResults.length === 0) {
+    const output = createErrorOutput(results, config);
+    if (streamingOpts.onStatus) {
+      await streamingOpts.onStatus({
+        phase: "streaming",
+        currentText: output.content.markdown,
+        tokensUsed: output.metadata?.tokensUsed || 0,
+        isFinal: false,
+      });
+    }
+    return output;
+  }
+
+  try {
+    // Build sub-answers summary
+    const subAnswers = [...validResults]
+      .sort((a, b) => b.confidence - a.confidence)
+      .map((r, i) => `[${i + 1}] Question: ${r.sourceQuery}
+Answer: ${r.answer}
+Confidence: ${r.confidence}`)
+      .join("\n\n---\n\n");
+
+    const userPrompt = `ORIGINAL QUERY: ${originalQuery}
+
+SUB-ANSWERS (${validResults.length} total):
+${subAnswers}
+
+Synthesize these sub-answers into a cohesive markdown response for the original query.`;
+
+    // Get streaming response
+    const provider = normalizeProvider(config.provider);
+    const key = getApiKeyForProvider(config.provider, apiKey);
+    const service = getAIService(provider, key);
+
+    const stream = await service.generateStreamResponse({
+      model: resolveModelId(config.modelId),
+      messages: [
+        { role: "system", content: AGGREGATOR_SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.5,
+    });
+
+    // Process stream with normalizer
+    const processor = new StreamProcessor({
+      provider,
+      onChunk: streamingOpts.onChunk,
+      onStatus: streamingOpts.onStatus,
+      streamingOptions: streamingOpts,
+    });
+
+    const streamResult = await processor.processStream(stream, provider);
+
+    const workerTokens = results.reduce((sum, r) => sum + r.tokensUsed, 0);
+    const totalTokens = workerTokens + streamResult.tokensUsed;
+    const cacheHits = results.filter(r => r.fromCache).length;
+
+    const output: RLMOutput = {
+      content: {
+        markdown: streamResult.text,
+      },
+      metadata: {
+        mode: "full",
+        depthUsed: 1,
+        subCalls: results.length,
+        cacheHits,
+        tokensUsed: totalTokens,
+      },
+    };
+
+    if (config.enableReasoning) {
+      output.reasoning = {
+        summary: streamResult.thinkingText || buildReasoningSummary(results),
+        type: streamResult.thinkingText ? "model" : "proxy",
+      };
+    }
+
+    return output;
+
+  } catch (error) {
+    console.error("[RLM Aggregator Streaming] Error:", error);
+
+    // Emit error status
+    if (streamingOpts.onStatus) {
+      await streamingOpts.onStatus({
+        phase: "error",
+        currentText: "",
+        tokensUsed: results.reduce((sum, r) => sum + r.tokensUsed, 0),
+        isFinal: true,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // Fallback to non-streaming
+    return createFallbackOutput(results, config);
+  }
 }

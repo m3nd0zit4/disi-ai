@@ -27,6 +27,8 @@ export function buildReasoningPrompt(
 
   const systemMessageContent = `${baseSystemPrompt}${distilledMarker}
 
+OUTPUT FORMAT: Respond in Markdown. Use headings, lists, code blocks, and formatting as appropriate. Do not mix reasoning with the final answer; if you expose thinking, keep it separate from the main response.
+
 CONTEXT (DISTILLED):
 ${context.items.map(item => `
 - ${item.role.toUpperCase()} (Importance: ${item.importance}/5):

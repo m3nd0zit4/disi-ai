@@ -13,7 +13,7 @@ import { modelRegistry } from "@/shared/ai";
 import { buildReasoningPrompt } from "@/lib/reasoning/prompt";
 import { distillContext } from "@/lib/reasoning/distillation";
 import { ReasoningContext, ReasoningContextItem } from "@/lib/reasoning/types";
-import { executeRLM, RLMMode } from "@/lib/rlm";
+import { executeRLMStreaming, RLMMode, StreamStatus, RLMOutput } from "@/lib/rlm";
 import { evaluateForKnowledge, shouldEvaluate } from "@/lib/knowledge/evaluator";
 import { searchSimilar, storeEmbedding, generateEmbedding } from "@/lib/upstash/upstash-vector";
 
@@ -32,6 +32,9 @@ interface NodeExecutionInputs {
   imageOutputFormat?: string;
   imageN?: number;
   imageModeration?: string;
+  videoAspectRatio?: string;
+  videoResolution?: string;
+  videoDuration?: number;
   query?: string;
   // RLM options
   rlmEnabled?: boolean;
@@ -179,7 +182,15 @@ async function processNodeExecution(data: {
       case "display":
       case "response": {
         const { prompt, text, modelId, provider, systemPrompt, temperature } = inputs;
-        
+
+        // Get model definition first to determine the correct provider
+        const modelDef = modelRegistry.getById(modelId || "");
+
+        // Use the provider from the model definition if available, otherwise fall back to input provider
+        const effectiveProviderName = modelDef?.provider || provider || "openai";
+
+        log("INFO", `Model resolution: modelId=${modelId}, modelDef.provider=${modelDef?.provider}, inputProvider=${provider}, effective=${effectiveProviderName}`);
+
         // Fallback to environment variables if apiKey is not provided in the message
         let effectiveApiKey = apiKey;
         if (!effectiveApiKey) {
@@ -195,14 +206,14 @@ async function processNodeExecution(data: {
             "XAI": "XAI_API_KEY",
             "DEEPSEEK": "DEEPSEEK_API_KEY",
           };
-          const providerUpper = ((provider as string) || "openai").toUpperCase();
+          // Use the effective provider name (from model definition or input)
+          const providerUpper = ((effectiveProviderName as string) || "openai").toUpperCase();
           const envVarName = providerEnvMap[providerUpper] || `${providerUpper}_API_KEY`;
           effectiveApiKey = process.env[envVarName];
+          log("INFO", `API key resolved: provider=${providerUpper}, envVar=${envVarName}, hasKey=${!!effectiveApiKey}`);
         }
 
-        const service = getAIService((provider as string) || "openai", effectiveApiKey || "");
-
-        const modelDef = modelRegistry.getById(modelId || "");
+        const service = getAIService((effectiveProviderName as string) || "openai", effectiveApiKey || "");
         const isImageModel = modelDef?.primaryCapability === "image.generation";
         const isVideoModel = modelDef?.primaryCapability === "video.generation";
         // Handle Image Generation
@@ -219,24 +230,26 @@ async function processNodeExecution(data: {
               data: { status: "thinking" }, // Use thinking state while generating
             }), "updateNodeDataInternal (image thinking)");
 
-           const { 
-             imageSize, 
-             imageQuality, 
-             imageBackground, 
-             imageOutputFormat, 
+           const {
+             imageSize,
+             imageQuality,
              imageN,
-             imageModeration
+             imageBackground,
            } = inputs;
+
+           const validBackground = ["transparent", "opaque", "auto"].includes(imageBackground as string)
+             ? imageBackground
+             : "opaque";
 
            const response = await service.generateImage({
              model: targetModel,
              prompt: (prompt as string) || (text as string) || "",
              size: (imageSize as string) || "1024x1024",
-             quality: (imageQuality as string) || (isGptImage ? undefined : "standard"),
-             background: imageBackground as string | undefined,
-             outputFormat: imageOutputFormat as string | undefined,
-             n: imageN as number,
-             moderation: imageModeration as string | undefined,
+             quality: (imageQuality as string) || "high",
+             background: validBackground as "transparent" | "opaque" | "auto",
+             outputFormat: "png",
+             n: (imageN as number) || 1,
+             moderation: "auto", // OpenAI only supports "auto" and "low"
            });
 
            // Upload to S3
@@ -301,24 +314,93 @@ async function processNodeExecution(data: {
               data: { status: "thinking" },
             }), "updateNodeDataInternal (video thinking)");
 
+            const { 
+              videoAspectRatio, 
+              videoResolution,
+              videoDuration 
+            } = inputs;
+
             const response = await service.generateVideo({
               model: targetModel,
               prompt: (prompt as string) || (text as string) || "",
+              aspectRatio: videoAspectRatio as string | undefined,
+              resolution: videoResolution as string | undefined,
+              duration: videoDuration as number | undefined,
+              onProgress: async (progress: number) => {
+                await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
+                  canvasId: canvasId as Id<"canvas">,
+                  nodeId,
+                  data: { progress },
+                }), "updateNodeDataInternal (video progress)");
+              }
             });
+
+            // Upload to S3
+            let mediaStorageId = "";
+            if (response.mediaUrl) {
+              try {
+                let buffer: Buffer;
+                let contentType = "video/mp4";
+
+                if (response.mediaUrl.startsWith("data:")) {
+                  // Handle base64
+                  const parts = response.mediaUrl.split(",");
+                  const base64Data = parts[1];
+                  buffer = Buffer.from(base64Data, "base64");
+                  contentType = parts[0].split(";")[0].split(":")[1] || "video/mp4";
+                  log("INFO", `Processing base64 video data, size: ${buffer.length} bytes`);
+                } else {
+                  // Handle URL
+                  log("INFO", `Fetching video from URL: ${response.mediaUrl}`);
+                  const videoRes = await fetch(response.mediaUrl);
+                  if (!videoRes.ok) {
+                    throw new Error(`Failed to fetch video from source: ${videoRes.status} ${videoRes.statusText}`);
+                  }
+                  const arrayBuffer = await videoRes.arrayBuffer();
+                  buffer = Buffer.from(arrayBuffer);
+                  contentType = videoRes.headers.get("content-type") || "video/mp4";
+                  log("INFO", `Fetched video from URL, size: ${buffer.length} bytes, type: ${contentType}`);
+                }
+                
+                const fileName = `${uuidv4()}.mp4`;
+                const key = `generated/${fileName}`;
+                
+                log("INFO", `Uploading video to S3 bucket: ${process.env.AWS_S3_BUCKET_NAME}, key: ${key}`);
+                await s3Client.send(new PutObjectCommand({
+                  Bucket: process.env.AWS_S3_BUCKET_NAME,
+                  Key: key,
+                  Body: buffer,
+                  ContentType: contentType,
+                }));
+                
+                mediaStorageId = key;
+                log("INFO", `Successfully uploaded generated video to S3: ${key}`);
+              } catch (uploadError) {
+                log("ERROR", "Failed to upload generated video to S3", { error: uploadError });
+                throw new Error(`Failed to upload generated video to S3: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`);
+              }
+            }
+
+            // Use the redirect API for the markdown link so it always works
+            const downloadUrl = `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/file?key=${encodeURIComponent(mediaStorageId)}&redirect=true`;
+            const markdownVideo = `### Generated Video\n\n[Download Video](${downloadUrl})`;
 
             // Video generation result formatting
             await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
               canvasId: canvasId as Id<"canvas">,
               nodeId,
               data: { 
-                text: `### Generated Video\n\n[Click to watch video](${response.mediaUrl})`, 
-                mediaUrl: response.mediaUrl,
-                status: "complete" 
+                text: markdownVideo, 
+                mediaUrl: null, // Don't save the large URL/base64
+                mediaStorageId: mediaStorageId,
+                status: "complete",
+                type: "video",
+                progress: 100
               },
             }), "updateNodeDataInternal (video complete)");
 
             result = {
-              text: response.mediaUrl,
+              text: markdownVideo,
               tokens: 0,
               cost: 0 // TODO: Calculate cost
             };
@@ -340,34 +422,112 @@ async function processNodeExecution(data: {
 
         const userPrompt = prompt || text || "";
 
-        // ========== RLM EXECUTION PATH ==========
-        // RLM is the new default for text generation
+        // ========== RLM STREAMING EXECUTION PATH ==========
+        // RLM with streaming is the new default for text generation
+        // Supports both simple mode and full mode (planner → workers → aggregator)
         const useRLM = inputs.rlmEnabled !== false; // Default to enabled
-        
+        const rlmMode = inputs.rlmMode || (rawContext.items.length <= 2 ? "simple" : "full");
+
         if (useRLM) {
-          log("INFO", `Using RLM execution (mode: ${inputs.rlmMode || 'auto'})`);
-          
-          const rlmResult = await executeRLM(userPrompt, rawContext, {
+          log("INFO", `Using RLM streaming execution (mode: ${rlmMode})`, {
+            modelId: modelDef?.providerModelId || modelId,
+            provider: effectiveProviderName,
+          });
+
+          // Track last update time for throttling
+          let lastConvexUpdate = Date.now();
+          let accumulatedText = "";
+
+          // Create streaming status callback that handles all phases
+          const onStreamStatus = async (status: StreamStatus) => {
+            const now = Date.now();
+
+            // Determine update frequency based on phase
+            const shouldUpdate =
+              status.isFinal ||
+              status.phase === "planning" ||
+              status.phase === "researching" ||
+              status.phase === "synthesizing" ||
+              status.phase === "thinking" ||
+              status.phase === "error" ||
+              (status.phase === "streaming" && (now - lastConvexUpdate > 150 || status.currentText.length - accumulatedText.length > 100));
+
+            if (shouldUpdate) {
+              try {
+                // Map RLM phases to node status
+                const nodeStatus =
+                  status.phase === "planning" ? "thinking" :
+                  status.phase === "researching" ? "thinking" :
+                  status.phase === "synthesizing" ? "thinking" :
+                  status.phase === "thinking" ? "thinking" :
+                  status.phase === "streaming" ? "streaming" :
+                  status.phase === "error" ? "error" : "complete";
+
+                // Build progress message for full mode phases
+                let progressMessage = "";
+                if (status.progress) {
+                  const { currentStep, totalSteps, stepDescription, currentWorker, totalWorkers } = status.progress;
+                  if (currentWorker && totalWorkers) {
+                    progressMessage = `Step ${currentStep}/${totalSteps}: ${stepDescription} (${currentWorker}/${totalWorkers})`;
+                  } else {
+                    progressMessage = `Step ${currentStep}/${totalSteps}: ${stepDescription}`;
+                  }
+                }
+
+                await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
+                  canvasId: canvasId as Id<"canvas">,
+                  nodeId,
+                  data: {
+                    text: status.currentText || accumulatedText,
+                    status: nodeStatus,
+                    ...(progressMessage ? { progressMessage } : {}),
+                    ...(status.thinkingContent ? { thinkingContent: status.thinkingContent } : {}),
+                    ...(status.error ? { error: status.error } : {}),
+                  },
+                }), "updateNodeDataInternal (streaming)");
+
+                lastConvexUpdate = now;
+                accumulatedText = status.currentText;
+              } catch (updateError) {
+                log("WARN", `Failed to update Convex during streaming: ${updateError}`);
+              }
+            }
+          };
+
+          // Use unified streaming RLM for both simple and full modes
+          const rlmResult: RLMOutput = await executeRLMStreaming(userPrompt, rawContext, {
             config: {
-              mode: inputs.rlmMode || (rawContext.items.length <= 2 ? "simple" : "full"),
+              mode: rlmMode,
               modelId: modelDef?.providerModelId || modelId || "gpt-4o",
-              provider: provider || "openai",
+              provider: effectiveProviderName,
               enableReasoning: false,
             },
             apiKey: effectiveApiKey,
             systemPrompt,
+            streaming: {
+              enabled: true,
+              onStatus: onStreamStatus,
+              batchSize: 50,
+              updateInterval: 100,
+            },
           });
 
           const fullText = rlmResult.content.markdown;
           const tokenCount = rlmResult.metadata?.tokensUsed || Math.ceil(fullText.length / 4);
+          const finalReasoning = rlmResult.reasoning?.summary ?? "";
 
           log("INFO", `RLM completed: mode=${rlmResult.metadata?.mode}, depth=${rlmResult.metadata?.depthUsed}, subCalls=${rlmResult.metadata?.subCalls}`);
 
-          // Update node with RLM result
+          // Final update so UI has complete state (status, content, reasoning)
           await withRetry(() => convex.mutation(api.canvas.canvas.updateNodeDataInternal, {
             canvasId: canvasId as Id<"canvas">,
             nodeId,
-            data: { text: fullText, status: "complete" },
+            data: {
+              text: fullText,
+              status: "complete",
+              ...(finalReasoning ? { thinkingContent: finalReasoning } : {}),
+              progressMessage: undefined,
+            },
           }), "updateNodeDataInternal (RLM complete)");
 
           result = {
@@ -679,7 +839,7 @@ async function processKnowledgeGardenFeed(params: {
     const userId = execution.userId;
 
     // 2. Get user's garden settings (via worker action with secret auth)
-    const settings = await convex.action(api.users.settings.workerGetGardenSettings, {
+    const settings = await convex.action(api.users.settings_actions.workerGetGardenSettings, {
       secret: process.env.FILE_WORKER_SECRET!,
       userId,
     });
@@ -707,7 +867,6 @@ async function processKnowledgeGardenFeed(params: {
     }
 
     // 4. Check for duplicates via vector similarity (if we have embedding capability)
-    let isDuplicate = false;
     let similarSeedId: Id<"seeds"> | undefined;
     let similarityScore: number | undefined;
 

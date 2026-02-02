@@ -28,6 +28,7 @@ export interface CanvasState {
   addEdge: (edge: Edge) => void;
   removeEdge: (edgeId: string) => void;
   duplicateNode: (nodeId: string) => void;
+  transformNode: (oldId: string, newId: string, newType: string, dataUpdates?: Record<string, any>) => void;
   draggedNodeId: string | null;
   setDraggedNodeId: (id: string | null) => void;
   selectedNodeIdForToolbar: string | null;
@@ -243,5 +244,38 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         newNode
       ]
     });
+  },
+  transformNode: (oldId: string, newId: string, newType: string, dataUpdates?: Record<string, any>) => {
+    const { nodes, edges } = get();
+
+    // Transform the node: change ID, type, and optionally data
+    const updatedNodes = nodes.map(node => {
+      if (node.id === oldId) {
+        return {
+          ...node,
+          id: newId,
+          type: newType,
+          data: {
+            ...node.data,
+            ...dataUpdates,
+          }
+        };
+      }
+      return node;
+    });
+
+    // Update all edges that reference the old ID
+    const updatedEdges = edges.map(edge => {
+      let updated = { ...edge };
+      if (edge.source === oldId) {
+        updated = { ...updated, source: newId, id: edge.id.replace(oldId, newId) };
+      }
+      if (edge.target === oldId) {
+        updated = { ...updated, target: newId, id: edge.id.replace(oldId, newId) };
+      }
+      return updated;
+    });
+
+    set({ nodes: updatedNodes, edges: updatedEdges });
   },
 }));

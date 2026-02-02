@@ -86,6 +86,7 @@ export interface OpenAIMetadata {
     aspectRatios: string[];           // e.g., ["720x1280", "1280x720"]
     resolutions: string[];            // e.g., ["720p", "1080p"]
     maxDuration: number;              // Maximum duration in seconds
+    durationSeconds?: number[];       // Available durations for the UI
     audioGeneration: boolean;         // Sora 2/2 Pro generates synced audio
     snapshots?: string[];             // Available model snapshots
   };

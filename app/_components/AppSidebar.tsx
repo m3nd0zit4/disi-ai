@@ -10,16 +10,20 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar"
 import Image from "next/image"
-import { 
-  Moon, 
-  Sun, 
-  Plus, 
-  Layout, 
-  Leaf,  
-  History,
+import {
+  Moon,
+  Sun,
+  Plus,
+  Leaf,
   Trash2,
   MessageSquarePlus,
-  Compass
+  Sparkles,
+  MoreVertical,
+  Pin,
+  ChevronDown,
+  Check,
+  Copy,
+  Pencil
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { UserButton } from "@clerk/nextjs"
@@ -33,17 +37,105 @@ import { useKnowledgeCommand } from "@/hooks/useKnowledgeCommand"
 import { useCanvasStore } from "@/hooks/useCanvasStore"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { GardenStatsPanel } from "./GardenStatsPanel"
 import { cn } from "@/lib/utils"
+import { useState } from "react"
+
+// Canvas List Item Component
+interface CanvasListItemProps {
+    canvas: Doc<"canvas">;
+    isPinned: boolean;
+    onPin: (e: React.MouseEvent) => void;
+    onDelete: (e: React.MouseEvent) => void;
+    onDuplicate: (e: React.MouseEvent) => void;
+    onRename: (e: React.MouseEvent) => void;
+}
+
+function CanvasListItem({ canvas, isPinned, onPin, onDelete, onDuplicate, onRename }: CanvasListItemProps) {
+    return (
+        <div className="group flex items-center justify-between px-3 py-1.5 rounded-lg hover:bg-primary/5 transition-all">
+            <Link
+                href={`/canvas/${canvas._id}`}
+                className="flex items-center gap-2 min-w-0 flex-1"
+            >
+                <Sparkles className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+                <span className="text-[12px] truncate group-hover:text-foreground transition-colors">
+                    {canvas.name}
+                </span>
+            </Link>
+            <div className="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-all">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-4 rounded-sm shrink-0 focus:outline-none focus-visible:ring-0 hover:bg-transparent"
+                    onClick={onPin}
+                >
+                    <Pin className={cn("w-2 h-2", isPinned ? "text-primary" : "text-muted-foreground/50")} />
+                </Button>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-4 rounded-sm shrink-0 focus:outline-none focus-visible:ring-0 hover:bg-transparent"
+                            onClick={(e) => e.preventDefault()}
+                        >
+                            <MoreVertical className="w-2.5 h-2.5 text-muted-foreground/50" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-36 p-1">
+                        <DropdownMenuItem onClick={onDuplicate} className="text-[11px] py-1.5 px-2 cursor-pointer">
+                            <Copy className="w-3 h-3 mr-2" />
+                            Duplicate
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={onRename} className="text-[11px] py-1.5 px-2 cursor-pointer">
+                            <Pencil className="w-3 h-3 mr-2" />
+                            Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="my-1" />
+                        <DropdownMenuItem
+                            onClick={onDelete}
+                            variant="destructive"
+                            className="text-[11px] py-1.5 px-2 cursor-pointer"
+                        >
+                            <Trash2 className="w-3 h-3 mr-2" />
+                            Delete
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
+        </div>
+    );
+}
 
 export function AppSidebar() {
     const { theme, setTheme } = useTheme();
     const canvases = useQuery(api.canvas.canvas.listCanvas);
-    const createCanvas = useMutation(api.canvas.canvas.createCanvas);
     const deleteCanvas = useMutation(api.canvas.canvas.deleteCanvas);
+    const togglePinCanvas = useMutation(api.canvas.canvas.togglePinCanvas);
     const router = useRouter();
     const { showDialog } = useDialog();
     const openKnowledgeCommand = useKnowledgeCommand((state) => state.open);
+
+    // Collapsible states
+    const [isPinnedOpen, setIsPinnedOpen] = useState(true);
+    const [isHistoryOpen, setIsHistoryOpen] = useState(true);
+
+    // Separate pinned and unpinned canvases
+    const pinnedCanvases = canvases?.filter(c => c.isPinned) ?? [];
+    const unpinnedCanvases = canvases?.filter(c => !c.isPinned) ?? [];
     
     // Knowledge Garden State (from Convex)
     const gardenSettings = useQuery(api.users.settings.getGardenSettings);
@@ -69,23 +161,24 @@ export function AppSidebar() {
         }
     };
 
-    const handleNewWorkflow = async () => {
+    const handleNewFlow = () => {
+        router.push("/");
+    };
+
+    const handlePin = async (e: React.MouseEvent, canvasId: Id<"canvas">) => {
+        e.preventDefault();
+        e.stopPropagation();
         try {
-            const canvasId = await createCanvas({
-                name: "New Workflow",
-                nodes: [],
-                edges: [],
-            });
-            router.push(`/canvas/${canvasId}`);
+            await togglePinCanvas({ canvasId });
         } catch (error) {
-            console.error("Error creating workflow:", error);
+            console.error("Error toggling pin:", error);
         }
     };
 
     const handleDelete = async (e: React.MouseEvent, canvasId: Id<"canvas">) => {
         e.preventDefault();
         e.stopPropagation();
-        
+
         showDialog({
             title: "Delete Workflow",
             description: "Are you sure you want to delete this workflow? This action cannot be undone.",
@@ -110,15 +203,26 @@ export function AppSidebar() {
         });
     };
 
+    const handleDuplicate = async (e: React.MouseEvent, canvasId: Id<"canvas">) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // TODO: Implement duplicate functionality
+        console.log("Duplicate canvas:", canvasId);
+    };
+
+    const handleRename = async (e: React.MouseEvent, canvasId: Id<"canvas">) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // TODO: Implement rename functionality with input dialog
+        console.log("Rename canvas:", canvasId);
+    };
+
     return (
         <Sidebar className="border-r border-primary/5 bg-card/30 backdrop-blur-xl">
             <SidebarHeader className="p-3">
                 <div className="flex justify-between items-center mb-4">
                     <Link href="/canvas" className="flex items-center gap-2 group">
-                        <div className="p-1.5 rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-all">
-                            <Image src={'/logo.svg'} alt='logo' width={20} height={20} className="w-5 h-5" />
-                        </div>
-                        <h1 className="logo-font text-lg tracking-tight">DISI</h1>
+                        <h1 className="logo-font text-lg tracking-tight mt-2">Disi</h1>
                     </Link>
                     <Button variant="ghost" size="icon" className="size-8 rounded-lg hover:bg-primary/5" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
                         {theme === 'light' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -127,7 +231,7 @@ export function AppSidebar() {
 
                 <div className="space-y-1">
                     <Button 
-                        onClick={handleNewWorkflow}
+                        onClick={handleNewFlow}
                         className="w-full justify-between h-9 px-3 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/5 transition-all group"
                     >
                         <span className="text-[13px] font-bold tracking-tight">New Flow</span>
@@ -141,14 +245,6 @@ export function AppSidebar() {
                     >
                         <span className="text-[13px] font-bold tracking-tight">Knowledge Garden</span>
                         <Leaf className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 transition-opacity" />
-                    </Button>
-                    
-                    <Button variant="ghost" className="w-full justify-between h-9 px-3 rounded-lg hover:bg-primary/5 text-muted-foreground hover:text-foreground transition-all group">
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-[13px] font-bold tracking-tight">Explore More</span>
-                            <span className="text-[7px] bg-primary/10 text-primary px-1 py-0.5 rounded-full font-black uppercase tracking-tighter">Popular</span>
-                        </div>
-                        <Compass className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 transition-opacity" />
                     </Button>
                 </div>
 
@@ -216,34 +312,70 @@ export function AppSidebar() {
                     </div>
                 </SidebarGroup>
 
-                <SidebarGroup>
-                    <SidebarGroupLabel className="px-3 text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/40 mb-1 flex items-center justify-between">
-                        History
-                        <History className="w-2.5 h-2.5 opacity-40" />
-                    </SidebarGroupLabel>
-                    <div className="space-y-0.5">
-                        {canvases?.map((canvas: Doc<"canvas">) => (
-                            <Link 
-                                key={canvas._id} 
-                                href={`/canvas/${canvas._id}`} 
-                                className="px-3 py-2 flex items-center justify-between rounded-lg hover:bg-primary/5 transition-all group relative overflow-hidden"
-                            >
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-3 bg-primary rounded-r-full opacity-0 group-hover:opacity-100 transition-all" />
-                                    <Layout className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary transition-colors shrink-0" />
-                                    <span className="text-[12px] font-medium truncate group-hover:text-foreground transition-colors">{canvas.name}</span>
+                {/* Pinned Section */}
+                {pinnedCanvases.length > 0 && (
+                    <SidebarGroup>
+                        <Collapsible open={isPinnedOpen} onOpenChange={setIsPinnedOpen}>
+                            <CollapsibleTrigger asChild>
+                                <SidebarGroupLabel className="px-3 text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/40 mb-1 flex items-center justify-between cursor-pointer hover:text-muted-foreground transition-colors">
+                                    <div className="flex items-center gap-1.5">
+                                        Pinned
+                                        <ChevronDown className={cn("w-2.5 h-2.5 transition-transform", isPinnedOpen ? "" : "-rotate-90")} />
+                                    </div>
+                                    <Check className="w-2.5 h-2.5 opacity-40" />
+                                </SidebarGroupLabel>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                                <div className="space-y-0.5">
+                                    {pinnedCanvases.map((canvas: Doc<"canvas">) => (
+                                        <CanvasListItem
+                                            key={canvas._id}
+                                            canvas={canvas}
+                                            isPinned={true}
+                                            onPin={(e) => handlePin(e, canvas._id)}
+                                            onDelete={(e) => handleDelete(e, canvas._id)}
+                                            onDuplicate={(e) => handleDuplicate(e, canvas._id)}
+                                            onRename={(e) => handleRename(e, canvas._id)}
+                                        />
+                                    ))}
                                 </div>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="size-6 rounded-md opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 transition-all shrink-0"
-                                    onClick={(e) => handleDelete(e, canvas._id)}
-                                >
-                                    <Trash2 className="w-3 h-3" />
-                                </Button>
-                            </Link>
-                        ))}
-                    </div>
+                            </CollapsibleContent>
+                        </Collapsible>
+                    </SidebarGroup>
+                )}
+
+                {/* History Section */}
+                <SidebarGroup>
+                    <Collapsible open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
+                        <CollapsibleTrigger asChild>
+                            <SidebarGroupLabel className="px-3 text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/40 mb-1 flex items-center justify-between cursor-pointer hover:text-muted-foreground transition-colors">
+                                <div className="flex items-center gap-1.5">
+                                    History
+                                    <ChevronDown className={cn("w-2.5 h-2.5 transition-transform", isHistoryOpen ? "" : "-rotate-90")} />
+                                </div>
+                                <Check className="w-2.5 h-2.5 opacity-40" />
+                            </SidebarGroupLabel>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            <div className="space-y-0.5">
+                                {unpinnedCanvases.length === 0 ? (
+                                    <div className="px-3 py-1.5 text-[10px] text-muted-foreground/40 italic">No history yet</div>
+                                ) : (
+                                    unpinnedCanvases.map((canvas: Doc<"canvas">) => (
+                                        <CanvasListItem
+                                            key={canvas._id}
+                                            canvas={canvas}
+                                            isPinned={false}
+                                            onPin={(e) => handlePin(e, canvas._id)}
+                                            onDelete={(e) => handleDelete(e, canvas._id)}
+                                            onDuplicate={(e) => handleDuplicate(e, canvas._id)}
+                                            onRename={(e) => handleRename(e, canvas._id)}
+                                        />
+                                    ))
+                                )}
+                            </div>
+                        </CollapsibleContent>
+                    </Collapsible>
                 </SidebarGroup>
             </SidebarContent>
         <SidebarFooter>

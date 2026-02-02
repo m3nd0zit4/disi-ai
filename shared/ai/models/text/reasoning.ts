@@ -284,7 +284,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
                 tools: {
                     webSearch: true,
                     fileSearch: true,
-                    imageGeneration: true,
+                    imageGeneration: false,
                     codeInterpreter: true,
                     computerUse: false,
                     mcp: true,
@@ -347,7 +347,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
                 tools: {
                     webSearch: true,
                     fileSearch: true,
-                    imageGeneration: true,
+                    imageGeneration: false,
                     codeInterpreter: false,
                     computerUse: false,
                     mcp: true,
@@ -409,7 +409,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
                 tools: {
                     webSearch: true,
                     fileSearch: true,
-                    imageGeneration: true,
+                    imageGeneration: false,
                     codeInterpreter: true,
                     computerUse: false,
                     mcp: true,
@@ -535,7 +535,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
                 tools: {
                     webSearch: true,
                     fileSearch: true,
-                    imageGeneration: true,
+                    imageGeneration: false,
                     codeInterpreter: true,
                     computerUse: false,
                     mcp: true,
@@ -598,7 +598,7 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
                 tools: {
                     webSearch: true,
                     fileSearch: true,
-                    imageGeneration: true,
+                    imageGeneration: false,
                     codeInterpreter: true,
                     computerUse: false,
                     mcp: true,

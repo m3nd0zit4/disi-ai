@@ -6,30 +6,16 @@ import { cn, adjustAlpha } from "@/lib/utils";
 import { NodeHandle } from "./NodeHandle";
 import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
-import { useCanvasStore, CanvasState } from "@/hooks/useCanvasStore";
 import { InputNodeData } from "../../types";
 import { useSignedUrl } from "@/hooks/useSignedUrl";
 
-export const InputNode = memo(({ id, data, selected }: NodeProps) => {
+export const InputNode = memo(({ data, selected }: NodeProps) => {
   const inputData = data as unknown as InputNodeData;
   const { text, createdAt, color, attachments, role, importance } = inputData;
-  const edges = useCanvasStore((state: CanvasState) => state.edges);
   const { user } = useUser();
-
-  const incomingEdges = edges.filter(edge => edge.target === id);
-  const hasIncoming = incomingEdges.length > 0;
 
   return (
     <div className="group relative select-none">
-      {hasIncoming && (
-        <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-0.5 bg-primary/5 backdrop-blur-xl border border-primary/10 rounded-full animate-in fade-in slide-in-from-bottom-1 duration-500">
-          <div className="size-1 rounded-full bg-primary/60 animate-pulse" />
-          <span className="text-[9px] font-bold text-primary/60 uppercase tracking-wider">
-            {incomingEdges.length}
-          </span>
-        </div>
-      )}
-
       <div 
         className={cn(
           "w-[350px] backdrop-blur-2xl transition-all duration-500 rounded-[2rem] overflow-hidden border border-primary/5",
@@ -41,7 +27,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps) => {
           borderColor: color && color !== 'transparent' ? adjustAlpha(color, 0.3) : undefined
         }}
       >
-        <NodeHandle type="target" position={Position.Top} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+        <NodeHandle type="target" position={Position.Top} className="group-hover:!opacity-100" />
         
         <div className="p-6 space-y-4">
           <div className="prose prose-sm dark:prose-invert max-w-none text-[14px] leading-relaxed text-foreground/90 font-medium whitespace-pre-wrap selection:bg-primary/20">
@@ -67,12 +53,10 @@ export const InputNode = memo(({ id, data, selected }: NodeProps) => {
             <div className="flex items-center gap-2">
               <div className="size-5 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
                 {user?.imageUrl ? (
-                  <Image 
+                  <img 
                     src={user.imageUrl} 
                     alt={user.fullName || "User"} 
-                    width={20} 
-                    height={20} 
-                    className="object-cover"
+                    className="size-5 object-cover"
                   />
                 ) : (
                   <User className="w-2.5 h-2.5 text-primary/70" />
@@ -104,7 +88,7 @@ export const InputNode = memo(({ id, data, selected }: NodeProps) => {
           </div>
         </div>
 
-        <NodeHandle type="source" position={Position.Bottom} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+        <NodeHandle type="source" position={Position.Bottom} className="group-hover:!opacity-100" />
       </div>
     </div>
   );
@@ -115,17 +99,16 @@ InputNode.displayName = "InputNode";
 function AttachmentPreview({ file }: { file: { url?: string; storageId?: string; type?: string; name?: string } }) {
   const signedUrl = useSignedUrl(file.storageId, file.url);
 
-  if (!signedUrl) return <div className="h-20 w-20 bg-muted animate-pulse rounded-lg" />;
+  if (!signedUrl) return <Skeleton.Button active style={{ width: 80, height: 80, borderRadius: '0.5rem' }} />;
 
   return (
     <div className="relative group overflow-hidden rounded-lg border border-primary/10">
       {file.type?.startsWith("image/") || file.type === "image" ? (
         <div className="relative h-20 w-20">
-          <Image 
+          <img 
             src={signedUrl} 
             alt={file.name || "Attachment"} 
-            fill
-            className="object-cover"
+            className="h-20 w-20 object-cover transition-transform duration-500 hover:scale-110"
           />
         </div>
       ) : (

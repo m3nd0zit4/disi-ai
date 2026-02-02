@@ -114,7 +114,8 @@ export const NodeToolbar = ({
       nodeId={nodeIds[0]}
       isVisible={isVisible} 
       position={Position.Top}
-      className="flex items-center gap-1 p-1 bg-background/60 backdrop-blur-2xl border border-primary/5 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.12)] mb-3 animate-in fade-in duration-300"
+      offset={12}
+      className="flex items-center gap-1 p-1 bg-background/80 backdrop-blur-2xl border border-primary/10 rounded-full shadow-[0_15px_35px_rgba(0,0,0,0.2)] mb-3 animate-in fade-in slide-in-from-bottom-2 duration-300 z-[100]"
     >
       {!hideColors && (
         <div className="flex items-center gap-1 px-1.5 border-r border-primary/5 mr-1">

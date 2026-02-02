@@ -18,10 +18,10 @@ export const edgeTypes = {
 
 export const defaultEdgeOptions = {
   type: 'custom',
-  animated: true,
+  animated: false, // Disable animation for cleaner look
   style: {
-    strokeWidth: 2,
-    stroke: 'var(--primary)',
-    opacity: 0.4,
+    strokeWidth: 1,
+    stroke: 'var(--muted-foreground)',
+    opacity: 0.25,
   },
 };

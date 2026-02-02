@@ -258,7 +258,8 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
 
   const onNodeDragStop = useCallback(() => {
     useCanvasStore.getState().setDraggedNodeId(null);
-  }, []);
+    syncToDB(); // Ensure final position is saved
+  }, [syncToDB]);
 
   const onNodeClick = useCallback((_: any, node: any) => {
     useCanvasStore.getState().setSelectedNodeIdForToolbar(node.id);

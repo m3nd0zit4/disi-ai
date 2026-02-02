@@ -18,6 +18,7 @@ import {
 import { Plus, ZoomIn, ZoomOut, Loader2, FileText, ExternalLink } from "lucide-react";
 import { useSignedUrl } from "@/hooks/useSignedUrl";
 import { useToast } from "@/hooks/use-toast";
+import { LoadingVisualCard } from "@/app/_components/ui/LoadingVisualCard";
 
 interface SeedDetailViewProps {
   file: {
@@ -110,7 +111,26 @@ export function SeedDetailView({ file, seeds, kbId }: SeedDetailViewProps) {
             <p className="text-xs text-muted-foreground">AI-powered knowledge seeds extracted from your knowledge</p>
           </div>
 
-          <Tabs defaultValue="seeds" className="flex-1 flex flex-col">
+          {(file.status === "processing" || file.status === "uploading") ? (
+            <div className="flex-1 relative rounded-xl overflow-hidden">
+               <LoadingVisualCard
+                 mode="kb"
+                 statusMessage={
+                   file.status === "uploading" ? "Uploading your wisdom..." :
+                   "Extracting knowledge magic..."
+                 }
+                 backgroundVisual={
+                   <div className="w-full h-full bg-gradient-to-br from-muted/50 to-transparent p-10">
+                      <div className="w-full h-4 bg-muted/50 rounded-full mb-4" />
+                      <div className="w-3/4 h-4 bg-muted/50 rounded-full mb-4" />
+                      <div className="w-full h-4 bg-muted/50 rounded-full mb-4" />
+                      <div className="w-5/6 h-4 bg-muted/50 rounded-full" />
+                   </div>
+                 }
+               />
+            </div>
+          ) : (
+            <Tabs defaultValue="seeds" className="flex-1 flex flex-col">
             <TabsList className="bg-transparent border-b border-border w-full justify-start h-auto p-0 rounded-none space-x-6">
               <TabsTrigger
                 value="seeds"
@@ -290,6 +310,7 @@ export function SeedDetailView({ file, seeds, kbId }: SeedDetailViewProps) {
               </TabsContent>
             </div>
           </Tabs>
+          )}
         </div>
       </div>
 

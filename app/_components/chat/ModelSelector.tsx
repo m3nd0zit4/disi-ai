@@ -47,7 +47,8 @@ export default function ModelSelector() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    const timer = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const filteredModels = useMemo(() => {
@@ -108,7 +109,12 @@ export default function ModelSelector() {
             </div>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[380px] p-0 bg-card/98 backdrop-blur-xl border-primary/5 rounded-xl overflow-hidden shadow-xl">
+        <DropdownMenuContent 
+          side="top"
+          sideOffset={8}
+          align="start" 
+          className="w-[380px] p-0 bg-card/98 backdrop-blur-xl border-primary/5 rounded-xl overflow-hidden shadow-xl"
+        >
           <div className="flex h-[420px]">
             {/* Modes Sidebar */}
             <div className="w-[130px] border-r border-primary/5 bg-muted/20 p-1.5 space-y-0.5">
@@ -165,36 +171,89 @@ export default function ModelSelector() {
                     <span className="text-[11px] text-muted-foreground/50">No models found</span>
                   </div>
                 ) : (
-                  filteredModels.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => handleModelClick(m)}
-                      className={cn(
-                        "w-full flex items-center justify-between px-2 py-2 rounded-lg text-left transition-all group",
-                        isModelSelected(m.id) ? "bg-primary/5" : "hover:bg-muted/40"
-                      )}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="relative w-4 h-4 flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
-                          <NextImage 
-                            src={mounted && theme === 'dark' ? m.icon.light : m.icon.dark} 
-                            alt={m.name}
-                            fill
-                            className="object-contain"
-                          />
+                  (() => {
+                    if (mode === "video") {
+                      // Group video models by base model (e.g., "Sora 2", "Veo 3.1")
+                      const groups: Record<string, SpecializedModel[]> = {};
+                      filteredModels.forEach(m => {
+                        const baseName = m.name.split(" | ")[0];
+                        if (!groups[baseName]) groups[baseName] = [];
+                        groups[baseName].push(m);
+                      });
+
+                      return Object.entries(groups).map(([baseName, models]) => (
+                        <div key={baseName} className="space-y-1 mb-3 last:mb-0">
+                          <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground/40 uppercase tracking-wider">
+                            {baseName}
+                          </div>
+                          {models.map((m) => (
+                            <button
+                              key={m.id}
+                              onClick={() => handleModelClick(m)}
+                              className={cn(
+                                "w-full flex items-center justify-between px-2 py-2 rounded-lg text-left transition-all group",
+                                isModelSelected(m.id) ? "bg-primary/5" : "hover:bg-muted/40"
+                              )}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <div className="relative w-4 h-4 flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
+                                  <NextImage 
+                                    src={mounted && theme === 'dark' ? m.icon.light : m.icon.dark} 
+                                    alt={m.name}
+                                    fill
+                                    className="object-contain"
+                                  />
+                                </div>
+                                <div className="flex flex-col leading-tight">
+                                  <span className={cn("text-[11px] font-medium", isModelSelected(m.id) ? "text-primary" : "text-foreground/90")}>
+                                    {m.name.includes(" | ") ? m.name.split(" | ")[1] : m.name}
+                                  </span>
+                                  <span className="text-[9px] text-muted-foreground/50">{m.provider}</span>
+                                </div>
+                              </div>
+                              {isMultiSelect ? (
+                                <Checkbox checked={isModelSelected(m.id)} className="size-3.5 rounded border-muted-foreground/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary" />
+                              ) : (
+                                isModelSelected(m.id) && <Check className="w-3 h-3 text-primary" />
+                              )}
+                            </button>
+                          ))}
                         </div>
-                        <div className="flex flex-col leading-tight">
-                          <span className={cn("text-[11px] font-medium", isModelSelected(m.id) ? "text-primary" : "text-foreground/90")}>{m.name}</span>
-                          <span className="text-[9px] text-muted-foreground/50">{m.provider}</span>
+                      ));
+                    }
+
+                    // Default rendering for other modes
+                    return filteredModels.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => handleModelClick(m)}
+                        className={cn(
+                          "w-full flex items-center justify-between px-2 py-2 rounded-lg text-left transition-all group",
+                          isModelSelected(m.id) ? "bg-primary/5" : "hover:bg-muted/40"
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="relative w-4 h-4 flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
+                            <NextImage 
+                              src={mounted && theme === 'dark' ? m.icon.light : m.icon.dark} 
+                              alt={m.name}
+                              fill
+                              className="object-contain"
+                            />
+                          </div>
+                          <div className="flex flex-col leading-tight">
+                            <span className={cn("text-[11px] font-medium", isModelSelected(m.id) ? "text-primary" : "text-foreground/90")}>{m.name}</span>
+                            <span className="text-[9px] text-muted-foreground/50">{m.provider}</span>
+                          </div>
                         </div>
-                      </div>
-                      {isMultiSelect ? (
-                        <Checkbox checked={isModelSelected(m.id)} className="size-3.5 rounded border-muted-foreground/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary" />
-                      ) : (
-                        isModelSelected(m.id) && <Check className="w-3 h-3 text-primary" />
-                      )}
-                    </button>
-                  ))
+                        {isMultiSelect ? (
+                          <Checkbox checked={isModelSelected(m.id)} className="size-3.5 rounded border-muted-foreground/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary" />
+                        ) : (
+                          isModelSelected(m.id) && <Check className="w-3 h-3 text-primary" />
+                        )}
+                      </button>
+                    ));
+                  })()
                 )}
               </div>
             </div>

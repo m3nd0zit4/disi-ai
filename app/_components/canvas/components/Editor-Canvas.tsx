@@ -27,7 +27,7 @@ interface EditorCanvasProps {
 
 export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCanvasProps) => {
   const { theme } = useTheme();
-  const { nodes, edges, setNodes, setEdges } = useCanvasStore();
+  const { nodes, edges, setNodes, setEdges, draggedNodeId } = useCanvasStore();
   const { 
     onNodesChange,
     onEdgesChange,
@@ -226,12 +226,21 @@ export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCan
         />
 
         {(() => {
-          const selectedRealNodes = nodes.filter(n => n.selected && !n.id.startsWith('preview-'));
+          // Hide toolbar while dragging
+          if (draggedNodeId) return null;
+
+          const selectedRealNodes = nodes.filter(n =>
+            n.selected &&
+            !n.id.startsWith('preview-') &&
+            n.type !== 'image' && // Hide for image nodes as they have hover actions
+            !(n.data as any)?.mediaUrl && // Also hide for nodes that are effectively images
+            !(n.data as any)?.mediaStorageId
+          );
           if (selectedRealNodes.length === 0) return null;
           return (
-            <NodeToolbar 
-              nodeIds={selectedRealNodes.map(n => n.id)} 
-              isVisible={true} 
+            <NodeToolbar
+              nodeIds={selectedRealNodes.map(n => n.id)}
+              isVisible={true}
             />
           );
         })()}

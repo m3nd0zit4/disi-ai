@@ -49,7 +49,7 @@ export interface ImageGenerationRequest {
     size?: string;
     quality?: string;
     aspectRatio?: string;
-    background?: string;
+    background?: "transparent" | "opaque" | "auto";
     outputFormat?: string;
     n?: number;
     moderation?: string;
@@ -60,6 +60,7 @@ export interface VideoGenerationRequest {
     prompt: string;
     duration?: number;
     aspectRatio?: string;
+    resolution?: string;
 }
 
 export interface MediaResponse {

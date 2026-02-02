@@ -12,19 +12,22 @@
  */
 
 import { ReasoningContext } from "@/lib/reasoning/types";
-import { 
-  RLMConfig, 
-  RLMOutput, 
-  RLMExecutionState, 
+import {
+  RLMConfig,
+  RLMOutput,
+  RLMExecutionState,
   DEFAULT_RLM_CONFIG,
   WorkerResult,
+  StreamingOptions,
+  StreamStatus,
+  DEFAULT_STREAMING_OPTIONS,
 } from "./types";
 import { RLMCache, getGlobalCache } from "./cache";
 import { BudgetManager } from "./budget";
-import { executeSimpleRLM } from "./simple-rlm";
+import { executeSimpleRLM, executeSimpleRLMStreaming } from "./simple-rlm";
 import { runPlanner } from "./planner";
 import { executeWorker } from "./worker";
-import { aggregateResults } from "./aggregator";
+import { aggregateResults, aggregateResultsStreaming } from "./aggregator";
 import { PromptEnvironment, createEnvironmentFromContext } from "./environment";
 
 // Non-negotiable limits
@@ -278,4 +281,264 @@ export async function executeRLM(
     return orchestrator.executeWithEnvironment(query, context);
   }
   return orchestrator.execute(query, context);
+}
+
+/**
+ * Streaming RLM execution options
+ */
+export interface StreamingOrchestratorOptions extends OrchestratorOptions {
+  streaming?: StreamingOptions;
+}
+
+/**
+ * Execute RLM with streaming support for both simple and full modes
+ *
+ * Flow for full mode:
+ * 1. Phase: "planning" - Planner analyzes query
+ * 2. Phase: "researching" - Workers answer sub-queries (with progress)
+ * 3. Phase: "synthesizing" - Aggregator starts combining
+ * 4. Phase: "streaming" - Final response streams progressively
+ * 5. Phase: "complete" - Execution finished
+ */
+export async function executeRLMStreaming(
+  query: string,
+  context: ReasoningContext,
+  options: StreamingOrchestratorOptions = {}
+): Promise<RLMOutput> {
+  const config: RLMConfig = {
+    ...DEFAULT_RLM_CONFIG,
+    ...options.config,
+    maxDepth: Math.min(options.config?.maxDepth ?? MAX_DEPTH, MAX_DEPTH),
+    maxChildCalls: Math.min(options.config?.maxChildCalls ?? MAX_CHILD_CALLS, MAX_CHILD_CALLS),
+  };
+
+  const streamingOpts = { ...DEFAULT_STREAMING_OPTIONS, ...options.streaming };
+  const cache = getGlobalCache();
+  const budget = new BudgetManager(config.tokenBudget, MAX_CHILD_CALLS * MAX_DEPTH);
+
+  const state: RLMExecutionState = {
+    depth: 0,
+    childCallCount: 0,
+    tokensUsed: 0,
+    cacheHits: 0,
+    stoppedEarly: false,
+  };
+
+  // Helper to emit status updates
+  const emitStatus = async (status: Partial<StreamStatus>) => {
+    if (streamingOpts.onStatus) {
+      await streamingOpts.onStatus({
+        phase: "thinking",
+        currentText: "",
+        tokensUsed: state.tokensUsed,
+        isFinal: false,
+        ...status,
+      } as StreamStatus);
+    }
+  };
+
+  // Determine mode
+  const determineMode = (): "simple" | "full" => {
+    if (config.mode === "simple" || config.mode === "full") return config.mode;
+    const contextTokens = context.totalTokens || Math.ceil(context.items.reduce((sum, item) => sum + item.content.length, 0) / 4);
+    if (contextTokens < 2000 && query.length < 200) return "simple";
+    if (context.items.length <= 2) return "simple";
+    return "full";
+  };
+
+  const mode = determineMode();
+  console.log(`[RLM Orchestrator Streaming] Mode: ${mode}, Context items: ${context.items.length}`);
+
+  // ===== SIMPLE MODE: Use streaming simple RLM =====
+  if (mode === "simple") {
+    return executeSimpleRLMStreaming(query, context, {
+      config,
+      systemPrompt: options.systemPrompt,
+      apiKey: options.apiKey,
+      streaming: streamingOpts,
+    });
+  }
+
+  // ===== FULL MODE: Planner → Workers → Aggregator with progress =====
+  try {
+    // Phase 1: Planning
+    await emitStatus({
+      phase: "planning",
+      progress: {
+        currentStep: 1,
+        totalSteps: 3,
+        stepDescription: "Analyzing query and planning approach...",
+      },
+    });
+
+    const plannerResult = await runPlanner(query, context, { config, apiKey: options.apiKey });
+    budget.consume(plannerResult.tokensUsed);
+    state.tokensUsed += plannerResult.tokensUsed;
+
+    // If planner can answer directly, stream that
+    if (plannerResult.canAnswerDirectly && plannerResult.directAnswer) {
+      await emitStatus({
+        phase: "streaming",
+        currentText: plannerResult.directAnswer,
+      });
+      await emitStatus({
+        phase: "complete",
+        currentText: plannerResult.directAnswer,
+        tokensUsed: state.tokensUsed,
+        isFinal: true,
+      });
+
+      return {
+        content: { markdown: plannerResult.directAnswer },
+        metadata: {
+          mode: "full",
+          depthUsed: 0,
+          subCalls: 0,
+          cacheHits: 0,
+          tokensUsed: state.tokensUsed,
+        },
+      };
+    }
+
+    // If no sub-queries needed, fall back to simple streaming
+    if (!plannerResult.needsSubQueries || plannerResult.subQueries.length === 0) {
+      return executeSimpleRLMStreaming(query, context, {
+        config,
+        systemPrompt: options.systemPrompt,
+        apiKey: options.apiKey,
+        streaming: streamingOpts,
+      });
+    }
+
+    // Phase 2: Research - Execute workers with progress
+    const subQueries = plannerResult.subQueries.slice(0, config.maxChildCalls);
+    const workerResults: WorkerResult[] = [];
+
+    await emitStatus({
+      phase: "researching",
+      progress: {
+        currentStep: 2,
+        totalSteps: 3,
+        stepDescription: `Processing ${subQueries.length} sub-queries...`,
+        subQueries: subQueries.map(sq => sq.query),
+        currentWorker: 0,
+        totalWorkers: subQueries.length,
+      },
+    });
+
+    for (let i = 0; i < subQueries.length; i++) {
+      const subQuery = subQueries[i];
+
+      if (!budget.canMakeCall()) {
+        state.stoppedEarly = true;
+        break;
+      }
+
+      // Update progress for each worker
+      await emitStatus({
+        phase: "researching",
+        progress: {
+          currentStep: 2,
+          totalSteps: 3,
+          stepDescription: `Researching: "${subQuery.query.substring(0, 50)}..."`,
+          subQueries: subQueries.map(sq => sq.query),
+          currentWorker: i + 1,
+          totalWorkers: subQueries.length,
+        },
+      });
+
+      // Check cache
+      const cacheHash = cache.generateHash(
+        subQuery.query,
+        JSON.stringify(context.items.map(item => item.content.substring(0, 100)))
+      );
+      const cached = cache.get(cacheHash);
+
+      if (cached) {
+        state.cacheHits++;
+        workerResults.push(cached);
+        continue;
+      }
+
+      // Execute worker
+      const result = await executeWorker(subQuery, context, {
+        config,
+        cache,
+        apiKey: options.apiKey,
+        depth: 1,
+      });
+
+      budget.consume(result.tokensUsed);
+      state.tokensUsed += result.tokensUsed;
+      state.childCallCount++;
+      if (result.fromCache) state.cacheHits++;
+      workerResults.push(result);
+
+      // Early stop on high confidence
+      if (result.confidence >= 0.95) {
+        state.stoppedEarly = true;
+        state.stopReason = "high_confidence";
+        break;
+      }
+    }
+
+    // Phase 3: Synthesizing - Aggregate with streaming
+    await emitStatus({
+      phase: "synthesizing",
+      progress: {
+        currentStep: 3,
+        totalSteps: 3,
+        stepDescription: "Synthesizing final response...",
+      },
+    });
+
+    // Use streaming aggregator
+    const output = await aggregateResultsStreaming(workerResults, {
+      config,
+      originalQuery: query,
+      apiKey: options.apiKey,
+      streaming: streamingOpts,
+    });
+
+    // Final status update
+    await emitStatus({
+      phase: "complete",
+      currentText: output.content.markdown,
+      tokensUsed: state.tokensUsed + (output.metadata?.tokensUsed || 0),
+      isFinal: true,
+    });
+
+    // Update metadata
+    if (output.metadata) {
+      output.metadata.depthUsed = 1;
+      output.metadata.cacheHits = state.cacheHits;
+      output.metadata.tokensUsed = state.tokensUsed + output.metadata.tokensUsed;
+    }
+
+    return output;
+
+  } catch (error) {
+    console.error("[RLM Orchestrator Streaming] Error:", error);
+
+    await emitStatus({
+      phase: "error",
+      currentText: "",
+      tokensUsed: state.tokensUsed,
+      isFinal: true,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return {
+      content: {
+        markdown: `**Error during RLM execution:**\n\n${error instanceof Error ? error.message : String(error)}`,
+      },
+      metadata: {
+        mode: "full",
+        depthUsed: 0,
+        subCalls: state.childCallCount,
+        cacheHits: state.cacheHits,
+        tokensUsed: state.tokensUsed,
+      },
+    };
+  }
 }
