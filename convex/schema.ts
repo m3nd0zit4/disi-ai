@@ -8,7 +8,12 @@ export default defineSchema({
     email: v.string(),
     name: v.string(),
     imageUrl: v.optional(v.string()),
-    plan: v.union(v.literal("free"), v.literal("pro")),
+    plan: v.union(
+      v.literal("free"), // legacy; treat as starter until migrated
+      v.literal("starter"),
+      v.literal("payg"),
+      v.literal("pro")
+    ),
 
     // Stripe
     stripeCustomerId: v.optional(v.string()),
@@ -39,6 +44,46 @@ export default defineSchema({
       autoThreshold: v.number(),     // Default 0.8
       duplicateThreshold: v.number(), // Default 0.95
     })),
+
+    // RLM (Reasoning) Settings - aligned with lib/rlm/types.ts DEFAULT_RLM_CONFIG
+    rlmSettings: v.optional(v.object({
+      mode: v.union(v.literal("simple"), v.literal("full")),
+      tokenBudget: v.number(),
+      enableCache: v.boolean(),
+      enableReasoning: v.boolean(),
+      maxDepth: v.optional(v.number()),
+      maxChildCalls: v.optional(v.number()),
+    })),
+
+    // AI feature defaults (Web Search, Thinking, RLM Full)
+    aiFeatureDefaults: v.optional(v.object({
+      webSearchEnabled: v.boolean(),
+      thinkingEnabled: v.boolean(),
+      rlmForceFullByDefault: v.boolean(),
+    })),
+
+    // Prepaid credits (pay-as-you-go: usage deducts from this, never from card)
+    balanceCredits: v.optional(v.number()),
+
+    // Billing (xAI-style)
+    billingAddress: v.optional(v.object({
+      name: v.string(),
+      email: v.string(),
+      country: v.string(),
+      line1: v.string(),
+      line2: v.optional(v.string()),
+      city: v.string(),
+      state: v.string(),
+      postalCode: v.string(),
+      taxIdType: v.optional(v.string()),
+      taxId: v.optional(v.string()),
+    })),
+    invoicedBillingEnabled: v.optional(v.boolean()),
+    invoicedBillingLimitUsd: v.optional(v.number()),
+
+    // Onboarding (context for AI: display name, interests)
+    onboardingDisplayName: v.optional(v.string()),
+    onboardingInterests: v.optional(v.array(v.string())),
 
     // Metadata
     createdAt: v.number(),
@@ -216,10 +261,11 @@ export default defineSchema({
     yearMonth: v.string(), // "2025-01" para queries eficientes
   })
     .index("by_user", ["userId"])
+    .index("by_user_and_timestamp", ["userId", "timestamp"])
     .index("by_user_and_month", ["userId", "yearMonth"])
     .index("by_model", ["modelId"]),
 
-  // ===== BILLING EVENTS =====
+  // ===== BILLING EVENTS (incl. top-ups for Latest invoices) =====
   billingEvents: defineTable({
     userId: v.id("users"),
     type: v.union(
@@ -234,8 +280,12 @@ export default defineSchema({
 
     // Stripe data
     stripeEventId: v.string(),
-    amount: v.optional(v.number()),
+    amount: v.optional(v.number()), // USD
     currency: v.optional(v.string()),
+
+    // For payment_succeeded: display type and credits added
+    invoiceType: v.optional(v.string()), // "Single Purchase" | "Monthly Invoice" etc.
+    amountCredits: v.optional(v.number()),
 
     // Metadata
     metadata: v.optional(v.any()),
@@ -243,8 +293,19 @@ export default defineSchema({
     timestamp: v.number(),
   })
     .index("by_user", ["userId"])
+    .index("by_user_and_timestamp", ["userId", "timestamp"])
     .index("by_stripe_event", ["stripeEventId"])
     .index("by_type", ["type"]),
+
+  // ===== PROMO CODES (for free credits) =====
+  promoCodes: defineTable({
+    code: v.string(),
+    credits: v.number(),
+    createdAt: v.number(),
+    usedBy: v.optional(v.id("users")),
+    usedAt: v.optional(v.number()),
+  })
+    .index("by_code", ["code"]),
 
   // ===== FEEDBACK =====
   feedback: defineTable({
@@ -295,6 +356,16 @@ export default defineSchema({
       searchField: "name",
       filterFields: ["userId", "isPublic"],
     }),
+
+  // Runtime node data written by the worker (avoids OCC with frontend updateCanvas).
+  canvasNodeData: defineTable({
+    canvasId: v.id("canvas"),
+    nodeId: v.string(),
+    data: v.any(),
+    updatedAt: v.number(),
+  })
+    .index("by_canvas_node", ["canvasId", "nodeId"])
+    .index("by_canvas", ["canvasId"]),
 
   // ===== CANVAS EXECUTIONS =====
   canvasExecutions: defineTable({

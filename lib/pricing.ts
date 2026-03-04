@@ -1,10 +1,12 @@
 /**
- * ! Fuentes oficiales de precios:
- * - OpenAI: https://openai.com/pricing
- * - Anthropic: https://www.anthropic.com/pricing
- * - Google AI: https://ai.google.dev/pricing
- * - xAI: https://x.ai/api
- * - DeepSeek: https://platform.deepseek.com/api-docs/pricing
+ * Pricing per 1M tokens (USD). Update periodically from official sources.
+ *
+ * Official pricing sources (last checked Feb 2025):
+ * - OpenAI: https://platform.openai.com/docs/pricing | https://openai.com/pricing
+ * - Anthropic: https://docs.anthropic.com/en/docs/about-claude/pricing
+ * - Google AI: https://ai.google.dev/gemini-api/docs/pricing
+ * - xAI: https://docs.x.ai/developers/models
+ * - DeepSeek: https://api-docs.deepseek.com/quick_start/pricing
  */
 
 export interface ModelPricing {
@@ -108,8 +110,13 @@ export const PRICING: Record<string, ProviderPricing> = {
   Gemini: {
     //? Gemini 3 Series
     "gemini-3-pro-preview": {
-      input: 4.0,
-      output: 18.0,
+      input: 2.0,
+      output: 12.0,
+      cached: 0.40,
+    },
+    "gemini-3.1-pro-preview": {
+      input: 2.0,
+      output: 12.0,
       cached: 0.40,
     },
     "gemini-3-pro-image-preview": {
@@ -125,7 +132,7 @@ export const PRICING: Record<string, ProviderPricing> = {
     },
     "gemini-2.5-flash-image": {
       input: 0.30,
-      output: 0.039,
+      output: 2.50,
     },
     "gemini-2.5-flash-lite": {
       input: 0.20,
@@ -158,8 +165,12 @@ export const PRICING: Record<string, ProviderPricing> = {
       output: 0.50,
       cached: 0.05,
     },
-    
     //? Grok 4 Series
+    "grok-4": {
+      input: 3.00,
+      output: 15.00,
+      cached: 0.75,
+    },
     "grok-4-fast-reasoning": {
       input: 0.20,
       output: 0.50,
@@ -170,15 +181,25 @@ export const PRICING: Record<string, ProviderPricing> = {
       output: 0.50,
       cached: 0.05,
     },
+    //? Grok 3 Series (no Agent Tools)
+    "grok-3": {
+      input: 3.00,
+      output: 15.00,
+      cached: 0.75,
+    },
+    "grok-3-mini": {
+      input: 0.30,
+      output: 0.50,
+      cached: 0.03,
+    },
   },
 
-  // * DEEPSEEK
+  // * DEEPSEEK (V3.2: cache hit ~0.028–0.14, cache miss ~0.28–0.55, output 0.42–2.19)
   DeepSeek: {
-    //? DeepSeek V3 Series
     "deepseek-reasoner": {
-      input: 0.28,
-      output: 0.42,
-      cached: 0.028, 
+      input: 0.55,
+      output: 2.19,
+      cached: 0.14,
     },
     "deepseek-chat": {
       input: 0.28,
@@ -189,7 +210,7 @@ export const PRICING: Record<string, ProviderPricing> = {
 };
 
 /**
- * Optain the pricing of a specific model
+ * Obtain the pricing of a specific model
  */
 export function getModelPricing(
   provider: string,

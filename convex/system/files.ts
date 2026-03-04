@@ -67,6 +67,9 @@ export const createFile = action({
       if (!kb || kb.userId !== user._id) {
         throw new Error("Unauthorized: You do not own this Knowledge Base");
       }
+      if (user.plan !== "pro") {
+        throw new Error("Knowledge Garden is available on the Pro plan");
+      }
     }
 
     if (args.canvasId) {
@@ -115,6 +118,9 @@ export const generateUploadUrl = action({
       const kb = await ctx.runQuery(api.knowledge_garden.knowledgeBases.get, { id: args.kbId });
       if (!kb || kb.userId !== user._id) {
         throw new Error("Unauthorized");
+      }
+      if (user.plan !== "pro") {
+        throw new Error("Knowledge Garden is available on the Pro plan");
       }
     }
 
@@ -228,6 +234,34 @@ export const confirmUpload = action({
         userId: identity.subject,
       });
       console.log(`[Files] confirmUpload completed successfully for fileId: ${args.fileId}`);
+
+      // Emit file/process to Inngest (event-driven processing)
+      const files = await ctx.runQuery(api.system.files.getFilesByIds, {
+        fileIds: [args.fileId],
+      });
+      const file = files?.[0];
+      const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
+      const secret = process.env.FILE_WORKER_SECRET;
+      if (file && appUrl && secret) {
+        try {
+          const res = await fetch(`${appUrl.replace(/\/$/, "")}/api/inngest/trigger-file`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileId: file._id,
+              s3Key: file.s3Key,
+              fileName: file.fileName,
+              kbId: file.kbId ?? undefined,
+              secret,
+            }),
+          });
+          if (!res.ok) {
+            console.warn(`[Files] Inngest trigger returned ${res.status}`);
+          }
+        } catch (e) {
+          console.warn("[Files] Inngest trigger failed (file remains uploaded for legacy worker)", e);
+        }
+      }
     } catch (error) {
       console.error(`[Files] confirmUpload mutation failed for fileId: ${args.fileId}`, error);
       throw error;

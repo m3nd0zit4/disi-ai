@@ -14,9 +14,17 @@ export interface AIRequest {
 
 export interface AIResponse {
     content: string;
-    tokens: number;
+    tokens: number | { input: number; output: number; total: number; reasoning?: number };
     cost: number;
     finishReason: string;
+    thinkingContent?: string;
+    citations?: Array<{
+        url: string;
+        title: string;
+        description?: string;
+        domain?: string;
+        favicon?: string;
+    }>;
 }
 
 // Orchestration interfaces

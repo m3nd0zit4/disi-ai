@@ -1,21 +1,21 @@
-import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { getConvexClient } from "@/lib/convex-client";
 import { searchSimilar } from "@/lib/upstash-vector";
 import { generateEmbedding, queryLLM } from "@/lib/bedrock";
+import { apiSuccess, apiError } from "@/lib/api-response";
 
 export async function POST(req: Request) {
   try {
     const { userId, getToken } = await auth();
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
     }
 
     const { prompt: rawPrompt, fileIds: rawFileIds } = await req.json();
 
     if (!rawPrompt || typeof rawPrompt !== "string") {
-      return NextResponse.json({ error: "Prompt is required and must be a string" }, { status: 400 });
+      return apiError("Prompt is required and must be a string", 400, "INVALID_INPUT");
     }
 
     // Sanitize prompt: remove control characters and limit length
@@ -26,34 +26,30 @@ export async function POST(req: Request) {
       .slice(0, 4000); // Reasonable limit for vector search query
 
     if (prompt.length === 0) {
-      return NextResponse.json({ error: "Invalid prompt after sanitization" }, { status: 400 });
+      return apiError("Invalid prompt after sanitization", 400, "INVALID_INPUT");
     }
 
     // Validate fileIds: must be an array of strings (Convex IDs)
     let fileIds: string[] = [];
     if (rawFileIds) {
       if (!Array.isArray(rawFileIds)) {
-        return NextResponse.json({ error: "fileIds must be an array" }, { status: 400 });
+        return apiError("fileIds must be an array", 400, "INVALID_INPUT");
       }
-      
+
       const potentialFileIds = rawFileIds.filter(id => typeof id === "string" && /^[a-z0-9]+$/i.test(id));
-      
+
       if (potentialFileIds.length > 0) {
         // Verify ownership via Convex
         const token = await getToken({ template: "convex" });
-        const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-        if (token) convex.setAuth(token);
-        
-        const validatedFiles = await convex.query(api.files.getFilesByIds, { 
-          fileIds: potentialFileIds as any[] 
+        const convex = getConvexClient(token ?? undefined);
+        const validatedFiles = await convex.query(api.system.files.getFilesByIds, {
+          fileIds: potentialFileIds as any[]
         });
-        
+
         fileIds = validatedFiles.map(f => f._id);
-        
+
         if (fileIds.length === 0) {
-          return NextResponse.json({ 
-            error: "None of the provided file IDs are valid or owned by you" 
-          }, { status: 400 });
+          return apiError("None of the provided file IDs are valid or owned by you", 400, "INVALID_INPUT");
         }
       }
     }
@@ -96,10 +92,10 @@ export async function POST(req: Request) {
     // 5. Call LLM
     const answer = await queryLLM(prompt, context);
 
-    return NextResponse.json({ answer, sources: allRelevantChunks });
+    return apiSuccess({ answer, sources: allRelevantChunks });
 
   } catch (error: unknown) {
     console.error("Query error:", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Internal error" }, { status: 500 });
+    return apiError(error instanceof Error ? error.message : "Internal error", 500, "INTERNAL_ERROR");
   }
 }

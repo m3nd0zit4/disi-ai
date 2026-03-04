@@ -25,28 +25,21 @@ export const createUser = mutation({
       return existing._id;
     }
 
-    // ?Create new user
+    // ?Create new user (no default canvas; user goes to home and creates when they want)
+    const welcomeCredits = Number(process.env.STARTER_WELCOME_CREDITS) || 100;
     const userId = await ctx.db.insert("users", {
       clerkId: args.clerkId,
       email: args.email,
       name: args.name,
       imageUrl: args.imageUrl,
-      plan: "free",
+      plan: "starter",
       apiKeySource: "system",
+      balanceCredits: welcomeCredits,
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
     });
 
-    // ?Create default canvas for the new user
-    await ctx.db.insert("canvas", {
-      userId,
-      name: "My First Canvas",
-      nodes: [],
-      edges: [],
-      createdAt: Date.now(),
-    });
-
-    console.log("User created with default canvas:", userId);
+    console.log("User created:", userId);
     return userId;
   },
 });
@@ -65,25 +58,39 @@ export const getOrCreateUser = mutation({
 
     if (!user) {
       console.warn(`Auto-creating user ${identity.subject} from identity (webhook fallback)`);
+      const welcomeCredits = Number(process.env.STARTER_WELCOME_CREDITS) || 100;
       const userId = await ctx.db.insert("users", {
         clerkId: identity.subject,
         email: identity.email || "",
         name: identity.name || "Usuario",
         imageUrl: identity.pictureUrl,
-        plan: "free",
+        plan: "starter",
         apiKeySource: "system",
+        balanceCredits: welcomeCredits,
         createdAt: Date.now(),
         lastLoginAt: Date.now(),
       });
       user = await ctx.db.get(userId);
       if (!user) throw new Error("Failed to create user");
+    } else {
+      // Grant starter welcome credits to existing users who never received them
+      const welcomeCredits = Number(process.env.STARTER_WELCOME_CREDITS) || 100;
+      const hasNoCredits = user.balanceCredits == null || user.balanceCredits === 0;
+      if ((user.plan === "starter" || user.plan === "free") && hasNoCredits && welcomeCredits > 0) {
+        await ctx.db.patch(user._id, {
+          balanceCredits: welcomeCredits,
+          updatedAt: Date.now(),
+        });
+        user = await ctx.db.get(user._id);
+        if (!user) throw new Error("Failed to refresh user");
+      }
     }
 
     return user;
   },
 });
 
-// *Update user (from Webhook) 
+// *Update user (from Webhook). No sobrescribir name si ya eligieron uno en onboarding.
 export const updateUser = mutation({
   args: {
     clerkId: v.string(),
@@ -102,13 +109,17 @@ export const updateUser = mutation({
       throw new Error("User not found");
     }
 
-    await ctx.db.patch(user._id, {
+    const patch: Record<string, unknown> = {
       email: args.email,
-      name: args.name,
       imageUrl: args.imageUrl,
       updatedAt: Date.now(),
-    });
+    };
+    // Mantener el nombre que la persona eligió en onboarding; no sobrescribir con Clerk/OAuth
+    if (!user.onboardingDisplayName) {
+      patch.name = args.name;
+    }
 
+    await ctx.db.patch(user._id, patch);
     return user._id;
   },
 });
@@ -162,7 +173,63 @@ export const getCurrentUser = query({
       apiKeySource: user.apiKeySource,
       subscriptionStatus: user.subscriptionStatus,
       subscriptionEndDate: user.subscriptionEndDate,
+      balanceCredits: user.balanceCredits ?? 0,
+      stripeCustomerId: user.stripeCustomerId,
+      billingAddress: user.billingAddress,
+      invoicedBillingEnabled: user.invoicedBillingEnabled,
+      invoicedBillingLimitUsd: user.invoicedBillingLimitUsd,
+      onboardingDisplayName: user.onboardingDisplayName,
+      onboardingInterests: user.onboardingInterests,
     };
+  },
+});
+
+// *Set onboarding context: Name = nombre que la persona eligió; intereses para personalización.
+// Crea el usuario en Convex si no existe (Clerk ya lo tiene).
+export const setOnboardingContext = mutation({
+  args: {
+    displayName: v.optional(v.string()),
+    selectedInterests: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    let user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) {
+      const userId = await ctx.db.insert("users", {
+        clerkId: identity.subject,
+        email: identity.email || "",
+        name: identity.name || "Usuario",
+        imageUrl: identity.pictureUrl,
+        plan: "starter",
+        apiKeySource: "system",
+        createdAt: Date.now(),
+        lastLoginAt: Date.now(),
+      });
+      user = await ctx.db.get(userId);
+      if (!user) throw new Error("Failed to create user");
+    }
+
+    const chosenName = typeof args.displayName === "string" ? args.displayName.trim() : undefined;
+    const patch: Record<string, unknown> = { updatedAt: Date.now() };
+
+    // Name = el nombre que la persona quiere (cómo quieren que les digamos)
+    if (chosenName) {
+      patch.name = chosenName;
+      patch.onboardingDisplayName = chosenName;
+    }
+
+    if (args.selectedInterests !== undefined) {
+      patch.onboardingInterests = args.selectedInterests.length > 0 ? args.selectedInterests : undefined;
+    }
+
+    await ctx.db.patch(user._id, patch);
+    return { success: true };
   },
 });
 
@@ -185,10 +252,42 @@ export const getUserByClerkId = query({
       imageUrl: user.imageUrl,
       plan: user.plan,
       apiKeySource: user.apiKeySource,
+      balanceCredits: user.balanceCredits ?? 0,
     };
-  }
-})
+  },
+});
 
+//* Get user by Stripe customer ID (for webhook)
+export const getUserByStripeCustomerId = query({
+  args: { stripeCustomerId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_stripe_customer", (q) => q.eq("stripeCustomerId", args.stripeCustomerId))
+      .first();
+    return user ?? null;
+  },
+});
+
+/**
+ * Set Stripe customer ID (after creating customer in Stripe). Used for top-up flow.
+ */
+export const setStripeCustomerId = mutation({
+  args: { stripeCustomerId: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+    await ctx.db.patch(user._id, {
+      stripeCustomerId: args.stripeCustomerId,
+      updatedAt: Date.now(),
+    });
+  },
+});
 
 // *Update last login (mutation separated)
 export const updateLastLogin = mutation({
@@ -305,7 +404,7 @@ export const getUserStats = query({
         tokens: totalTokens,
         cost: totalCost,
       },
-      limits: user.plan === "pro"
+      limits: user.plan === "pro" || user.plan === "payg"
         ? { requests: 10000, tokens: 10000000 }
         : { requests: 100, tokens: 100000 },
       conversations: {
@@ -427,4 +526,24 @@ export const deleteApiKey = mutation({
 
     return { success: true };
   }
-})
+});
+
+// *Verify that the current user owns the model response (for SSE stream access)
+export const verifyResponseOwnership = query({
+  args: { responseId: v.id("modelResponses") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return false;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) return false;
+
+    const response = await ctx.db.get(args.responseId);
+    if (!response) return false;
+
+    return response.userId === user._id;
+  },
+});

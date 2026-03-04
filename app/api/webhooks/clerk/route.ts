@@ -4,10 +4,7 @@ import { headers } from 'next/headers';
 import { WebhookEvent, UserJSON } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { api } from '@/convex/_generated/api';
-import { ConvexHttpClient } from 'convex/browser';
-
-// Cliente HTTP de Convex (puede llamar funciones internas desde el servidor)
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+import { getConvexClient } from '@/lib/convex-client';
 
 const webhookSecret = process.env.CLERK_WEBHOOK_SECRET!;
 
@@ -40,20 +37,21 @@ export async function POST(req: Request) {
   }
 
   const eventType = evt.type;
+  const convex = getConvexClient();
 
   try {
     switch (eventType) {
       case 'user.created':
-        await handleUserCreated(evt.data);
+        await handleUserCreated(convex, evt.data);
         break;
 
       case 'user.updated':
-        await handleUserUpdated(evt.data);
+        await handleUserUpdated(convex, evt.data);
         break;
 
       case 'user.deleted':
         if (evt.data.id) {
-          await handleUserDeleted(evt.data.id);
+          await handleUserDeleted(convex, evt.data.id);
         }
         break;
 
@@ -70,7 +68,7 @@ export async function POST(req: Request) {
 
 // ===== HANDLERS =====
 
-async function handleUserCreated(data: UserJSON) {
+async function handleUserCreated(convex: ReturnType<typeof getConvexClient>, data: UserJSON) {
   console.log('Creating user in Convex:', data.id);
 
   await convex.mutation(api.users.users.createUser, {
@@ -82,7 +80,7 @@ async function handleUserCreated(data: UserJSON) {
   });
 }
 
-async function handleUserUpdated(data: UserJSON) {
+async function handleUserUpdated(convex: ReturnType<typeof getConvexClient>, data: UserJSON) {
   console.log('Updating user in Convex:', data.id);
 
   await convex.mutation(api.users.users.updateUser, {
@@ -94,7 +92,7 @@ async function handleUserUpdated(data: UserJSON) {
   });
 }
 
-async function handleUserDeleted(userId: string) {
+async function handleUserDeleted(convex: ReturnType<typeof getConvexClient>, userId: string) {
   console.log('Deleting user in Convex:', userId);
 
   await convex.mutation(api.users.users.deleteUser, {

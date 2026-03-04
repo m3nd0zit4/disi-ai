@@ -43,3 +43,7 @@ next-env.d.ts
 #AI
 *.md 
 /.claude
+
+# Windows reserved name (cannot be tracked by Git)
+nul
+NUL

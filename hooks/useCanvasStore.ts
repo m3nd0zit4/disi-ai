@@ -34,8 +34,14 @@ export interface CanvasState {
   selectedNodeIdForToolbar: string | null;
   setSelectedNodeIdForToolbar: (id: string | null) => void;
   viewport: Viewport | null;
+  /** Pane dimensions (from React Flow) so we can pass viewport with width/height to layout. */
+  paneDimensions: { width: number; height: number } | null;
   setViewport: (canvasId: string, viewport: Viewport) => void;
+  setPaneDimensions: (dimensions: { width: number; height: number } | null) => void;
   loadViewport: (canvasId: string) => void;
+  /** Set to a node id to request focus/center on that node (Editor-Canvas consumes and clears). */
+  focusNodeId: string | null;
+  setFocusNodeId: (id: string | null) => void;
   isKnowledgePanelOpen: boolean;
   setKnowledgePanelOpen: (isOpen: boolean) => void;
   // Knowledge Garden State
@@ -57,8 +63,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   selectedNodeIdForToolbar: null as string | null,
   setSelectedNodeIdForToolbar: (id: string | null) => set({ selectedNodeIdForToolbar: id }),
   viewport: { x: 0, y: 0, zoom: 1 },
+  paneDimensions: null as { width: number; height: number } | null,
   isKnowledgePanelOpen: false,
   setKnowledgePanelOpen: (isOpen: boolean) => set({ isKnowledgePanelOpen: isOpen }),
+
+  setPaneDimensions: (dimensions) => set({ paneDimensions: dimensions }),
 
   // Knowledge Garden Initial State
   isGardenActive: false,
@@ -86,6 +95,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       console.error("Failed to load viewport from localStorage", e);
     }
   },
+  focusNodeId: null as string | null,
+  setFocusNodeId: (id) => set({ focusNodeId: id }),
   onNodesChange: (changes: NodeChange[]) => {
     const { nodes, edges, draggedNodeId } = get();
     
@@ -184,9 +195,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       edges: addEdge(connection, get().edges),
     });
   },
-  setNodes: (nodes: Node[]) => set({ nodes }),
-  setEdges: (edges: Edge[]) => set({ edges }),
-  addNode: (node: Node) => set({ nodes: [...get().nodes, node] }),
+  setNodes: (nodes: Node[]) => {
+    const byId = new Map<string, Node>();
+    nodes.forEach((n) => byId.set(n.id, n));
+    set({ nodes: Array.from(byId.values()) });
+  },
+  setEdges: (edges: Edge[]) => {
+    const byId = new Map<string, Edge>();
+    edges.forEach((e) => byId.set(e.id, e));
+    set({ edges: Array.from(byId.values()) });
+  },
+  addNode: (node: Node) => {
+    const nodes = get().nodes.filter((n) => n.id !== node.id);
+    set({ nodes: [...nodes, node] });
+  },
   removeNode: (nodeId: string) => {
     set({
       nodes: get().nodes.filter((node) => node.id !== nodeId),
@@ -215,7 +237,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }),
     }));
   },
-  addEdge: (edge: Edge) => set({ edges: [...get().edges, edge] }),
+  addEdge: (edge: Edge) => {
+    const edges = get().edges.filter((e) => e.id !== edge.id);
+    set({ edges: [...edges, edge] });
+  },
   removeEdge: (edgeId: string) => set({ edges: get().edges.filter(e => e.id !== edgeId) }),
   duplicateNode: (nodeId: string) => {
     const { nodes } = get();

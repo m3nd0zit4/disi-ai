@@ -7,15 +7,17 @@ import {
   PromptInputTextarea,
 } from "@/components/ui/prompt-input";
 import { Button } from "@/components/ui/button";
-import { ArrowUp, Mic, Plus, Github, Figma, FolderOpen, X } from "lucide-react";
+import { ArrowUp, Mic, Plus, Github, Figma, FolderOpen, X, Brain, Layers } from "lucide-react";
 import Image from "next/image";
-import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
+import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useAIContext } from "@/context/AIContext";
 import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useRouter, useParams } from "next/navigation";
+import { useAIFeatures } from "@/app/_contexts/AIFeaturesContext";
+import { supportsThinking } from "@/lib/aiServices/configs/provider-configs";
 
 import ModelSelector from "./chat/ModelSelector";
 import { KBSelector } from "./chat/KBSelector";
@@ -27,6 +29,7 @@ import { FileNodeData } from "./canvas/types";
 
 import { useNodePreview } from "@/hooks/useNodePreview";
 import { modelRegistry } from "@/shared/ai";
+import { getDefaultModelId } from "@/lib/rlm/internal";
 
 // Types
 export interface FileWithPreview {
@@ -66,9 +69,10 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
   ref
 ) {
   const { selectedModels, hasModelsSelected } = useAIContext();
+  const { thinkingEnabled, rlmForceFull, setThinkingEnabled, setRlmForceFull } = useAIFeatures();
   const router = useRouter();
   const params = useParams();
-  
+
   const canvasId = propCanvasId || (params.canvasId as Id<"canvas">);
 
   const [prompt, setPrompt] = useState("");
@@ -85,8 +89,8 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
   const [videoDuration, setVideoDuration] = useState(4);
   
   const [selectedKbIds, setSelectedKbIds] = useState<Id<"knowledgeBases">[]>([]);
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  
   // State for files that have been turned into nodes but are waiting to be linked to the next prompt
   const [pendingFiles, setPendingFiles] = useState<{ 
     nodeId: string; 
@@ -106,8 +110,21 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
   const createCanvas = useMutation(api.canvas.canvas.createCanvas);
   const createFile = useAction(api.system.files.createFile);
 
-  // Use custom hook for preview logic
-  const { handlePromptChange, cleanupPreview, previewNodeIdRef, transformPreviewToReal } = useNodePreview(prompt, setPrompt, selectedModels);
+  const nodes = useCanvasStore((state) => state.nodes);
+  const selectionSyncKey = useMemo(() => {
+    const selected = nodes.find(
+      (n) => n.selected && (n.type === "input" || n.type === "preview-input")
+    );
+    return selected ? `${selected.id}\0${(selected.data?.text as string) ?? ""}` : "";
+  }, [nodes]);
+
+  // Use custom hook for preview logic (selectionSyncKey so selecting an input node shows its text in chat)
+  const { handlePromptChange, cleanupPreview, previewNodeIdRef, transformPreviewToReal } = useNodePreview(
+    prompt,
+    setPrompt,
+    selectedModels,
+    selectionSyncKey
+  );
 
   // Track object URLs for revocation
   const objectUrlsRef = useRef<Set<string>>(new Set());
@@ -170,8 +187,6 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
     }
   }, [selectedModels, hasModelsSelected]);
 
-  const nodes = useCanvasStore(state => state.nodes);
-  
   // Track previous node state to prevent infinite loops
   const prevNodesRef = useRef<{
     selectedFileNodeIds: Set<string>;
@@ -474,13 +489,13 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
       return;
     }
 
-    // Long text paste goes directly into prompt
+    // Long text paste: use handlePromptChange so preview node is created/updated
     const textData = e.clipboardData.getData("text");
     if (textData && textData.length > PASTE_THRESHOLD) {
       e.preventDefault();
-      setPrompt(prev => prev + textData);
+      handlePromptChange(prompt + textData);
     }
-  }, [canvasId, handleFileSelect]);
+  }, [canvasId, handleFileSelect, prompt, handlePromptChange]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -512,14 +527,27 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
     try {
       let currentCanvasId = canvasId;
 
-      // Use selected models or default to the first available model if none selected
-      const modelsToUse = hasModelsSelected ? selectedModels : [{
-        category: "reasoning",
-        modelId: "gpt-5.2",
-        provider: "GPT",
-        providerModelId: "gpt-5.2",
-        isEnabled: true,
-      }];
+      // Use selected models or default to the first enabled model from the registry
+      const defaultModel = hasModelsSelected
+        ? null
+        : (modelRegistry.getEnabled()[0] ?? modelRegistry.getById(getDefaultModelId()) ?? null);
+      const modelsToUse = hasModelsSelected
+        ? selectedModels
+        : defaultModel
+          ? [{
+              category: (defaultModel.primaryCapability === "text.reasoning" ? "reasoning" : "standard") as "reasoning" | "standard",
+              modelId: defaultModel.id,
+              provider: (defaultModel.provider === "anthropic" ? "Claude" : defaultModel.provider === "openai" ? "GPT" : defaultModel.provider === "google" ? "Gemini" : defaultModel.provider === "xai" ? "Grok" : "DeepSeek") as "GPT" | "Claude" | "Gemini" | "Grok" | "DeepSeek",
+              providerModelId: defaultModel.providerModelId ?? defaultModel.id,
+              isEnabled: true,
+            }]
+          : [{
+              category: "reasoning" as const,
+              modelId: getDefaultModelId(),
+              provider: "GPT" as const,
+              providerModelId: getDefaultModelId(),
+              isEnabled: true,
+            }];
 
       // If there is no canvas, create a new one
       if (!currentCanvasId) {
@@ -592,7 +620,7 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
           newNodeId: newNodeId,
           inputNodeId: selectedInputNode?.id, // If we selected an existing node, use it. Otherwise undefined.
           existingInputNodeId, // OPTIMISTIC UI: If we transformed a preview, pass its new ID so backend doesn't create duplicate
-          kbIds: selectedKbIds.length > 0 ? selectedKbIds : undefined, // Include selected KBs for RAG
+          kbIds: selectedKbIds.length > 0 ? selectedKbIds : undefined,
           parentNodeIds: parentNodeIds,
           isBranching, // Pass the flag
 
@@ -616,6 +644,10 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
           videoAspectRatio,
           videoResolution,
           videoDuration,
+          // AI Features (user-controlled)
+          webSearchEnabled: true,
+          thinkingEnabled: modelSupportsThinking ? thinkingEnabled : false,
+          rlmForceFull: rlmForceFull || undefined,
         })
       });
 
@@ -624,9 +656,8 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
         throw new Error(error.error || "Failed to process request");
       }
 
-      // Cleanup already done before API call, but ensure it's clean
       setPrompt("");
-      setPendingFiles([]); // Clear pending files after they are linked
+      setPendingFiles([]);
 
       if (!canvasId && currentCanvasId) {
         router.push(`/canvas/${currentCanvasId}`);
@@ -655,6 +686,14 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
   const videoOptions = (modelInfo?._providerMetadata as { videoGenerationOptions?: unknown })?.videoGenerationOptions;
   const hasVideoOptions = !!videoOptions;
 
+  const modelSupportsThinking = useMemo(() => {
+    if (!selectedModel) return false;
+    return supportsThinking(
+      selectedModel.provider.toLowerCase(),
+      selectedModel.providerModelId || selectedModel.modelId
+    );
+  }, [selectedModel]);
+
   return (
     <div 
       className="w-full relative z-50"
@@ -675,15 +714,17 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
         value={prompt}
         onValueChange={handlePromptChange}
         onSubmit={handleSubmit}
+        textareaRef={promptTextareaRef}
         className="border border-border/30 dark:border-transparent bg-card/70 dark:bg-card/80 backdrop-blur-3xl relative z-10 w-full rounded-2xl p-0 pt-0.5 shadow-xl"
       >
         <div className="flex flex-col">
           <div className="px-3 pt-1.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <ModelSelector />
-              {!isImageModel && !isVideoModel && (
-                <KBSelector selectedKbIds={selectedKbIds} onSelect={setSelectedKbIds} />
-              )}
+              <KBSelector
+                selectedKbIds={selectedKbIds}
+                onSelect={setSelectedKbIds}
+              />
 
               {isImageModel && imageOptions && (
                 <ConfigImageSelector 
@@ -710,7 +751,7 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
           </div>
 
           <PromptInputTextarea
-            placeholder="Ask anything..."
+            placeholder="Escribe tu mensaje..."
             onPaste={handlePaste}
             className="min-h-[38px] pt-2 pl-3.5 text-sm leading-relaxed sm:text-sm md:text-sm placeholder:text-muted-foreground/20"
           />
@@ -783,17 +824,17 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
                 {showAddMenu && (
                   <div className="absolute bottom-10 left-0 z-50 min-w-[180px] overflow-hidden rounded-xl border bg-popover p-1 shadow-lg animate-in fade-in zoom-in-95 duration-200 slide-in-from-bottom-2">
                     <div className="grid gap-0.5">
-                      <button 
+                      <button
                         onClick={() => fileInputRef.current?.click()}
                         className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px] hover:bg-muted transition-colors text-left"
                       >
                         <FolderOpen size={14} className="text-muted-foreground/60" />
                         <span>Upload Local</span>
                       </button>
-                      <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        className="hidden" 
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
                         onChange={(e) => handleFileSelect(e)}
                         accept="image/*,.pdf,.txt,.md" // Adjust as needed
                       />
@@ -809,6 +850,68 @@ const ChatInputBox = forwardRef<ChatInputBoxHandle, ChatInputBoxProps>(function 
                   </div>
                 )}
               </div>
+
+              {/* Feature Toggles - Only for text models that support them */}
+              {!isImageModel && !isVideoModel && (
+                <div className="flex items-center gap-1 ml-0.5">
+                  {/* Subtle separator */}
+                  <div className="w-px h-5 bg-border/40 mr-0.5" />
+
+                  {/* RLM Full (complex) Toggle - planner → workers → aggregator */}
+                  <PromptInputAction tooltip={rlmForceFull ? "Deep analysis (RLM full) enabled" : "Enable deep analysis (RLM full)"}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setRlmForceFull(!rlmForceFull)}
+                      className={cn(
+                        "size-8 rounded-full transition-all duration-300 relative group/toggle",
+                        rlmForceFull
+                          ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/15 shadow-sm"
+                          : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50"
+                      )}
+                    >
+                      <Layers
+                        size={16}
+                        className={cn(
+                          "transition-transform duration-300",
+                          rlmForceFull && "scale-110"
+                        )}
+                      />
+                      {rlmForceFull && (
+                        <div className="absolute -top-0.5 -right-0.5 size-2 bg-amber-500 rounded-full animate-pulse" />
+                      )}
+                    </Button>
+                  </PromptInputAction>
+
+                  {/* Extended Thinking Toggle */}
+                  {modelSupportsThinking && (
+                    <PromptInputAction tooltip={thinkingEnabled ? "Extended thinking enabled" : "Enable extended thinking"}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setThinkingEnabled(!thinkingEnabled)}
+                        className={cn(
+                          "size-8 rounded-full transition-all duration-300 relative group/toggle",
+                          thinkingEnabled
+                            ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/15 shadow-sm"
+                            : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50"
+                        )}
+                      >
+                        <Brain
+                          size={16}
+                          className={cn(
+                            "transition-transform duration-300",
+                            thinkingEnabled && "scale-110"
+                          )}
+                        />
+                        {thinkingEnabled && (
+                          <div className="absolute -top-0.5 -right-0.5 size-2 bg-purple-500 rounded-full animate-pulse" />
+                        )}
+                      </Button>
+                    </PromptInputAction>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5">

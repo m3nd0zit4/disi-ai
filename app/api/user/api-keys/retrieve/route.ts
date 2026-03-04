@@ -1,13 +1,13 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
 import { getUserApiKey } from "@/lib/aws/aws-secrets";
+import { apiSuccess, apiError } from "@/lib/api-response";
 
 //* Endpoint to get API key for a user
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
     }
 
     const { provider } = await req.json();
@@ -18,17 +18,13 @@ export async function POST(req: Request) {
     // If no key, use system key
     if (!apiKey) {
       const systemKey = getSystemApiKey(provider);
-      return NextResponse.json({ apiKey: systemKey, source: "system" });
+      return apiSuccess({ apiKey: systemKey, source: "system" });
     }
 
-    return NextResponse.json({ apiKey, source: "user" });
-
+    return apiSuccess({ apiKey, source: "user" });
   } catch (error) {
     console.error("Error getting API key:", error);
-    return NextResponse.json(
-      { error: "Failed to get API key" },
-      { status: 500 }
-    );
+    return apiError(error instanceof Error ? error.message : "Failed to get API key", 500, "INTERNAL_ERROR");
   }
 }
 

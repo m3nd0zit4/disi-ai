@@ -8,6 +8,7 @@ import {
   BackgroundVariant,
   MiniMap,
   useReactFlow,
+  useStore,
   Node,
   Edge,
 } from "@xyflow/react";
@@ -27,7 +28,13 @@ interface EditorCanvasProps {
 
 export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCanvasProps) => {
   const { theme } = useTheme();
-  const { nodes, edges, setNodes, setEdges, draggedNodeId } = useCanvasStore();
+  const nodes = useCanvasStore((s) => s.nodes);
+  const edges = useCanvasStore((s) => s.edges);
+  const setNodes = useCanvasStore((s) => s.setNodes);
+  const setEdges = useCanvasStore((s) => s.setEdges);
+  const draggedNodeId = useCanvasStore((s) => s.draggedNodeId);
+  const focusNodeId = useCanvasStore((s) => s.focusNodeId);
+  const setFocusNodeId = useCanvasStore((s) => s.setFocusNodeId);
   const { 
     onNodesChange,
     onEdgesChange,
@@ -44,6 +51,43 @@ export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCan
 
   const { setCenter } = useReactFlow();
   const prevNodeIdsRef = useRef<Set<string>>(new Set());
+  const lastCenteredIdsRef = useRef<Set<string>>(new Set());
+  const paneWidth = useStore((s) => s.width ?? 0);
+  const paneHeight = useStore((s) => s.height ?? 0);
+  const lastPaneDimensionsRef = useRef<{ width: number; height: number } | null>(null);
+
+  // Sync pane dimensions only when they actually change to avoid update loops
+  useEffect(() => {
+    if (paneWidth <= 0 || paneHeight <= 0) return;
+    const last = lastPaneDimensionsRef.current;
+    if (last && last.width === paneWidth && last.height === paneHeight) return;
+    lastPaneDimensionsRef.current = { width: paneWidth, height: paneHeight };
+    useCanvasStore.getState().setPaneDimensions({ width: paneWidth, height: paneHeight });
+    return () => {
+      useCanvasStore.getState().setPaneDimensions(null);
+    };
+  }, [paneWidth, paneHeight]);
+
+  // When toolbar search (or elsewhere) requests focus on a node: center view and select it
+  useEffect(() => {
+    if (!focusNodeId) return;
+    const currentNodes = useCanvasStore.getState().nodes;
+    const node = currentNodes.find((n) => n.id === focusNodeId);
+    setFocusNodeId(null);
+    if (!node) return;
+    const w = node.measured?.width ?? 350;
+    const h = node.measured?.height ?? 200;
+    setCenter(
+      node.position.x + w / 2,
+      node.position.y + h / 2,
+      { zoom: 1, duration: 400 }
+    );
+    const updated = currentNodes.map((n) => ({
+      ...n,
+      selected: n.id === focusNodeId,
+    }));
+    setNodes(updated);
+  }, [focusNodeId, setCenter, setNodes, setFocusNodeId]);
 
   // Initialize store and sync with DB updates
   useEffect(() => {
@@ -102,23 +146,37 @@ export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCan
     useCanvasStore.getState().loadViewport(canvasId);
   }, [initialNodes, initialEdges, canvasId, setNodes, setEdges]);
 
+  // Center view on new nodes only once per batch; avoid re-running when viewport/store updates
   useEffect(() => {
-    const currentNodeIds = new Set(nodes.map(n => n.id));
-    
-    // Skip the first run to avoid auto-panning to existing nodes on load
+    const currentNodeIds = new Set(nodes.map((n) => n.id));
+
     if (prevNodeIdsRef.current.size === 0 && currentNodeIds.size > 0) {
       prevNodeIdsRef.current = currentNodeIds;
+      lastCenteredIdsRef.current = new Set(currentNodeIds);
       return;
     }
 
-    const newNodeIds = Array.from(currentNodeIds).filter(id => !prevNodeIdsRef.current.has(id));
+    const newNodeIds = Array.from(currentNodeIds).filter((id) => !prevNodeIdsRef.current.has(id));
+    const alreadyCentered = lastCenteredIdsRef.current;
+    const newIdsWeHaveNotCentered = newNodeIds.filter((id) => !alreadyCentered.has(id));
 
-    if (newNodeIds.length > 0) {
-      // Find the first new node to center on
-      const firstNewNode = nodes.find(n => n.id === newNodeIds[0]);
-      if (firstNewNode) {
-        // Smoothly pan to the new node
-        setCenter(firstNewNode.position.x + 150, firstNewNode.position.y + 100, { zoom: 1, duration: 800 });
+    if (newIdsWeHaveNotCentered.length > 0) {
+      const newNodes = nodes.filter((n) => newIdsWeHaveNotCentered.includes(n.id));
+      const preferred =
+        newNodes.find((n) => n.type === "input") ??
+        newNodes.find((n) => n.type === "response" || n.type === "display") ??
+        newNodes[0];
+      if (preferred) {
+        const nodeSize = {
+          width: preferred.measured?.width ?? 350,
+          height: preferred.measured?.height ?? 200,
+        };
+        setCenter(
+          preferred.position.x + nodeSize.width / 2,
+          preferred.position.y + nodeSize.height / 2,
+          { zoom: 1, duration: 800 }
+        );
+        newIdsWeHaveNotCentered.forEach((id) => alreadyCentered.add(id));
       }
     }
 
@@ -126,7 +184,7 @@ export const EditorCanvas = ({ canvasId, initialNodes, initialEdges }: EditorCan
   }, [nodes, setCenter]);
 
   return (
-    <div className="w-full h-full bg-background relative overflow-hidden">
+    <div className="w-full h-full bg-canvas relative overflow-hidden">
       <ReactFlow
         nodes={nodes}
         edges={edges}

@@ -4,6 +4,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --color-canvas: var(--canvas);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans:
@@ -73,24 +74,25 @@
   --color-destructive-foreground: var(--destructive-foreground);
 }
 
+/* Light: un poco más claro; sidebar y canvas similares */
 :root {
   --radius: 0.5rem;
-  --background: oklch(0.9818 0.0054 95.0986);
+  --background: oklch(0.95 0.006 95);
   --foreground: oklch(0.3438 0.0269 95.7226);
-  --card: oklch(0.9818 0.0054 95.0986);
+  --card: oklch(0.96 0.005 95);
   --card-foreground: oklch(0.1908 0.002 106.5859);
-  --popover: oklch(1 0 0);
+  --popover: oklch(0.98 0.004 95);
   --popover-foreground: oklch(0.2671 0.0196 98.939);
   --primary: oklch(0.6171 0.1375 39.0427);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.9245 0.0138 92.9892);
+  --secondary: oklch(0.91 0.012 92.9892);
   --secondary-foreground: oklch(0.4334 0.0177 98.6048);
-  --muted: oklch(0.9341 0.0153 90.239);
+  --muted: oklch(0.92 0.012 90.239);
   --muted-foreground: oklch(0.6059 0.0075 97.4233);
-  --accent: oklch(0.9245 0.0138 92.9892);
+  --accent: oklch(0.91 0.012 92.9892);
   --accent-foreground: oklch(0.2671 0.0196 98.939);
   --destructive: oklch(0.1908 0.002 106.5859);
-  --border: oklch(0.8847 0.0069 97.3627);
+  --border: oklch(0.88 0.008 97.3627);
   --input: oklch(0.7621 0.0156 98.3528);
   --ring: oklch(0.6171 0.1375 39.0427);
   --chart-1: oklch(0.5583 0.1276 42.9956);
@@ -98,14 +100,15 @@
   --chart-3: oklch(0.8816 0.0276 93.128);
   --chart-4: oklch(0.8822 0.0403 298.1792);
   --chart-5: oklch(0.5608 0.1348 42.0584);
-  --sidebar: oklch(0.9663 0.008 98.8792);
+  --sidebar: oklch(0.94 0.008 98.8792);
   --sidebar-foreground: oklch(0.359 0.0051 106.6524);
   --sidebar-primary: oklch(0.6171 0.1375 39.0427);
   --sidebar-primary-foreground: oklch(0.9881 0 0);
-  --sidebar-accent: oklch(0.9245 0.0138 92.9892);
+  --sidebar-accent: oklch(0.91 0.012 92.9892);
   --sidebar-accent-foreground: oklch(0.325 0 0);
-  --sidebar-border: oklch(0.9401 0 0);
+  --sidebar-border: oklch(0.92 0.006 95);
   --sidebar-ring: oklch(0.7731 0 0);
+  --canvas: oklch(0.97 0.005 95);
   --destructive-foreground: oklch(1 0 0);
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -140,6 +143,7 @@
 
 .dark {
   --background: oklch(0.2679 0.0036 106.6427);
+  --canvas: oklch(0.30 0.004 106);
   --foreground: oklch(0.8074 0.0142 93.0137);
   --card: oklch(0.2679 0.0036 106.6427);
   --card-foreground: oklch(0.9818 0.0054 95.0986);
@@ -214,15 +218,16 @@
 
 @font-face {
   font-family: "Milven";
-  src: url("/fonts/Milven-Regular.otf");
+  src: local("Milven"), url("/fonts/Milven-Regular.otf") format("opentype");
   font-weight: normal;
   font-style: normal;
+  font-display: swap;
 }
 
+/* Logo DISI: tipografía Milven; tamaños base para .logo-font (sidebar usa text-2xl, etc.) */
 .logo-font {
-  font-family: "Milven", sans-serif;
-  font-weight: normal;
-  font-size: 2rem;
+  font-family: var(--font-logo), "Milven", sans-serif !important;
+  font-weight: 500;
   line-height: 1;
 }
 
@@ -231,4 +236,17 @@
     url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='6' cy='6' r='3'/><circle cx='6' cy='18' r='3'/><line x1='20' y1='4' x2='8.12' y2='15.88'/><line x1='14.47' y1='14.48' x2='20' y2='20'/><line x1='8.12' y1='8.12' x2='12' y2='12'/></svg>")
       12 12,
     auto !important;
+}
+
+@keyframes thinking {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+.animate-thinking {
+  animation: thinking 1.2s ease-in-out infinite;
+}
+
+/* Prioridad absoluta para el logo DISI en onboarding (por encima de Tailwind) */
+.disi-logo-force {
+  font-family: var(--font-logo), "Syne", sans-serif !important;
 }

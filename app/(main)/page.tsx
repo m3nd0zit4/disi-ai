@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useRef } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
+import { AuthPanel } from "@/app/_components/auth/AuthPanel";
 import { api } from "@/convex/_generated/api";
 import { Doc } from "@/convex/_generated/dataModel";
 import Link from "next/link";
@@ -16,6 +17,7 @@ import {
   Lightbulb,
 } from "lucide-react";
 import ChatInputBox, { type ChatInputBoxHandle } from "@/app/_components/ChatInputBox";
+import { logoFont } from "@/app/fonts";
 import { useAIContext } from "@/context/AIContext";
 import { modelRegistry } from "@/shared/ai";
 import type { SelectedModel } from "@/types/AiModel";
@@ -149,11 +151,43 @@ function getTimeGreeting(): GreetingParts {
 }
 
 export default function HomePage() {
+  const { isSignedIn, isLoaded } = useAuth();
   const { user } = useUser();
   const canvases = useQuery(api.canvas.canvas.listCanvas);
   const greeting = useMemo(() => getTimeGreeting(), []);
   const inputRef = useRef<ChatInputBoxHandle>(null);
   const { setModelsFromConversation } = useAIContext();
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/20 border-t-foreground" />
+      </div>
+    );
+  }
+
+  if (!isSignedIn) {
+    return <AuthPanel />;
+  }
+
+  // Esperar a tener user para saber si debe ir a onboarding (evita flash de home)
+  if (user === undefined) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/20 border-t-foreground" />
+      </div>
+    );
+  }
+
+  const onboardingComplete = (user.publicMetadata as { onboardingComplete?: boolean } | undefined)?.onboardingComplete === true;
+  if (!onboardingComplete) {
+    if (typeof window !== "undefined") window.location.replace("/onboarding");
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/20 border-t-foreground" />
+      </div>
+    );
+  }
 
   const firstName = user?.firstName ?? null;
   const recentCanvases = (canvases ?? []).slice(0, 5);
@@ -183,7 +217,7 @@ export default function HomePage() {
             <h1 className="text-2xl sm:text-3xl font-semibold text-foreground/90 tracking-tight">
               {greeting.line1Before}
               {greeting.timeWord ? (
-                <span className="logo-font text-2xl sm:text-3xl text-primary">
+                <span className={`${logoFont.className} text-3xl sm:text-4xl font-semibold text-primary`}>
                   {greeting.timeWord}
                 </span>
               ) : null}

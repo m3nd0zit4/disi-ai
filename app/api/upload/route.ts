@@ -1,17 +1,22 @@
-import { NextResponse } from "next/server";
 import { generatePresignedUploadUrl } from "@/lib/aws/s3";
 import { v4 as uuidv4 } from "uuid";
 import { auth } from "@clerk/nextjs/server";
+import { apiSuccess, apiError } from "@/lib/api-response";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
+    }
+    const rl = await checkRateLimit(userId, "upload");
+    if (!rl.success) {
+      return apiError("Rate limit exceeded", 429, "RATE_LIMIT_EXCEEDED");
     }
 
     const { contentType, fileName, s3Key: providedS3Key } = await req.json();
-    
+
     // Validate contentType - whitelist of allowed MIME types
     const allowedMimeTypes = [
       "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/svg+xml",
@@ -23,16 +28,16 @@ export async function POST(req: Request) {
     ];
 
     if (!contentType || typeof contentType !== "string" || contentType.trim() === "") {
-      return NextResponse.json({ error: "Invalid or missing contentType" }, { status: 400 });
+      return apiError("Invalid or missing contentType", 400, "INVALID_INPUT");
     }
 
     if (!allowedMimeTypes.includes(contentType) && !contentType.startsWith("text/")) {
-      return NextResponse.json({ error: "File type not allowed" }, { status: 400 });
+      return apiError("File type not allowed", 400, "INVALID_INPUT");
     }
 
     // Validate and sanitize fileName
     if (!fileName || typeof fileName !== "string" || fileName.trim() === "") {
-      return NextResponse.json({ error: "Invalid or missing fileName" }, { status: 400 });
+      return apiError("Invalid or missing fileName", 400, "INVALID_INPUT");
     }
 
     // Sanitize filename: remove control characters, path separators, and limit length
@@ -44,13 +49,13 @@ export async function POST(req: Request) {
       .slice(0, 255); // Limit to 255 characters
 
     if (sanitizedFileName.length === 0) {
-      return NextResponse.json({ error: "Invalid fileName after sanitization" }, { status: 400 });
+      return apiError("Invalid fileName after sanitization", 400, "INVALID_INPUT");
     }
-    
+
     let uniqueKey: string;
     if (providedS3Key) {
       if (typeof providedS3Key !== "string") {
-        return NextResponse.json({ error: "Invalid s3Key format" }, { status: 400 });
+        return apiError("Invalid s3Key format", 400, "INVALID_INPUT");
       }
       const normalized = providedS3Key.replace(/^\/+/, "").replace(/\/{2,}/g, "/");
       if (
@@ -58,18 +63,18 @@ export async function POST(req: Request) {
         normalized.includes("\\") ||
         !normalized.startsWith(`${userId}/`)
       ) {
-        return NextResponse.json({ error: "Invalid s3Key format" }, { status: 403 });
+        return apiError("Invalid s3Key format", 403, "FORBIDDEN");
       }
       uniqueKey = normalized;
     } else {
       uniqueKey = `${userId}/${uuidv4()}-${sanitizedFileName}`;
     }
-    
+
     const url = await generatePresignedUploadUrl(uniqueKey, contentType);
-    
-    return NextResponse.json({ url, key: uniqueKey });
+
+    return apiSuccess({ url, key: uniqueKey });
   } catch (error) {
     console.error("Error generating upload URL:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return apiError("Internal Server Error", 500, "INTERNAL_ERROR");
   }
 }

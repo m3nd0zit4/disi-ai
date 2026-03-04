@@ -28,7 +28,7 @@ export default function CustomEdge({
   const addEdgeToStore = useCanvasStore(state => state.addEdge);
   const removeEdgeFromStore = useCanvasStore(state => state.removeEdge);
   const nodes = useCanvasStore((state: CanvasState) => state.nodes);
-  const removeEdgeMutation = useMutation(api.canvas.removeEdge);
+  const removeEdgeMutation = useMutation(api.canvas.canvas.removeEdge);
 
   const [isHovered, setIsHovered] = React.useState(false);
 

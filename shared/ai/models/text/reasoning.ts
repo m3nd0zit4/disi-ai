@@ -866,14 +866,58 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
     // XAI GROK - Reasoning Models
     // ========================================================================
 
-    //* Grok 4 - Latest flagship
+    //* Grok 4.1 Fast - Latest with Agent Tools (web search, code, etc.)
+    {
+        id: "grok-4-1-fast",
+        category: "reasoning",
+        provider: "Grok",
+        providerModelId: "grok-4-1-fast-reasoning",
+        name: "Grok 4.1 Fast",
+        description: "Latest xAI model with 2M context and full Agent Tools (web search, X search, code execution)",
+        premium: true,
+        enabled: true,
+        icon: {
+            light: "/icons/grok-claro.svg",
+            dark: "/icons/grok-oscuro.svg",
+        },
+        providerMetadata: {
+            provider: "Grok",
+            metadata: {
+                contextWindow: 2000000,
+                maxOutputTokens: 16384,
+                inputModalities: ["text", "image"],
+                outputModalities: ["text"],
+                features: {
+                    streaming: true,
+                    functionCalling: true,
+                    twitterAccess: true,
+                },
+                tools: {
+                    webSearch: true,
+                    xSearch: true,
+                    codeExecution: true,
+                    imageUnderstanding: true,
+                    collectionsSearch: true,
+                    mcp: true,
+                    documentSearch: true,
+                },
+                pricing: {
+                    inputPerMillion: 0.20,
+                    cachedInputPerMillion: 0.05,
+                    outputPerMillion: 0.50,
+                }
+            },
+        },
+    },
+
+    //* Grok 4 - Flagship (256K context, Agent Tools)
     {
         id: "grok-4",
         category: "reasoning",
         provider: "Grok",
         providerModelId: "grok-4",
         name: "Grok 4",
-        description: "Latest flagship model from xAI with maximum capabilities",
+        description: "Flagship model with 256K context and full Agent Tools (web search, X search, code execution)",
         premium: true,
         enabled: true,
         icon: {
@@ -910,14 +954,14 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
         },
     },
 
-    //* Grok 3 - Previous flagship
+    //* Grok 3 - Previous gen; no server-side tools (web search / X search not available)
     {
         id: "grok-3",
         category: "reasoning",
         provider: "Grok",
         providerModelId: "grok-3",
         name: "Grok 3",
-        description: "Previous generation flagship reasoning model",
+        description: "Previous generation flagship; no Agent Tools (use Grok 4 or 4.1 for web search)",
         premium: true,
         enabled: true,
         icon: {
@@ -934,16 +978,16 @@ export const TEXT_REASONING_MODELS: SpecializedModel[] = [
                 features: {
                     streaming: true,
                     functionCalling: true,
-                    twitterAccess: true,
+                    twitterAccess: false,
                 },
                 tools: {
-                    webSearch: true,
-                    xSearch: true,
-                    codeExecution: true,
-                    imageUnderstanding: true,
-                    collectionsSearch: true,
-                    mcp: true,
-                    documentSearch: true,
+                    webSearch: false,
+                    xSearch: false,
+                    codeExecution: false,
+                    imageUnderstanding: false,
+                    collectionsSearch: false,
+                    mcp: false,
+                    documentSearch: false,
                 },
                 pricing: {
                     inputPerMillion: 3.00,

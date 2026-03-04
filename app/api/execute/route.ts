@@ -1,11 +1,16 @@
 // Main API route for node execution
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
 import { sendToQueue } from "@/lib/aws/sqs";
-import { ConvexHttpClient } from "convex/browser";
+import { apiSuccess, apiError } from "@/lib/api-response";
+import { getConvexClient } from "@/lib/convex-client";
+import { inngest } from "@/lib/inngest/client";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { modelRegistry } from "@/shared/ai";
+import type { KbRef, KbContextItem } from "@/types/kb-refs";
 import { findBestPosition } from "@/lib/canvas/layout";
+import { getRegisteredToolNames } from "@/lib/agent/tools/registry";
 import { NodeData, DisplayNodeData, ResponseNodeData } from "@/app/_components/canvas/types";
 
 type CanvasNode = {
@@ -30,24 +35,148 @@ function getRequiredEnv(key: string): string {
   return value;
 }
 
+type ConvexClient = ReturnType<typeof getConvexClient>;
+
+/** Resolve kbRefs (or legacy kbIds) to a unified kbContext array for the worker */
+async function resolveKbContext(
+  convex: ConvexClient,
+  body: { kbRefs?: KbRef[]; kbIds?: string[] },
+  userId: Id<"users">,
+  queryText: string
+): Promise<KbContextItem[]> {
+  const kbRefs = Array.isArray(body.kbRefs) ? body.kbRefs : [];
+  const kbIds = Array.isArray(body.kbIds) ? body.kbIds : [];
+
+  if (kbRefs.length > 0) {
+    const seen = new Set<string>();
+    const out: KbContextItem[] = [];
+
+    for (const ref of kbRefs) {
+      if (ref.type === "kb") {
+        const kb = await convex.query(api.knowledge_garden.knowledgeBases.get, { id: ref.kbId as Id<"knowledgeBases"> });
+        if (!kb || kb.userId !== userId) continue;
+        if (!queryText.trim()) continue;
+        const searchResults = await convex.query(api.knowledge_garden.seeds.search, {
+          query: queryText,
+          kbIds: [ref.kbId as Id<"knowledgeBases">],
+          limit: 5,
+        });
+        for (const seed of searchResults) {
+          const id = String(seed._id);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          out.push({
+            id,
+            title: seed.title,
+            content: seed.fullText || seed.summary || "",
+            kbId: seed.kbId,
+            score: 1,
+          });
+        }
+      } else if (ref.type === "seed" && ref.seedIds?.length) {
+        const seeds = await convex.query(api.knowledge_garden.seeds.getMany, {
+          seedIds: ref.seedIds as Id<"seeds">[],
+        });
+        for (const seed of seeds) {
+          if (seed.kbId !== ref.kbId) continue;
+          const id = String(seed._id);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          out.push({
+            id,
+            title: seed.title,
+            content: seed.fullText || seed.summary || "",
+            kbId: seed.kbId,
+          });
+        }
+      } else if (ref.type === "tag" && ref.tags?.length) {
+        const seeds = await convex.query(api.knowledge_garden.seeds.listByKbAndTags, {
+          kbId: ref.kbId as Id<"knowledgeBases">,
+          tags: ref.tags,
+        });
+        for (const seed of seeds) {
+          const id = String(seed._id);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          out.push({
+            id,
+            title: seed.title,
+            content: seed.fullText || seed.summary || "",
+            kbId: seed.kbId,
+          });
+        }
+      } else if (ref.type === "file" && ref.fileIds?.length) {
+        for (const fileId of ref.fileIds) {
+          const seeds = await convex.query(api.knowledge_garden.seeds.listByFile, {
+            fileId: fileId as Id<"files">,
+          });
+          for (const seed of seeds) {
+            if (seed.kbId !== ref.kbId) continue;
+            const id = String(seed._id);
+            if (seen.has(id)) continue;
+            seen.add(id);
+            out.push({
+              id,
+              title: seed.title,
+              content: seed.fullText || seed.summary || "",
+              kbId: seed.kbId,
+            });
+          }
+        }
+      }
+    }
+
+    if (out.length > 0) console.log(`[Execute] Resolved ${out.length} KB context items from kbRefs`);
+    return out;
+  }
+
+  // Legacy: kbIds only
+  if (kbIds.length === 0 || !queryText.trim()) return [];
+
+  const validatedKbIds: Id<"knowledgeBases">[] = [];
+  for (const kbId of kbIds) {
+    try {
+      const kb = await convex.query(api.knowledge_garden.knowledgeBases.get, { id: kbId as Id<"knowledgeBases"> });
+      if (kb && kb.userId === userId) validatedKbIds.push(kbId as Id<"knowledgeBases">);
+    } catch {
+      // skip
+    }
+  }
+  if (validatedKbIds.length === 0) return [];
+
+  const searchResults = await convex.query(api.knowledge_garden.seeds.search, {
+    query: queryText,
+    kbIds: validatedKbIds,
+    limit: 5,
+  });
+  return searchResults.map((seed) => ({
+    id: String(seed._id),
+    title: seed.title,
+    content: seed.fullText || seed.summary || "",
+    kbId: seed.kbId,
+    score: 1,
+  }));
+}
+
 export async function POST(req: Request) {
   try {
     const { userId: clerkId, getToken } = await auth();
     
     if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
+    }
+    const rl = await checkRateLimit(clerkId, "execute");
+    if (!rl.success) {
+      return apiError("Rate limit exceeded", 429, "RATE_LIMIT_EXCEEDED");
     }
 
     console.log(`[Execute] Authenticating for user ${clerkId}`);
     const token = await getToken({ template: "convex" });
-    const convex = new ConvexHttpClient(getRequiredEnv("NEXT_PUBLIC_CONVEX_URL"));
-    if (token) {
-      console.log(`[Execute] Setting auth token (length: ${token.length})`);
-      convex.setAuth(token);
-    } else {
+    if (!token) {
       console.error(`[Execute] Missing Convex auth token for template 'convex'`);
-      return NextResponse.json({ error: "Convex auth token missing" }, { status: 401 });
+      return apiError("Convex auth token missing", 401, "AUTH_TOKEN_MISSING");
     }
+    const convex = getConvexClient(token);
 
     // Default model configuration
     const DEFAULT_MODEL = {
@@ -78,8 +207,13 @@ export async function POST(req: Request) {
       videoAspectRatio,
       videoResolution,
       videoDuration,
+      webSearchEnabled, // AI Features
+      thinkingEnabled, // AI Features
+      rlmForceFull, // RLM: force full mode (planner → workers → aggregator)
+      position: clientPosition, // Optional: use for input node to avoid jump (preview position)
+      kbRefs, // @-style KG refs (optional; when present, takes precedence over kbIds)
     } = body;
-    // Note: body.kbIds is used directly in RAG context retrieval below
+    // Note: body.kbIds and body.kbRefs are used in RAG context retrieval below
 
     // 1. Get user record and canvas details in parallel
     const [user, canvas] = await Promise.all([
@@ -88,12 +222,20 @@ export async function POST(req: Request) {
     ]);
 
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return apiError("User not found", 404, "USER_NOT_FOUND");
     }
 
     if (!canvas) {
-      return NextResponse.json({ error: "Canvas not found" }, { status: 404 });
+      return apiError("Canvas not found", 404, "CANVAS_NOT_FOUND");
     }
+
+    if (user.plan === "pro" || user.plan === "payg" || user.plan === "starter" || user.plan === "free") {
+      if ((user.balanceCredits ?? 0) <= 0) {
+        return apiError("Añade créditos para continuar usando la plataforma.", 402, "INSUFFICIENT_CREDITS");
+      }
+    }
+
+    const rlmSettings = await convex.query(api.users.settings.getRlmSettings);
 
     let executionId = propExecutionId;
     let nodesToQueue: CanvasNode[] = [];
@@ -108,20 +250,27 @@ export async function POST(req: Request) {
       // Consolidate parent IDs once
       const parents = parentNodeIds || (parentNodeId ? [parentNodeId] : []);
 
-      // Calculate position using intelligent layout
       const inputNodeSize = { width: 350, height: 200 };
-      const inputNodePos = findBestPosition({
-        nodes: canvas.nodes,
-        edges: canvas.edges,
-        anchorNodeId: parents[0], // Use the first parent as anchor
-        newNodeId: providedInputNodeId || `input-${newNodeId}`, // Pass the ID of the node we are about to create
-        newNodeSize: inputNodeSize,
-        newNodeType: "input",
-        isExplicitSelection: isBranching // Pass the flag
-      });
-
-      const inputNodeX = inputNodePos.x;
-      const inputNodeY = inputNodePos.y;
+      const hasValidClientPosition = clientPosition && typeof clientPosition.x === "number" && typeof clientPosition.y === "number";
+      let inputNodeX: number;
+      let inputNodeY: number;
+      if (hasValidClientPosition) {
+        inputNodeX = clientPosition.x;
+        inputNodeY = clientPosition.y;
+      } else {
+        const inputNodePos = findBestPosition({
+          nodes: canvas.nodes,
+          edges: canvas.edges,
+          anchorNodeId: parents[0],
+          newNodeId: providedInputNodeId || `input-${newNodeId}`,
+          newNodeSize: inputNodeSize,
+          newNodeType: "input",
+          isExplicitSelection: isBranching,
+          skipCollisionAvoidance: true,
+        });
+        inputNodeX = inputNodePos.x;
+        inputNodeY = inputNodePos.y;
+      }
 
       // OPTIMISTIC UI: If existingInputNodeId is provided, the node already exists (transformed from preview)
       // We use that ID and just need to update/confirm it in the database
@@ -297,12 +446,13 @@ export async function POST(req: Request) {
         const baseId = newNodeId ?? providedInputNodeId ?? `fallback-${Date.now()}`;
         const responseNodeId = `response-${baseId}-${i}`;
 
-        const responseNodeSize = { width: 500, height: 400 };
+        const responseNodeSize = { width: 350, height: 400 };
 
         // Calculate position using the same logic as input nodes
         // Include all edges (existing + new input edges + already created response edges)
         const allEdges = [...canvas.edges, ...newEdges, ...responseEdges];
-        const allNodes = [...canvas.nodes, ...nodesToAdd, ...responseNodes];
+        // Prefer nodes we're adding so the anchor (input) is the one with correct position, not an old DB copy
+        const allNodes = [...nodesToAdd, ...responseNodes, ...canvas.nodes];
 
         // Check if the input node already has response children (for branching detection)
         const existingResponseChildren = canvas.nodes.filter(n =>
@@ -313,15 +463,16 @@ export async function POST(req: Request) {
 
         const responseNodePos = findBestPosition({
           nodes: allNodes,
-          edges: allEdges, // Pass edges so siblings can be detected
+          edges: allEdges,
           anchorNodeId: inputNodeId,
-          newNodeId: responseNodeId, // Pass the ID so it can be excluded from siblings check
+          newNodeId: responseNodeId,
           newNodeSize: responseNodeSize,
           newNodeType: isDisplayModel ? "display" : "response",
-          isParallel: modelsToProcess.length > 1, // Only parallel if multiple models
+          isParallel: modelsToProcess.length > 1,
           parallelIndex: i,
           totalParallel: modelsToProcess.length,
-          isExplicitSelection: hasExistingResponses // Use lateral layout if already has responses
+          isExplicitSelection: hasExistingResponses,
+          skipCollisionAvoidance: true, // Keep response directly below input (no push far)
         });
 
         // Add the edge for this response node so subsequent nodes can detect it
@@ -379,7 +530,7 @@ export async function POST(req: Request) {
       // Resume existing execution
       const execution = await convex.query(api.canvas.canvasExecutions.getCanvasExecutionByClerkId, { executionId, clerkId });
       if (!execution) {
-        return NextResponse.json({ error: "Execution not found" }, { status: 404 });
+        return apiError("Execution not found", 404, "EXECUTION_NOT_FOUND");
       }
 
       // Re-query canvas to ensure we have the latest state
@@ -393,16 +544,16 @@ export async function POST(req: Request) {
 
 
       if (pendingNodes.length === 0) {
-        return NextResponse.json({ error: "No pending nodes found for this execution" }, { status: 400 });
+        return apiError("No pending nodes found for this execution", 400, "NO_PENDING_NODES");
       }
 
       nodesToQueue = pendingNodes;
     } else {
-      return NextResponse.json({ error: "Invalid request: must provide either prompt or executionId" }, { status: 400 });
+      return apiError("Invalid request: must provide either prompt or executionId", 400, "INVALID_INPUT");
     }
 
     // 4. Queue nodes in SQS with context
-    const queueUrl = user.plan === "pro" 
+    const queueUrl = (user.plan === "pro" || user.plan === "payg")
       ? getRequiredEnv("SQS_QUEUE_URL_PRO")
       : getRequiredEnv("SQS_QUEUE_URL_FREE");
 
@@ -512,7 +663,6 @@ export async function POST(req: Request) {
         // Map to the format expected by the worker (or update worker to handle ReasoningContext)
         // For now, we pass the structured context in the inputs.
 
-
         const inputs = { 
           ...node.data,
           // Fix: Explicitly map 'prompt' and 'text' for the worker
@@ -526,62 +676,10 @@ export async function POST(req: Request) {
           context: reasoningContext.items, // Pass the structured items
           reasoningContext, // Pass the full object for future proofing
           
-          // RAG Context
-          kbContext: await (async () => {
-             // 4. RAG Context Retrieval (if KBs selected)
-             const queryText = prompt || node.data?.text || "";
-             // Only search if explicitly selected KB IDs are provided (not canvasId which is wrong table)
-             const kbIdsToSearch = body.kbIds && body.kbIds.length > 0 ? body.kbIds : [];
-
-             if (kbIdsToSearch.length === 0 || !queryText) {
-                return [];
-             }
-
-             // Validate ownership of each KB before searching
-             const validatedKbIds: string[] = [];
-             for (const kbId of kbIdsToSearch) {
-                try {
-                   const kb = await convex.query(api.knowledge_garden.knowledgeBases.get, { id: kbId });
-                   // The get query already validates ownership via auth, returns null if unauthorized
-                   if (kb && kb.userId === user._id) {
-                      validatedKbIds.push(kbId);
-                   } else {
-                      console.warn(`[Execute] KB ${kbId} not owned by user ${user._id}, skipping`);
-                   }
-                } catch (err) {
-                   console.warn(`[Execute] Failed to validate KB ${kbId}:`, err);
-                }
-             }
-
-             if (validatedKbIds.length === 0) {
-                console.log(`[Execute] No valid KBs after ownership check`);
-                return [];
-             }
-
-             console.log(`[Execute] Searching Knowledge Bases: ${validatedKbIds.join(", ")}`);
-             try {
-                const searchResults = await convex.query(api.knowledge_garden.seeds.search, {
-                   query: queryText,
-                   kbIds: validatedKbIds,
-                   limit: 5,
-                });
-
-                if (searchResults && searchResults.length > 0) {
-                   console.log(`[Execute] Found ${searchResults.length} relevant snippets.`);
-                   return searchResults.map(seed => ({
-                      id: seed._id,
-                      title: seed.title,
-                      content: seed.fullText || seed.summary || "",
-                      kbId: seed.kbId,
-                      score: 1 // Placeholder score
-                   }));
-                }
-              } catch (err) {
-                console.error("[Execute] KB Search failed:", err);
-                return [];
-              }
-              return [];
-           })(),
+          // RAG Context (from kbRefs @-style or legacy kbIds); only Pro has Knowledge Garden
+          kbContext: user.plan === "pro"
+            ? await resolveKbContext(convex, body, user._id, prompt || node.data?.text || "")
+            : [],
 
           imageSize,
           imageQuality,
@@ -590,6 +688,15 @@ export async function POST(req: Request) {
           videoResolution,
           videoDuration,
           attachments,
+          // AI Features (web search always available to model; only extended thinking is user-controlled)
+          webSearchEnabled: true,
+          thinkingEnabled: thinkingEnabled || false,
+          rlmForceFull: rlmForceFull === true,
+          // User RLM settings (merge with DEFAULT_RLM_CONFIG in worker)
+          rlmSettings: rlmSettings ?? undefined,
+          // Agent tools: enable all registered tools so the model can use them when needed
+          toolNames: getRegisteredToolNames(),
+          maxSteps: 8,
         };
         
         const messageBody = {
@@ -604,7 +711,19 @@ export async function POST(req: Request) {
         };
 
         const sqsResponse = await sendToQueue(queueUrl, messageBody, executionId);
-        
+
+        await inngest.send({
+          name: "canvas/execute.task",
+          data: {
+            executionId,
+            nodeId: node.id,
+            canvasId,
+            nodeType: node.type,
+            inputs,
+            userId: user._id,
+          },
+        });
+
         return {
           nodeId: node.id,
           jobId: sqsResponse.messageId,
@@ -612,17 +731,16 @@ export async function POST(req: Request) {
       })
     );
 
-    return NextResponse.json({
-      success: true,
-      jobs,
-      message: `${jobs.length} nodes queued for execution`,
-    });
-
+    return apiSuccess(
+      { jobs },
+      { message: `${jobs.length} nodes queued for execution` }
+    );
   } catch (error) {
-    console.error("Canvas execution error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 }
+    console.error("[Execute] Error:", error);
+    return apiError(
+      error instanceof Error ? error.message : "Internal server error",
+      500,
+      "INTERNAL_ERROR"
     );
   }
 }

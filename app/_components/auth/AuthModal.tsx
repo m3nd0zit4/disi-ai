@@ -1,5 +1,7 @@
+"use client";
+
 import { useEffect } from "react";
-import { SignIn } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 
@@ -9,8 +11,14 @@ interface AuthModalProps {
   redirectUrl?: string;
 }
 
+/**
+ * Modal de acceso que redirige a la página principal de DISI (/),
+ * donde está el AuthPanel con nuestro flujo (Google + email/código).
+ * No usa componentes de Clerk para mantener una sola experiencia de login.
+ */
 export function AuthModal({ isOpen, onClose, redirectUrl = "/" }: AuthModalProps) {
-  // Handle Escape key
+  const router = useRouter();
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen) {
@@ -22,11 +30,15 @@ export function AuthModal({ isOpen, onClose, redirectUrl = "/" }: AuthModalProps
     return () => window.removeEventListener("keydown", handleEscape);
   }, [isOpen, onClose]);
 
+  const goToAuth = () => {
+    onClose();
+    router.push(redirectUrl);
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -35,8 +47,7 @@ export function AuthModal({ isOpen, onClose, redirectUrl = "/" }: AuthModalProps
             className="fixed inset-0 z-[100] bg-background/5 backdrop-blur-sm cursor-pointer"
           />
 
-          {/* Modal Container */}
-          <div 
+          <div
             className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none"
             role="dialog"
             aria-modal="true"
@@ -47,42 +58,37 @@ export function AuthModal({ isOpen, onClose, redirectUrl = "/" }: AuthModalProps
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}
-              className="relative pointer-events-auto"
+              className="relative pointer-events-auto w-full max-w-md rounded-2xl border border-border/50 bg-card shadow-2xl p-6"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Visually Hidden Title for Accessibility */}
-              <h2 id="auth-modal-title" className="sr-only">Sign In to DISI</h2>
+              <h2 id="auth-modal-title" className="sr-only">
+                Iniciar sesión en DISI
+              </h2>
 
-              {/* Close Button */}
               <button
+                type="button"
                 onClick={onClose}
-                className="absolute -top-2 -right-2 z-[102] p-2 rounded-full bg-background border border-border/50 text-muted-foreground hover:text-foreground transition-colors shadow-lg"
+                className="absolute top-4 right-4 p-2 rounded-full text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Cerrar"
               >
                 <X className="w-4 h-4" />
               </button>
 
-              <SignIn 
-                appearance={{
-                  elements: {
-                    rootBox: "w-full shadow-2xl rounded-2xl overflow-hidden",
-                    card: "shadow-none border border-border/50 bg-card/50 backdrop-blur-xl",
-                    headerTitle: "text-foreground",
-                    headerSubtitle: "text-muted-foreground",
-                    socialButtonsBlockButton: "bg-background/50 border-border/50 text-foreground hover:bg-background/80",
-                    dividerLine: "bg-border/50",
-                    dividerText: "text-muted-foreground",
-                    formFieldLabel: "text-foreground",
-                    formFieldInput: "bg-background/50 border-border/50 text-foreground",
-                    footer: "hidden",
-                    formButtonPrimary: "bg-primary text-primary-foreground hover:bg-primary/90",
-                  },
-                  layout: {
-                    socialButtonsPlacement: "top",
-                    showOptionalFields: false,
-                  }
-                }}
-                fallbackRedirectUrl={redirectUrl}
-              />
+              <div className="text-center space-y-4 pt-2">
+                <p className="text-foreground font-medium">
+                  Iniciar sesión en DISI
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Usa la página de acceso para continuar con Google o con tu correo.
+                </p>
+                <button
+                  type="button"
+                  onClick={goToAuth}
+                  className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+                >
+                  Ir a la página de acceso
+                </button>
+              </div>
             </motion.div>
           </div>
         </>

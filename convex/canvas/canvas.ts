@@ -34,7 +34,7 @@ export const createCanvas = mutation({
   },
 });
 
-// READ
+// READ (merges canvas with canvasNodeData so worker updates are visible)
 export const getCanvas = query({
   args: { canvasId: v.id("canvas") },
   handler: async (ctx, args) => {
@@ -44,7 +44,6 @@ export const getCanvas = query({
     const canvas = await ctx.db.get(args.canvasId);
     if (!canvas) return null;
 
-    // Verify ownership
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
@@ -54,7 +53,23 @@ export const getCanvas = query({
       return null;
     }
 
-    return canvas;
+    const nodeDataRows = await ctx.db
+      .query("canvasNodeData")
+      .withIndex("by_canvas", (q) => q.eq("canvasId", args.canvasId))
+      .collect();
+    const nodeDataByNodeId: Record<string, Record<string, unknown>> = {};
+    for (const row of nodeDataRows) {
+      nodeDataByNodeId[row.nodeId] = { ...(nodeDataByNodeId[row.nodeId] ?? {}), ...(row.data as Record<string, unknown>) };
+    }
+
+    const nodes = (canvas.nodes as Array<{ id: string; data?: Record<string, unknown>; [k: string]: unknown }>).map(
+      (node) => ({
+        ...node,
+        data: { ...(node.data ?? {}), ...(nodeDataByNodeId[node.id] ?? {}) },
+      })
+    );
+
+    return { ...canvas, nodes };
   },
 });
 
@@ -73,7 +88,21 @@ export const getCanvasByClerkId = query({
       return null;
     }
 
-    return canvas;
+    const nodeDataRows = await ctx.db
+      .query("canvasNodeData")
+      .withIndex("by_canvas", (q) => q.eq("canvasId", args.canvasId))
+      .collect();
+    const nodeDataByNodeId: Record<string, Record<string, unknown>> = {};
+    for (const row of nodeDataRows) {
+      nodeDataByNodeId[row.nodeId] = { ...(nodeDataByNodeId[row.nodeId] ?? {}), ...(row.data as Record<string, unknown>) };
+    }
+    const nodes = (canvas.nodes as Array<{ id: string; data?: Record<string, unknown>; [k: string]: unknown }>).map(
+      (node) => ({
+        ...node,
+        data: { ...(node.data ?? {}), ...(nodeDataByNodeId[node.id] ?? {}) },
+      })
+    );
+    return { ...canvas, nodes };
   },
 });
 
@@ -175,8 +204,7 @@ export const addNode = mutation({
 
 /**
  * Internal mutation for updating node data from the AI worker.
- * NOTE: This mutation is intended for server-to-server use only (e.g., AI worker).
- * It does not verify user authentication as it is called from trusted backend services.
+ * Writes to canvasNodeData table only (avoids OCC with frontend updateCanvas).
  * Do not expose this mutation to client-side code.
  */
 export const updateNodeDataInternal = mutation({
@@ -186,21 +214,27 @@ export const updateNodeDataInternal = mutation({
     data: v.any(),
   },
   handler: async (ctx, args) => {
-    const canvas = await ctx.db.get(args.canvasId);
-    if (!canvas) throw new Error("Canvas not found");
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("canvasNodeData")
+      .withIndex("by_canvas_node", (q) =>
+        q.eq("canvasId", args.canvasId).eq("nodeId", args.nodeId)
+      )
+      .first();
 
-    const newNodes = canvas.nodes.map((node: Record<string, any>) => {
-      if (node.id === args.nodeId) {
-        return { ...node, data: { ...node.data, ...args.data } };
-      }
-      return node;
-    });
-
-    await ctx.db.patch(args.canvasId, {
-      nodes: newNodes,
-      updatedAt: Date.now(),
-    });
-
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        data: { ...(existing.data as Record<string, unknown>), ...(args.data as Record<string, unknown>) },
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert("canvasNodeData", {
+        canvasId: args.canvasId,
+        nodeId: args.nodeId,
+        data: args.data as Record<string, unknown>,
+        updatedAt: now,
+      });
+    }
     return { success: true };
   },
 });

@@ -1,31 +1,25 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
 import { sendToQueue } from "@/lib/aws/sqs";
-import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { apiSuccess, apiError } from "@/lib/api-response";
+import { getConvexClient } from "@/lib/convex-client";
+import { checkRateLimit } from "@/lib/rate-limit";
 
-/**
- * Creates an authenticated ConvexHttpClient with the user's auth token
- */
-async function getAuthenticatedConvexClient(): Promise<ConvexHttpClient> {
-  const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-  
-  // Get the auth session and token from Clerk
+async function getAuthenticatedConvexClient() {
   const { getToken } = await auth();
   const token = await getToken({ template: "convex" });
-  
-  if (token) {
-    convex.setAuth(token);
-  }
-  
-  return convex;
+  return getConvexClient(token ?? undefined);
 }
 
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
+    }
+    const rl = await checkRateLimit(userId, "ai-request");
+    if (!rl.success) {
+      return apiError("Rate limit exceeded", 429, "RATE_LIMIT_EXCEEDED");
     }
 
     const body = await req.json();
@@ -35,32 +29,32 @@ export async function POST(req: Request) {
     const convex = await getAuthenticatedConvexClient();
     const user = await convex.query(api.users.users.getCurrentUser);
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return apiError("User not found", 404, "USER_NOT_FOUND");
     }
 
     // *Verify plan limits
     const stats = await convex.query(api.users.users.getUserStats);
     if (!stats) {
-      return NextResponse.json({ error: "Could not fetch user stats" }, { status: 500 });
+      return apiError("Could not fetch user stats", 500, "INTERNAL_ERROR");
     }
 
-    const limit = user.plan === "pro" ? 10000 : 0; //? FREE = 0 requests
-    
-    // Only enforce limit for PRO users (who use system keys)
-    // Free users are gated by the "must have own key" check later
-    if (user.plan === "pro" && stats.usage.requests >= limit) {
-      return NextResponse.json(
-        { 
-          error: "You have reached your monthly limit"
-        },
-        { status: 403 }
-      );
+    const limit = user.plan === "pro" || user.plan === "payg" ? 10000 : 0; // starter = 0 requests (must use API key or upgrade)
+
+    // Only enforce limit for PRO/PAYG users (who can use system keys)
+    if ((user.plan === "pro" || user.plan === "payg") && stats.usage.requests >= limit) {
+      return apiError("You have reached your monthly limit", 403, "RATE_LIMIT_EXCEEDED");
     }
 
-    // *Obtain user record 
+    // *Obtain user record
     const userRecord = await convex.query(api.users.users.getUserByClerkId, { clerkId: userId });
     if (!userRecord) {
-      return NextResponse.json({ error: "User record not found" }, { status: 404 });
+      return apiError("User record not found", 404, "USER_NOT_FOUND");
+    }
+
+    if (user.plan === "pro" || user.plan === "payg" || user.plan === "starter" || user.plan === "free") {
+      if ((user.balanceCredits ?? 0) <= 0) {
+        return apiError("Añade créditos para continuar usando la plataforma.", 402, "INSUFFICIENT_CREDITS");
+      }
     }
 
     // *Extract specialized models from request using model registry
@@ -91,7 +85,7 @@ export async function POST(req: Request) {
         // *Get user API key (REQUIRED in free tier)
         const apiKey = await getUserApiKeyForModel(userId, model.provider);
         
-        if (!apiKey && user.plan === "free") {
+        if (!apiKey && (user.plan === "free" || user.plan === "starter")) {
           throw new Error(
             `No tienes configurada una API key para ${model.provider}. Ve a Configuración.`
           );
@@ -101,12 +95,22 @@ export async function POST(req: Request) {
         const finalApiKey = apiKey || getSystemApiKey(model.provider);
 
         // *Send message to SQS
-        const queueUrl = user.plan === "pro" 
-          ? process.env.SQS_QUEUE_URL_PRO! 
+        const queueUrl = (user.plan === "pro" || user.plan === "payg")
+          ? process.env.SQS_QUEUE_URL_PRO!
           : process.env.SQS_QUEUE_URL_FREE!;
 
         console.log(`[Request] Sending message to SQS for ${model.modelId} (Provider: ${model.provider})...`);
-        
+
+        // Nombre que se muestra = columna Name (lo que la persona eligió en onboarding)
+        const displayNameForAi = user.name?.trim() || user.onboardingDisplayName?.trim();
+        const onboardingContext =
+          displayNameForAi || (user.onboardingInterests?.length ?? 0) > 0
+            ? {
+                displayName: displayNameForAi || undefined,
+                interests: user.onboardingInterests ?? undefined,
+              }
+            : undefined;
+
         const messageBody = {
           responseId: body.responseIds[index],
           conversationId,
@@ -121,6 +125,7 @@ export async function POST(req: Request) {
           specializedModels: currentSpecializedModelsData.length > 0 
             ? currentSpecializedModelsData 
             : undefined,
+          ...(onboardingContext && { onboardingContext }),
         };
 
         const sqsResponse = await sendToQueue(queueUrl, messageBody, conversationId);
@@ -133,18 +138,11 @@ export async function POST(req: Request) {
       })
     );
 
-    return NextResponse.json({
-      success: true,
-      jobs,
-      message: "Requests queued successfully",
-    });
+    return apiSuccess({ jobs }, { message: "Requests queued successfully" });
 
   } catch (error) {
     console.error("AI Gateway error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 }
-    );
+    return apiError(error instanceof Error ? error.message : "Internal error", 500, "INTERNAL_ERROR");
   }
 }
 

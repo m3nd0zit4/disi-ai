@@ -34,6 +34,8 @@ export interface LayoutParams {
   totalParallel?: number;
   viewport?: { x: number; y: number; zoom: number; width: number; height: number };
   isExplicitSelection?: boolean; // NEW: Forces lateral layout if true
+  /** When true, do not run collision avoidance so the node stays exactly below/next to anchor (no push far). */
+  skipCollisionAvoidance?: boolean;
 }
 
 /**
@@ -177,7 +179,8 @@ export function findBestPosition(params: LayoutParams): Point {
     parallelIndex = 0,
     totalParallel = 1,
     viewport,
-    isExplicitSelection = false
+    isExplicitSelection = false,
+    skipCollisionAvoidance = false
   } = params;
 
   // --- Case 0: No Anchor (First node) ---
@@ -210,9 +213,9 @@ export function findBestPosition(params: LayoutParams): Point {
       y: anchorNode.position.y + anchorSize.height + RANK_GAP
     };
     
-    // Check collision for this specific spot
-    // Check collision for this specific spot
-    targetPos = avoidCollisions(targetPos, newNodeSize, nodes);
+    if (!skipCollisionAvoidance) {
+      targetPos = avoidCollisions(targetPos, newNodeSize, nodes);
+    }
     // Do NOT return here, let it flow to viewport clamping
   } else {
     // --- Check for existing children (Branching detection) ---
@@ -227,12 +230,11 @@ export function findBestPosition(params: LayoutParams): Point {
     // 1. If it HAS children -> It's a BRANCH -> Lateral Layout (Chain to the right)
     // 2. If it has NO children -> It's a CONTINUATION -> Vertical Layout (Standard)
     if (isExplicitSelection && hasChildren) {
-        // Find the "last" sibling to append to the right
-        // We sort by creation time to find the latest addition
+        // Find the rightmost sibling by position.x so the chain stays spatial
         const sortedSiblings = [...siblings].sort((a, b) => {
-            const tA = (a.data?.createdAt as number) || 0;
-            const tB = (b.data?.createdAt as number) || 0;
-            return tA - tB; // Ascending
+            const rightA = a.position.x + getNodeSize(a).width;
+            const rightB = b.position.x + getNodeSize(b).width;
+            return rightA - rightB; // Ascending: last = rightmost
         });
         
         const lastSibling = sortedSiblings[sortedSiblings.length - 1];
@@ -313,8 +315,9 @@ export function findBestPosition(params: LayoutParams): Point {
     }
 
     // --- Case 8: Collision Avoidance ---
-    // This is the final safety net.
-    targetPos = avoidCollisions(targetPos, newNodeSize, nodes);
+    if (!skipCollisionAvoidance) {
+      targetPos = avoidCollisions(targetPos, newNodeSize, nodes);
+    }
   }
 
   // --- Case 7: Viewport Restriction ---

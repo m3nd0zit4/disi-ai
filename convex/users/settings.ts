@@ -1,8 +1,6 @@
-
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
-
 
 /**
  * Default garden settings for new users or when not configured
@@ -16,7 +14,26 @@ const DEFAULT_GARDEN_SETTINGS = {
   duplicateThreshold: 0.95,
 };
 
+/** RLM defaults aligned with lib/rlm/types.ts DEFAULT_RLM_CONFIG */
+const DEFAULT_RLM_SETTINGS = {
+  mode: "simple" as const,
+  tokenBudget: 16000,
+  enableCache: true,
+  enableReasoning: false,
+  maxDepth: 3,
+  maxChildCalls: 5,
+};
+
+/** AI feature defaults (Web Search, Thinking, RLM Full) */
+const DEFAULT_AI_FEATURE_DEFAULTS = {
+  webSearchEnabled: false,
+  thinkingEnabled: false,
+  rlmForceFullByDefault: false,
+};
+
 export type GardenSettings = typeof DEFAULT_GARDEN_SETTINGS;
+export type RlmSettings = typeof DEFAULT_RLM_SETTINGS;
+export type AiFeatureDefaults = typeof DEFAULT_AI_FEATURE_DEFAULTS;
 
 // ===== QUERIES =====
 
@@ -207,5 +224,124 @@ export const toggleGardenActive = mutation({
     });
 
     return newSettings;
+  },
+});
+
+// ===== RLM SETTINGS =====
+
+/**
+ * Get current user's RLM settings
+ */
+export const getRlmSettings = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return DEFAULT_RLM_SETTINGS;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user || !user.rlmSettings) return DEFAULT_RLM_SETTINGS;
+    return { ...DEFAULT_RLM_SETTINGS, ...user.rlmSettings };
+  },
+});
+
+/**
+ * Update RLM settings (partial)
+ */
+export const updateRlmSettings = mutation({
+  args: {
+    mode: v.optional(v.union(v.literal("simple"), v.literal("full"))),
+    tokenBudget: v.optional(v.number()),
+    enableCache: v.optional(v.boolean()),
+    enableReasoning: v.optional(v.boolean()),
+    maxDepth: v.optional(v.number()),
+    maxChildCalls: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+
+    const current = { ...DEFAULT_RLM_SETTINGS, ...user.rlmSettings };
+    const tokenBudget = args.tokenBudget ?? current.tokenBudget;
+    if (tokenBudget < 1000 || tokenBudget > 128000) {
+      throw new Error("tokenBudget must be between 1000 and 128000");
+    }
+    const maxDepth = args.maxDepth ?? current.maxDepth;
+    if (maxDepth < 1 || maxDepth > 5) throw new Error("maxDepth must be between 1 and 5");
+    const maxChildCalls = args.maxChildCalls ?? current.maxChildCalls;
+    if (maxChildCalls < 1 || maxChildCalls > 10) throw new Error("maxChildCalls must be between 1 and 10");
+
+    const newSettings = {
+      mode: args.mode ?? current.mode,
+      tokenBudget,
+      enableCache: args.enableCache ?? current.enableCache,
+      enableReasoning: args.enableReasoning ?? current.enableReasoning,
+      maxDepth,
+      maxChildCalls,
+    };
+
+    await ctx.db.patch(user._id, { rlmSettings: newSettings, updatedAt: Date.now() });
+    return newSettings;
+  },
+});
+
+// ===== AI FEATURE DEFAULTS =====
+
+/**
+ * Get current user's AI feature defaults
+ */
+export const getAiFeatureDefaults = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return DEFAULT_AI_FEATURE_DEFAULTS;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user || !user.aiFeatureDefaults) return DEFAULT_AI_FEATURE_DEFAULTS;
+    return { ...DEFAULT_AI_FEATURE_DEFAULTS, ...user.aiFeatureDefaults };
+  },
+});
+
+/**
+ * Update AI feature defaults (partial)
+ */
+export const updateAiFeatureDefaults = mutation({
+  args: {
+    webSearchEnabled: v.optional(v.boolean()),
+    thinkingEnabled: v.optional(v.boolean()),
+    rlmForceFullByDefault: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+
+    const current = { ...DEFAULT_AI_FEATURE_DEFAULTS, ...user.aiFeatureDefaults };
+    const newDefaults = {
+      webSearchEnabled: args.webSearchEnabled ?? current.webSearchEnabled,
+      thinkingEnabled: args.thinkingEnabled ?? current.thinkingEnabled,
+      rlmForceFullByDefault: args.rlmForceFullByDefault ?? current.rlmForceFullByDefault,
+    };
+
+    await ctx.db.patch(user._id, { aiFeatureDefaults: newDefaults, updatedAt: Date.now() });
+    return newDefaults;
   },
 });

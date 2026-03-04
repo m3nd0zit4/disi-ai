@@ -26,6 +26,7 @@ import { useAIContext } from "@/context/AIContext";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { SpecializedModel } from "@/types/AiModel";
+import { getDefaultModelId, getModelById } from "@/lib/rlm/internal";
 
 // Get all models in legacy SpecializedModel format for UI compatibility
 const ADAPTED_MODELS = getModelsForUI();
@@ -68,9 +69,11 @@ export default function ModelSelector() {
     });
   }, [mode, search]);
 
-  const currentModel = selectedModels[0] || ADAPTED_MODELS[0];
-  const modelInfo = 'modelId' in currentModel 
-    ? ADAPTED_MODELS.find(m => m.id === currentModel.modelId) 
+  // When nothing is selected, use the resolver's default (first enabled) so we never show an invalid model
+  const defaultDisplayModel = getModelById(getDefaultModelId()) ?? ADAPTED_MODELS.find(m => m.enabled)?.[0] ?? ADAPTED_MODELS[0];
+  const currentModel = selectedModels[0] || defaultDisplayModel;
+  const modelInfo = 'modelId' in currentModel
+    ? ADAPTED_MODELS.find(m => m.id === currentModel.modelId)
     : currentModel;
 
   const modelName = selectedModels.length > 1 

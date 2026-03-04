@@ -1,6 +1,29 @@
 import OpenAI from "openai";
 import { BaseAIService, AIRequest, AIResponse, OrchestrationRequest, OrchestrationResponse, ImageGenerationRequest, VideoGenerationRequest, MediaResponse } from "./base";
 
+interface OpenAIWebSearchConfig {
+  enabled: boolean;
+  allowedDomains?: string[];
+  userLocation?: {
+    type: "approximate";
+    country?: string;
+    city?: string;
+    region?: string;
+    timezone?: string;
+  };
+  externalWebAccess?: boolean;
+}
+
+interface OpenAIReasoningConfig {
+  enabled: boolean;
+  effort?: "low" | "medium" | "high";
+}
+
+interface EnhancedOpenAIRequest extends AIRequest {
+  webSearch?: OpenAIWebSearchConfig;
+  reasoning?: OpenAIReasoningConfig;
+}
+
 export class OpenAIService extends BaseAIService {
   public client: OpenAI;
 
@@ -16,9 +39,19 @@ export class OpenAIService extends BaseAIService {
 
   //* Generate a response
   async generateResponse(request: AIRequest): Promise<AIResponse> {
+    const enhancedRequest = request as EnhancedOpenAIRequest;
     const startTime = Date.now();
     const isReasoning = this.isReasoningModel(request.model);
-    
+
+    // Determine if we should use Responses API (for web search)
+    const useResponsesAPI = enhancedRequest.webSearch?.enabled ||
+                            (isReasoning && enhancedRequest.reasoning?.enabled);
+
+    if (useResponsesAPI) {
+      return this.generateWithResponsesAPI(enhancedRequest);
+    }
+
+    // Standard Chat Completions API
     const completion = await this.client.chat.completions.create({
       model: request.model,
       messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
@@ -28,19 +61,34 @@ export class OpenAIService extends BaseAIService {
     } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, { signal: request.signal });
 
     const responseTime = (Date.now() - startTime) / 1000;
-    const tokens = completion.usage?.total_tokens ?? 0;
-    
+    const u = completion.usage;
+    const totalTokens = u?.total_tokens ?? 0;
+    const inputTokens = (u as { input_tokens?: number; prompt_tokens?: number })?.input_tokens ?? (u as { prompt_tokens?: number })?.prompt_tokens;
+    const outputTokens = (u as { output_tokens?: number; completion_tokens?: number })?.output_tokens ?? (u as { completion_tokens?: number })?.completion_tokens;
+    const tokens =
+      typeof inputTokens === "number" && typeof outputTokens === "number"
+        ? { input: inputTokens, output: outputTokens, total: totalTokens || inputTokens + outputTokens }
+        : totalTokens;
+
     return {
       content: completion.choices[0].message.content ?? "",
       tokens,
-      cost: this.calculateCost(request.model, tokens),
+      cost: this.calculateCost(request.model, typeof tokens === "number" ? tokens : tokens.total),
       finishReason: completion.choices[0].finish_reason,
     };
   }
 
   //* Generate a stream of responses
-  async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+  async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<any>> {
+    const enhancedRequest = request as EnhancedOpenAIRequest;
     const isReasoning = this.isReasoningModel(request.model);
+
+    // Use Responses API with streaming for web search
+    if (enhancedRequest.webSearch?.enabled) {
+      return this.generateStreamWithResponsesAPI(enhancedRequest);
+    }
+
+    // Standard Chat Completions streaming
     const stream = await this.client.chat.completions.create({
       model: request.model,
       messages: request.messages as OpenAI.Chat.ChatCompletionMessageParam[],
@@ -49,6 +97,292 @@ export class OpenAIService extends BaseAIService {
       stream: true,
     } as OpenAI.Chat.ChatCompletionCreateParamsStreaming, { signal: request.signal });
     return stream;
+  }
+
+  //* Generate streaming response using Responses API (for web search)
+  private async *generateStreamWithResponsesAPI(request: EnhancedOpenAIRequest): AsyncIterable<any> {
+    const tools: any[] = [];
+
+    if (request.webSearch?.enabled) {
+      const webSearchTool: any = {
+        type: "web_search",
+      };
+
+      if (request.webSearch.allowedDomains) {
+        webSearchTool.filters = {
+          allowed_domains: request.webSearch.allowedDomains,
+        };
+      }
+
+      if (request.webSearch.userLocation) {
+        webSearchTool.user_location = request.webSearch.userLocation;
+      }
+
+      tools.push(webSearchTool);
+    }
+
+    const requestBody: any = {
+      model: request.model,
+      input: this.convertMessagesToInput(request.messages),
+      max_output_tokens: request.maxTokens,
+      stream: true,
+    };
+
+    if (tools.length > 0) {
+      requestBody.tools = tools;
+    }
+
+    if (request.reasoning?.enabled) {
+      requestBody.reasoning = { effort: request.reasoning.effort || "medium" };
+    }
+
+    // Stream from Responses API
+    const fetchResponse = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${this.config.apiKey}`,
+        "Accept": "text/event-stream",
+      },
+      body: JSON.stringify(requestBody),
+      signal: request.signal,
+    });
+
+    if (!fetchResponse.ok) {
+      const error = await fetchResponse.text();
+      throw new Error(`OpenAI Responses API error: ${fetchResponse.status} - ${error}`);
+    }
+
+    const reader = fetchResponse.body?.getReader();
+    if (!reader) {
+      throw new Error("No response body reader available");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const data = line.slice(6).trim();
+            if (data === "[DONE]") {
+              return;
+            }
+
+            try {
+              const event = JSON.parse(data);
+
+              // Debug: Log event types to understand the stream format
+              if (event.type && !event.type.includes("delta")) {
+                console.log(`[OpenAI Stream] Event type: ${event.type}`);
+              }
+
+              // Normalize to OpenAI-compatible chunk format for stream normalizer
+              if (event.type === "response.output_text.delta") {
+                yield {
+                  type: "response.output_text.delta",
+                  choices: [{
+                    delta: { content: event.delta || "" },
+                    finish_reason: null,
+                  }],
+                };
+              } else if (event.type === "response.web_search_call.in_progress") {
+                yield {
+                  type: "web_search_call",
+                  status: "in_progress",
+                  phase: "in_progress",
+                  ...(event.web_search_call?.input?.query && { query: event.web_search_call.input.query }),
+                };
+              } else if (event.type === "response.web_search_call.searching") {
+                yield {
+                  type: "web_search_call",
+                  status: "searching",
+                  phase: "searching",
+                  ...(event.web_search_call?.input?.query && { query: event.web_search_call.input.query }),
+                };
+              } else if (event.type === "response.web_search_call.completed") {
+                yield {
+                  type: "web_search_call",
+                  status: "completed",
+                  phase: "completed",
+                  ...(event.web_search_call?.input?.query && { query: event.web_search_call.input.query }),
+                };
+              } else if (event.type === "response.completed") {
+                // Extract citations from the COMPLETED response
+                // The full response object is in event.response
+                const citations = this.extractCitationsFromCompletedResponse(event.response);
+                console.log(`[OpenAI Stream] Response completed with ${citations.length} citations`);
+
+                // If we have citations, emit web search result first
+                if (citations.length > 0) {
+                  yield {
+                    type: "web_search_result",
+                    citations: citations,
+                  };
+                }
+
+                // Then emit completion
+                yield {
+                  choices: [{
+                    delta: { content: "" },
+                    finish_reason: "stop",
+                  }],
+                };
+              }
+            } catch (e) {
+              // Skip non-JSON lines
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  //* Extract citations from streaming web search result
+  private extractStreamCitations(event: any): Array<{
+    url: string;
+    title: string;
+    description?: string;
+    domain?: string;
+    favicon?: string;
+  }> {
+    const citations: Array<{
+      url: string;
+      title: string;
+      description?: string;
+      domain?: string;
+      favicon?: string;
+    }> = [];
+
+    if (event.sources) {
+      for (const source of event.sources) {
+        if (source.url) {
+          let domain = "";
+          try {
+            domain = new URL(source.url).hostname.replace("www.", "");
+          } catch {
+            domain = source.url;
+          }
+          citations.push({
+            url: source.url,
+            title: source.title || domain,
+            description: source.snippet || "",
+            domain,
+            favicon: `https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(source.url)}`,
+          });
+        }
+      }
+    }
+
+    return citations;
+  }
+
+  //* Extract citations from a completed Responses API response
+  //* This handles the full response object that comes in response.completed event
+  private extractCitationsFromCompletedResponse(response: any): Array<{
+    url: string;
+    title: string;
+    description?: string;
+    domain?: string;
+    favicon?: string;
+  }> {
+    const citations: Array<{
+      url: string;
+      title: string;
+      description?: string;
+      domain?: string;
+      favicon?: string;
+    }> = [];
+    const seenUrls = new Set<string>();
+
+    if (!response?.output) return citations;
+
+    for (const item of response.output) {
+      // Extract from web_search_call results
+      if (item.type === "web_search_call") {
+        // Check for results array
+        if (item.results) {
+          for (const result of item.results) {
+            if (result.url && !seenUrls.has(result.url)) {
+              seenUrls.add(result.url);
+              let domain = "";
+              try {
+                domain = new URL(result.url).hostname.replace("www.", "");
+              } catch {
+                domain = result.url;
+              }
+              citations.push({
+                url: result.url,
+                title: result.title || domain,
+                description: result.snippet || result.description || "",
+                domain,
+                favicon: `https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(result.url)}`,
+              });
+            }
+          }
+        }
+        // Also check action.sources (when using include parameter)
+        if (item.action?.sources) {
+          for (const source of item.action.sources) {
+            if (source.url && !seenUrls.has(source.url)) {
+              seenUrls.add(source.url);
+              let domain = "";
+              try {
+                domain = new URL(source.url).hostname.replace("www.", "");
+              } catch {
+                domain = source.url;
+              }
+              citations.push({
+                url: source.url,
+                title: source.title || domain,
+                description: source.snippet || "",
+                domain,
+                favicon: `https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(source.url)}`,
+              });
+            }
+          }
+        }
+      }
+
+      // Extract from message annotations (inline citations)
+      if (item.type === "message" && item.content) {
+        for (const part of item.content) {
+          if (part.annotations) {
+            for (const annotation of part.annotations) {
+              if (annotation.type === "url_citation" && annotation.url && !seenUrls.has(annotation.url)) {
+                seenUrls.add(annotation.url);
+                let domain = "";
+                try {
+                  domain = new URL(annotation.url).hostname.replace("www.", "");
+                } catch {
+                  domain = annotation.url;
+                }
+                citations.push({
+                  url: annotation.url,
+                  title: annotation.title || domain,
+                  description: "",
+                  domain,
+                  favicon: `https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(annotation.url)}`,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    console.log(`[OpenAI] Extracted ${citations.length} citations from completed response`);
+    return citations;
   }
 
   //* Calculate the cost of a request
@@ -340,6 +674,189 @@ RULES:
     }
 
     throw new Error("Video generation timed out after 15 minutes");
+  }
+
+  //* Generate response using Responses API (for web search and enhanced reasoning)
+  private async generateWithResponsesAPI(request: EnhancedOpenAIRequest): Promise<AIResponse> {
+    const tools: any[] = [];
+
+    if (request.webSearch?.enabled) {
+      const webSearchTool: any = {
+        type: "web_search",
+      };
+
+      if (request.webSearch.allowedDomains) {
+        webSearchTool.filters = {
+          allowed_domains: request.webSearch.allowedDomains,
+        };
+      }
+
+      if (request.webSearch.userLocation) {
+        webSearchTool.user_location = request.webSearch.userLocation;
+      }
+
+      if (request.webSearch.externalWebAccess !== undefined) {
+        webSearchTool.external_web_access = request.webSearch.externalWebAccess;
+      }
+
+      tools.push(webSearchTool);
+    }
+
+    // Build request body for Responses API
+    // See: https://platform.openai.com/docs/guides/tools-web-search
+    const requestBody: any = {
+      model: request.model,
+      input: this.convertMessagesToInput(request.messages),
+      max_output_tokens: request.maxTokens,
+    };
+
+    if (tools.length > 0) {
+      requestBody.tools = tools;
+    }
+
+    if (request.reasoning?.enabled) {
+      requestBody.reasoning = { effort: request.reasoning.effort || "medium" };
+    }
+
+    // CRITICAL: Include sources to get the full list of URLs consulted
+    // This makes web_search_call include action.sources with the complete list
+    if (request.webSearch?.enabled) {
+      requestBody.include = ["web_search_call.action.sources"];
+    }
+
+    // Call Responses API using fetch (SDK may not fully support this endpoint)
+    const fetchResponse = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+      signal: request.signal,
+    });
+
+    if (!fetchResponse.ok) {
+      const error = await fetchResponse.text();
+      throw new Error(`OpenAI Responses API error: ${fetchResponse.status} - ${error}`);
+    }
+
+    const response = await fetchResponse.json();
+
+    // Extract content - use output_text convenience property or build from output[]
+    let content = "";
+    if (response.output_text) {
+      content = response.output_text;
+    } else if (response.output) {
+      // Build content from message items
+      for (const item of response.output) {
+        if (item.type === "message" && item.content) {
+          for (const part of item.content) {
+            if (part.type === "output_text" && part.text) {
+              content += part.text;
+            }
+          }
+        }
+      }
+    }
+
+    // Extract reasoning content if available
+    const thinkingContent = response.output
+      ?.filter((item: any) => item.type === "reasoning")
+      ?.map((item: any) => item.summary?.map((s: any) => s.text).join("\n"))
+      ?.join("\n");
+
+    return {
+      content,
+      tokens: response.usage?.total_tokens || 0,
+      cost: this.calculateCost(request.model, response.usage?.total_tokens || 0),
+      finishReason: response.status === "completed" ? "complete" : "incomplete",
+      thinkingContent: thinkingContent || undefined,
+      citations: this.extractResponsesCitations(response),
+    };
+  }
+
+  //* Convert messages to Responses API input format
+  private convertMessagesToInput(messages: Array<{role: string, content: string}>): any[] {
+    return messages.map(msg => ({
+      role: msg.role === "system" ? "developer" : msg.role,
+      content: msg.content,
+    }));
+  }
+
+  //* Extract citations from Responses API
+  //* Sources come from two places:
+  //* 1. web_search_call.action.sources - the full list of URLs consulted (if include was used)
+  //* 2. message.content[].annotations[] - inline citations with url_citation type
+  //* See: https://platform.openai.com/docs/guides/tools-web-search
+  private extractResponsesCitations(response: any): Array<{
+    url: string;
+    title: string;
+    description?: string;
+    domain?: string;
+    favicon?: string;
+  }> {
+    const citations: Array<{
+      url: string;
+      title: string;
+      description?: string;
+      domain?: string;
+      favicon?: string;
+    }> = [];
+    const seenUrls = new Set<string>();
+
+    if (!response.output) return citations;
+
+    for (const item of response.output) {
+      // Extract from web_search_call.action.sources (full list of consulted URLs)
+      if (item.type === "web_search_call" && item.action?.sources) {
+        for (const source of item.action.sources) {
+          if (source.url && !seenUrls.has(source.url)) {
+            seenUrls.add(source.url);
+            let domain = "";
+            try {
+              domain = new URL(source.url).hostname.replace("www.", "");
+            } catch {
+              domain = source.url;
+            }
+            citations.push({
+              url: source.url,
+              title: source.title || domain,
+              description: source.snippet || source.description || "",
+              domain,
+              favicon: `https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(source.url)}`,
+            });
+          }
+        }
+      }
+
+      // Extract from message annotations (inline citations)
+      if (item.type === "message" && item.content) {
+        for (const part of item.content) {
+          if (part.annotations) {
+            for (const annotation of part.annotations) {
+              if (annotation.type === "url_citation" && !seenUrls.has(annotation.url)) {
+                seenUrls.add(annotation.url);
+                let domain = "";
+                try {
+                  domain = new URL(annotation.url).hostname.replace("www.", "");
+                } catch {
+                  domain = annotation.url;
+                }
+                citations.push({
+                  url: annotation.url,
+                  title: annotation.title || domain,
+                  description: "",
+                  domain,
+                  favicon: `https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(annotation.url)}`,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return citations;
   }
 
   //* Generate embedding

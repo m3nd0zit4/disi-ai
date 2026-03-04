@@ -1,6 +1,29 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { BaseAIService, AIRequest, AIResponse, ImageGenerationRequest, VideoGenerationRequest, MediaResponse } from "./base";
 
+interface GeminiSearchConfig {
+  enabled: boolean;
+  allowedDomains?: string[];
+  userLocation?: {
+    type: "approximate";
+    country?: string;
+    city?: string;
+    region?: string;
+    timezone?: string;
+  };
+}
+
+interface GeminiThinkingConfig {
+  enabled: boolean;
+  level?: "minimal" | "low" | "medium" | "high";
+  budget?: number;
+}
+
+interface EnhancedGeminiRequest extends AIRequest {
+  googleSearch?: GeminiSearchConfig;
+  thinking?: GeminiThinkingConfig;
+}
+
 export class GoogleService extends BaseAIService {
     public client: GoogleGenerativeAI;
     private apiKey: string;
@@ -13,27 +36,66 @@ export class GoogleService extends BaseAIService {
 
     //* Generate a response (non streaming)
     async generateResponse(request: AIRequest): Promise<AIResponse> {
+        const enhancedRequest = request as EnhancedGeminiRequest;
         const startTime = Date.now();
 
         console.log("[GoogleService] generateResponse called:", {
             model: request.model,
             messageCount: request.messages.length,
             temperature: request.temperature,
+            googleSearch: enhancedRequest.googleSearch?.enabled,
+            thinking: enhancedRequest.thinking?.enabled,
         });
 
-        const model = this.client.getGenerativeModel({ model: request.model });
+        // Extract system instruction if present
+        const systemInstruction = request.messages.find(m => m.role === "system")?.content;
+
+        const model = this.client.getGenerativeModel({
+            model: request.model,
+            systemInstruction,
+        });
+
         console.log("[GoogleService] Got generative model for:", request.model);
+
+        // Build generation config
+        const generationConfig: any = {
+            temperature: request.temperature ?? 0.7,
+            maxOutputTokens: request.maxTokens ?? 2048,
+        };
+
+        // Add thinking config
+        if (enhancedRequest.thinking?.enabled) {
+            if (enhancedRequest.thinking.level) {
+                generationConfig.thinkingConfig = {
+                    thinkingLevel: enhancedRequest.thinking.level,
+                };
+            } else if (enhancedRequest.thinking.budget !== undefined) {
+                generationConfig.thinkingConfig = {
+                    thinkingBudget: enhancedRequest.thinking.budget,
+                };
+            }
+        }
+
+        // Build tools
+        const tools: any[] = [];
+        if (enhancedRequest.googleSearch?.enabled) {
+            const searchTool: any = {
+                googleSearch: {}
+            };
+            tools.push(searchTool);
+        }
 
         // Format the prompt for gemini
         const chat = model.startChat({
-            history: request.messages.slice(0, -1).map(msg => ({
-                role: msg.role === "assistant" ? "model" : "user",
-                parts: [{ text: msg.content }],
-            })),
-            generationConfig: {
-                temperature: request.temperature ?? 0.7,
-                maxOutputTokens: request.maxTokens ?? 2048,
-            }
+            history: request.messages
+                .filter(m => m.role !== "system")
+                .slice(0, -1)
+                .map(msg => ({
+                    role: msg.role === "assistant" ? "model" : "user",
+                    parts: [{ text: msg.content }],
+                })),
+            generationConfig,
+            ...(tools.length > 0 && { tools }),
         });
 
         const lastMessage = request.messages[request.messages.length - 1];
@@ -41,8 +103,19 @@ export class GoogleService extends BaseAIService {
         const response = result.response;
 
         const responseTime = (Date.now() - startTime) / 1000;
+
+        // Extract thinking if available
+        let thinkingContent = "";
+        for (const candidate of response.candidates || []) {
+            for (const part of candidate.content.parts || []) {
+                if ((part as any).thought) {
+                    thinkingContent += (part as any).text;
+                }
+            }
+        }
+
         const content = response.text();
-        
+
         //! Not always Gemini return exact number of tokens
         const tokens = response.usageMetadata?.totalTokenCount ?? Math.ceil(content.length / 4);
 
@@ -51,22 +124,61 @@ export class GoogleService extends BaseAIService {
             tokens,
             cost: this.calculateCost(request.model, tokens),
             finishReason: "Complete",
+            thinkingContent: thinkingContent || undefined,
+            citations: this.extractGeminiCitations(response),
         };
     }
 
     //* Generate a stream of responses
     async generateStreamResponse(request: AIRequest): Promise<AsyncIterable<any>> {
-        const model = this.client.getGenerativeModel({ model: request.model });
+        const enhancedRequest = request as EnhancedGeminiRequest;
+
+        // Extract system instruction if present
+        const systemInstruction = request.messages.find(m => m.role === "system")?.content;
+
+        const model = this.client.getGenerativeModel({
+            model: request.model,
+            systemInstruction,
+        });
+
+        // Build generation config
+        const generationConfig: any = {
+            temperature: request.temperature ?? 0.7,
+            maxOutputTokens: request.maxTokens ?? 2048,
+        };
+
+        // Add thinking config
+        if (enhancedRequest.thinking?.enabled) {
+            if (enhancedRequest.thinking.level) {
+                generationConfig.thinkingConfig = {
+                    thinkingLevel: enhancedRequest.thinking.level,
+                };
+            } else if (enhancedRequest.thinking.budget !== undefined) {
+                generationConfig.thinkingConfig = {
+                    thinkingBudget: enhancedRequest.thinking.budget,
+                };
+            }
+        }
+
+        // Build tools
+        const tools: any[] = [];
+        if (enhancedRequest.googleSearch?.enabled) {
+            const searchTool: any = {
+                googleSearch: {}
+            };
+            tools.push(searchTool);
+        }
 
         const chat = model.startChat({
-            history: request.messages.slice(0, -1).map(msg => ({
-                role: msg.role === "assistant" ? "model" : "user",
-                parts: [{ text: msg.content }],
-            })),
-            generationConfig: {
-                temperature: request.temperature ?? 0.7,
-                maxOutputTokens: request.maxTokens ?? 2048,
-            }
+            history: request.messages
+                .filter(m => m.role !== "system")
+                .slice(0, -1)
+                .map(msg => ({
+                    role: msg.role === "assistant" ? "model" : "user",
+                    parts: [{ text: msg.content }],
+                })),
+            generationConfig,
+            ...(tools.length > 0 && { tools }),
         });
 
         const lastMessage = request.messages[request.messages.length - 1];
@@ -74,6 +186,28 @@ export class GoogleService extends BaseAIService {
             signal: request.signal,
         });
         return result.stream;
+    }
+
+    //* Extract citations from Gemini grounding metadata
+    private extractGeminiCitations(response: any): Array<{url: string, title: string}> {
+        const citations: Array<{url: string, title: string}> = [];
+
+        if (response.candidates) {
+            for (const candidate of response.candidates) {
+                if (candidate.groundingMetadata?.groundingChunks) {
+                    for (const chunk of candidate.groundingMetadata.groundingChunks) {
+                        if (chunk.web) {
+                            citations.push({
+                                url: chunk.web.uri,
+                                title: chunk.web.title || "",
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        return citations;
     }
 
     //* Calculate cost

@@ -209,7 +209,7 @@ export async function validateApiKey(
   apiKey: string
 ): Promise<{ valid: boolean; error?: string }> {
   try {
-    const { getAIService } = await import("./aiServices");
+    const { getAIService } = await import("@/lib/aiServices");
     const service = getAIService(provider, apiKey);
     
     const isValid = await service.validateApiKey();

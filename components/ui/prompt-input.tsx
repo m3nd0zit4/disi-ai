@@ -24,6 +24,8 @@ type PromptInputContextType = {
   onSubmit?: () => void
   disabled?: boolean
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
+  /** Optional ref forwarded from parent for e.g. insert-at-cursor */
+  forwardedTextareaRef?: React.MutableRefObject<HTMLTextAreaElement | null>
 }
 
 const PromptInputContext = createContext<PromptInputContextType>({
@@ -34,6 +36,7 @@ const PromptInputContext = createContext<PromptInputContextType>({
   onSubmit: undefined,
   disabled: false,
   textareaRef: React.createRef<HTMLTextAreaElement>(),
+  forwardedTextareaRef: undefined,
 })
 
 function usePromptInput() {
@@ -49,6 +52,8 @@ export type PromptInputProps = {
   children: React.ReactNode
   className?: string
   disabled?: boolean
+  /** Optional ref to receive the textarea DOM node (e.g. for insert-at-cursor) */
+  textareaRef?: React.MutableRefObject<HTMLTextAreaElement | null>
 } & React.ComponentProps<"div">
 
 function PromptInput({
@@ -61,6 +66,7 @@ function PromptInput({
   children,
   disabled = false,
   onClick,
+  textareaRef: forwardedTextareaRef,
   ...props
 }: PromptInputProps) {
   const [internalValue, setInternalValue] = useState(value || "")
@@ -84,7 +90,8 @@ function PromptInput({
     onSubmit,
     disabled,
     textareaRef,
-  }), [isLoading, value, internalValue, onValueChange, handleChange, maxHeight, onSubmit, disabled])
+    forwardedTextareaRef,
+  }), [isLoading, value, internalValue, onValueChange, handleChange, maxHeight, onSubmit, disabled, forwardedTextareaRef])
 
   return (
     <TooltipProvider>
@@ -115,7 +122,7 @@ function PromptInputTextarea({
   disableAutosize = false,
   ...props
 }: PromptInputTextareaProps) {
-  const { value, setValue, maxHeight, onSubmit, disabled, textareaRef } =
+  const { value, setValue, maxHeight, onSubmit, disabled, textareaRef, forwardedTextareaRef } =
     usePromptInput()
 
   const adjustHeight = (el: HTMLTextAreaElement | null) => {
@@ -132,6 +139,7 @@ function PromptInputTextarea({
 
   const handleRef = (el: HTMLTextAreaElement | null) => {
     textareaRef.current = el
+    if (forwardedTextareaRef) forwardedTextareaRef.current = el
     adjustHeight(el)
   }
 

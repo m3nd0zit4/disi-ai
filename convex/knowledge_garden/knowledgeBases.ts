@@ -19,7 +19,11 @@ export const list = query({
       .unique();
 
     if (!user) {
-      throw new Error("User not found");
+      return [];
+    }
+
+    if (user.plan !== "pro") {
+      return [];
     }
 
     const kbs = await ctx.db
@@ -50,6 +54,10 @@ export const create = mutation({
 
     if (!user) {
       throw new Error("User not found");
+    }
+
+    if (user.plan !== "pro") {
+      throw new Error("Knowledge Garden is available on the Pro plan");
     }
 
     const kbId = await ctx.db.insert("knowledgeBases", {
@@ -94,6 +102,10 @@ export const update = mutation({
       throw new Error("Unauthorized access to KB");
     }
 
+    if (user.plan !== "pro") {
+      throw new Error("Knowledge Garden is available on the Pro plan");
+    }
+
     await ctx.db.patch(args.id, {
       ...(args.name !== undefined && { name: args.name }),
       ...(args.description !== undefined && { description: args.description }),
@@ -114,6 +126,7 @@ export const deleteKb = action({
 
     const user = await ctx.runQuery(api.users.users.getUserByClerkId, { clerkId: identity.subject });
     if (!user || kb.userId !== user._id) throw new Error("Unauthorized");
+    if (user.plan !== "pro") throw new Error("Knowledge Garden is available on the Pro plan");
 
     console.log(`[KnowledgeBases] Starting cascade delete for KB ${args.id}`);
 
@@ -185,6 +198,10 @@ export const get = query({
        }
     }
 
+    if (user && user.plan !== "pro") {
+      return null;
+    }
+
     return kb;
   },
 });
@@ -203,6 +220,10 @@ export const queryAction = action({
     const kb = await ctx.runQuery(api.knowledge_garden.knowledgeBases.get, { id: args.kbId });
     if (!kb) {
       throw new Error("Knowledge Base not found or unauthorized");
+    }
+    const user = await ctx.runQuery(api.users.users.getUserByClerkId, { clerkId: identity.subject });
+    if (!user || user.plan !== "pro") {
+      throw new Error("Knowledge Garden is available on the Pro plan");
     }
     // The get query already verifies ownership via auth - if we got here, we have access
 

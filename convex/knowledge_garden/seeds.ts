@@ -28,6 +28,10 @@ export const create = mutation({
       throw new Error("User not found");
     }
 
+    if (user.plan !== "pro") {
+      throw new Error("Knowledge Garden is available on the Pro plan");
+    }
+
     // Verify KB ownership
     const kb = await ctx.db.get(args.kbId);
     if (!kb || kb.userId !== user._id) {
@@ -93,6 +97,10 @@ export const search = query({
       throw new Error("User not found");
     }
 
+    if (user.plan !== "pro") {
+      return [];
+    }
+
     // Verify ownership of all KBs before searching
     for (const kbId of args.kbIds) {
       const kb = await ctx.db.get(kbId);
@@ -143,6 +151,10 @@ export const listByKb = query({
       throw new Error("Unauthorized access to KB");
     }
 
+    if (user.plan !== "pro") {
+      return [];
+    }
+
     return await ctx.db
       .query("seeds")
       .withIndex("by_kb", (q) => q.eq("kbId", args.kbId))
@@ -181,6 +193,10 @@ export const listByFile = query({
       throw new Error("Unauthorized access to file");
     }
 
+    if (user.plan !== "pro") {
+      return [];
+    }
+
     return await ctx.db
       .query("seeds")
       .withIndex("by_file", (q) => q.eq("fileId", args.fileId))
@@ -210,6 +226,10 @@ export const listTags = query({
     const kb = await ctx.db.get(args.kbId);
     if (!kb || kb.userId !== user._id) {
       throw new Error("Unauthorized access to KB");
+    }
+
+    if (user.plan !== "pro") {
+      return [];
     }
 
     const seeds = await ctx.db
@@ -252,6 +272,10 @@ export const getDetail = query({
     const kb = await ctx.db.get(seed.kbId);
     if (!kb || kb.userId !== user._id) {
       throw new Error("Unauthorized or KB not found");
+    }
+
+    if (user.plan !== "pro") {
+      return null;
     }
 
     return seed;
@@ -412,6 +436,8 @@ export const updateStatus = mutation({
     const kb = await ctx.db.get(seed.kbId);
     if (!kb || kb.userId !== user._id) throw new Error("Unauthorized");
 
+    if (user.plan !== "pro") throw new Error("Knowledge Garden is available on the Pro plan");
+
     await ctx.db.patch(args.seedId, {
       status: args.status,
       updatedAt: Date.now(),
@@ -451,6 +477,8 @@ export const createFromCandidate = mutation({
     // Verify KB ownership
     const kb = await ctx.db.get(args.kbId);
     if (!kb || kb.userId !== user._id) throw new Error("Unauthorized KB");
+
+    if (user.plan !== "pro") throw new Error("Knowledge Garden is available on the Pro plan");
 
     // Get candidate
     const candidate = await ctx.db.get(args.candidateId);
@@ -532,6 +560,8 @@ export const update = mutation({
     // Verify KB ownership
     const kb = await ctx.db.get(seed.kbId);
     if (!kb || kb.userId !== user._id) throw new Error("Unauthorized");
+
+    if (user.plan !== "pro") throw new Error("Knowledge Garden is available on the Pro plan");
 
     const updates: Record<string, unknown> = { updatedAt: Date.now() };
     if (args.title !== undefined) updates.title = args.title;

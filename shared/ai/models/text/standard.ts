@@ -58,14 +58,14 @@ export const TEXT_STANDARD_MODELS: SpecializedModel[] = [
     // XAI GROK - Standard Models
     // ========================================================================
 
-    //* Grok 3 Mini - Cost-efficient
+    //* Grok 3 Mini - Cost-efficient; no Agent Tools (use Grok 4/4.1 for web search)
     {
         id: "grok-3-mini",
         category: "standard",
         provider: "Grok",
         providerModelId: "grok-3-mini",
         name: "Grok 3 Mini",
-        description: "Cost-efficient model for simpler tasks",
+        description: "Cost-efficient model for simpler tasks; no web search or server-side tools",
         premium: false,
         enabled: true,
         icon: {

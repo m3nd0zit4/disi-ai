@@ -1,11 +1,12 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
 import { sendToQueue } from "@/lib/aws/sqs";
-import { ConvexHttpClient } from "convex/browser";
+import { inngest } from "@/lib/inngest/client";
 import { api } from "@/convex/_generated/api";
 import { modelRegistry } from "@/shared/ai";
-
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+import { apiSuccess, apiError } from "@/lib/api-response";
+import { getConvexClient } from "@/lib/convex-client";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { getRegisteredToolNames } from "@/lib/agent/tools/registry";
 
 function getRequiredEnv(key: string): string {
   const value = process.env[key];
@@ -20,33 +21,46 @@ export async function POST(req: Request) {
   try {
     const { userId: clerkId } = await auth();
     if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
+    }
+    const rl = await checkRateLimit(clerkId, "canvas-execute");
+    if (!rl.success) {
+      return apiError("Rate limit exceeded", 429, "RATE_LIMIT_EXCEEDED");
     }
 
     const body = await req.json();
     const { canvasId, executionId: propExecutionId, prompt, models, newNodeId } = body;
 
     // Validate required fields
-    if (!canvasId || typeof canvasId !== 'string') {
-      return NextResponse.json({ error: "Invalid canvasId" }, { status: 400 });
+    if (!canvasId || typeof canvasId !== "string") {
+      return apiError("Invalid canvasId", 400, "INVALID_INPUT");
     }
 
     if (!propExecutionId && (!prompt || !newNodeId)) {
-      return NextResponse.json({ 
-        error: "Either executionId or (prompt + newNodeId) must be provided" 
-      }, { status: 400 });
+      return apiError(
+        "Either executionId or (prompt + newNodeId) must be provided",
+        400,
+        "INVALID_INPUT"
+      );
     }
 
-    // 1. Get user record
-    const user = await convex.query(api.users.users.getUserByClerkId, { clerkId });
+    const convex = getConvexClient();
+    // 1. Get user and canvas in parallel
+    const [user, canvas] = await Promise.all([
+      convex.query(api.users.users.getUserByClerkId, { clerkId }),
+      convex.query(api.canvas.canvas.getCanvasByClerkId, { canvasId: canvasId as any, clerkId }),
+    ]);
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return apiError("User not found", 404, "USER_NOT_FOUND");
+    }
+    if (!canvas) {
+      return apiError("Canvas not found or unauthorized", 404, "CANVAS_NOT_FOUND");
     }
 
-    // 2. Get canvas details (Authorized)
-    const canvas = await convex.query(api.canvas.canvas.getCanvasByClerkId, { canvasId: canvasId as any, clerkId });
-    if (!canvas) {
-      return NextResponse.json({ error: "Canvas not found or unauthorized" }, { status: 404 });
+    if (user.plan === "pro" || user.plan === "payg" || user.plan === "starter" || user.plan === "free") {
+      if ((user.balanceCredits ?? 0) <= 0) {
+        return apiError("Añade créditos para continuar usando la plataforma.", 402, "INSUFFICIENT_CREDITS");
+      }
     }
 
     let executionId = propExecutionId;
@@ -130,11 +144,11 @@ export async function POST(req: Request) {
         nodesToQueue = [nodes[nodes.length - 1]];
       }
     } else {
-      return NextResponse.json({ error: "Invalid request parameters" }, { status: 400 });
+      return apiError("Invalid request parameters", 400, "INVALID_INPUT");
     }
 
     // 4. Queue nodes in SQS with context
-    const queueUrl = user.plan === "pro" 
+    const queueUrl = (user.plan === "pro" || user.plan === "payg")
       ? getRequiredEnv("SQS_QUEUE_URL_PRO")
       : getRequiredEnv("SQS_QUEUE_URL_FREE");
 
@@ -167,6 +181,8 @@ export async function POST(req: Request) {
         const inputs = { 
           ...node.data,
           context: parentNodes.reverse(), // Order from root to parent
+          toolNames: getRegisteredToolNames(),
+          maxSteps: 8,
         };
         
         const messageBody = {
@@ -181,7 +197,19 @@ export async function POST(req: Request) {
         };
 
         const sqsResponse = await sendToQueue(queueUrl, messageBody, executionId);
-        
+
+        await inngest.send({
+          name: "canvas/execute.task",
+          data: {
+            executionId,
+            nodeId: node.id,
+            canvasId,
+            nodeType: node.type,
+            inputs,
+            userId: user._id,
+          },
+        });
+
         return {
           nodeId: node.id,
           jobId: sqsResponse.messageId,
@@ -189,17 +217,16 @@ export async function POST(req: Request) {
       })
     );
 
-    return NextResponse.json({
-      success: true,
-      jobs,
-      message: `${jobs.length} nodes queued for execution`,
-    });
-
+    return apiSuccess(
+      { jobs },
+      { message: `${jobs.length} nodes queued for execution` }
+    );
   } catch (error) {
-    console.error("Canvas execution error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 }
+    console.error("[Canvas Execute] Error:", error);
+    return apiError(
+      error instanceof Error ? error.message : "Internal server error",
+      500,
+      "INTERNAL_ERROR"
     );
   }
 }

@@ -1,0 +1,5 @@
+{"location":"trigger-file/route.ts:POST","message":"trigger-file POST entry","data":{"hasSecret":true},"timestamp":1770597453385,"hypothesisId":"H2,H3,H5"}
+{"location":"trigger-file/route.ts:beforeSend","message":"calling inngest.send","data":{"fileId":"kh7dk1zwzk2rdq0m9nbax255ds80vhm6","s3Key":"user_36TtSaXCjrMifhhFWsYOi4shYKf/56845a4","fileName":"WhatsApp Image 2026-01-31 at 2.18.10 PM.jpeg"},"timestamp":1770597453389,"hypothesisId":"H3"}
+{"location":"trigger-file/route.ts:afterSend","message":"inngest.send completed","data":{"fileId":"kh7dk1zwzk2rdq0m9nbax255ds80vhm6"},"timestamp":1770597453408,"hypothesisId":"H3"}
+{"location":"file-process.ts:handler","message":"file/process event received","data":{"fileId":"kh7dk1zwzk2rdq0m9nbax255ds80vhm6","s3Key":"user_36TtSaXCjrMifhhFWsYOi4shYKf/56845a4"},"timestamp":1770597453779,"hypothesisId":"H3,H4"}
+{"location":"file-process.ts:handlerDone","message":"runFileProcessWithErrorHandling completed","data":{"fileId":"kh7dk1zwzk2rdq0m9nbax255ds80vhm6"},"timestamp":1770597457842,"hypothesisId":"H4","runId":"post-fix"}

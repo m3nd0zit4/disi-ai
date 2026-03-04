@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as billing from "../billing.js";
 import type * as canvas_canvas from "../canvas/canvas.js";
 import type * as canvas_canvasExecutions from "../canvas/canvasExecutions.js";
 import type * as knowledge_garden_actions from "../knowledge_garden/actions.js";
@@ -15,10 +16,14 @@ import type * as knowledge_garden_knowledgeBases from "../knowledge_garden/knowl
 import type * as knowledge_garden_seedCandidates from "../knowledge_garden/seedCandidates.js";
 import type * as knowledge_garden_seedLinks from "../knowledge_garden/seedLinks.js";
 import type * as knowledge_garden_seeds from "../knowledge_garden/seeds.js";
+import type * as migrations from "../migrations.js";
 import type * as system_ai from "../system/ai.js";
 import type * as system_files from "../system/files.js";
 import type * as system_storage from "../system/storage.js";
 import type * as system_worker from "../system/worker.js";
+import type * as usage from "../usage.js";
+import type * as usage_actions from "../usage_actions.js";
+import type * as usage_queries from "../usage_queries.js";
 import type * as users_settings from "../users/settings.js";
 import type * as users_settings_actions from "../users/settings_actions.js";
 import type * as users_users from "../users/users.js";
@@ -30,6 +35,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  billing: typeof billing;
   "canvas/canvas": typeof canvas_canvas;
   "canvas/canvasExecutions": typeof canvas_canvasExecutions;
   "knowledge_garden/actions": typeof knowledge_garden_actions;
@@ -37,10 +43,14 @@ declare const fullApi: ApiFromModules<{
   "knowledge_garden/seedCandidates": typeof knowledge_garden_seedCandidates;
   "knowledge_garden/seedLinks": typeof knowledge_garden_seedLinks;
   "knowledge_garden/seeds": typeof knowledge_garden_seeds;
+  migrations: typeof migrations;
   "system/ai": typeof system_ai;
   "system/files": typeof system_files;
   "system/storage": typeof system_storage;
   "system/worker": typeof system_worker;
+  usage: typeof usage;
+  usage_actions: typeof usage_actions;
+  usage_queries: typeof usage_queries;
   "users/settings": typeof users_settings;
   "users/settings_actions": typeof users_settings_actions;
   "users/users": typeof users_users;

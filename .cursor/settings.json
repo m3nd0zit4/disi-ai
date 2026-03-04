@@ -1,0 +1,22 @@
+{
+  "plugins": {
+    "vercel": {
+      "enabled": true
+    },
+    "context7-plugin": {
+      "enabled": true
+    },
+    "stripe": {
+      "enabled": true
+    },
+    "deploy-on-aws": {
+      "enabled": true
+    },
+    "clerk": {
+      "enabled": true
+    },
+    "convex": {
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(dir /b \"c:\\\\Users\\\\Julia\\\\OneDrive\\\\Desktop\\\\disi-ai\\\\shared\\\\ai-models\")",
+      "Bash(npx tsx:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(node -e:*)",
+      "Bash(ls:*)",
+      "Bash(dir:*)",
+      "Bash(npm install:*)",
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx next build)"
+    ]
+  }
+}

@@ -193,11 +193,22 @@ function extractTitle(text: string): string {
 }
 
 /**
- * Extract suggested tags from the content
+ * Extract suggested tags from the content (used for AI response candidates).
  */
 function extractTags(text: string): string[] {
+  const tags = extractTagsFromContent(text);
+  tags.push('ai-generated');
+  return [...new Set(tags)].slice(0, 5);
+}
+
+/**
+ * Extract content-based tags from text (no source label).
+ * Used when processing uploaded documents so KB hashtags are coherent with the document.
+ * Exported for use in file processing worker.
+ */
+export function extractTagsFromContent(text: string): string[] {
   const tags: string[] = [];
-  const lowerText = text.toLowerCase();
+  if (!text || typeof text !== 'string') return tags;
 
   // Detect content types
   if (/```[\s\S]*?```/.test(text)) {
@@ -238,12 +249,20 @@ function extractTags(text: string): string[] {
   if (/\bdatabase\b/i.test(text) || /\bsql\b/i.test(text) || /\bquery\b/i.test(text)) {
     tags.push('database');
   }
+  if (/\bcontract\b/i.test(text) || /\bcontrato\b/i.test(text) || /\bagreement\b/i.test(text)) {
+    tags.push('contracts');
+  }
+  if (/\bbudget\b/i.test(text) || /\bpresupuesto\b/i.test(text) || /\bfinance\b/i.test(text)) {
+    tags.push('budget');
+  }
+  if (/\bpolicy\b/i.test(text) || /\bpolítica\b/i.test(text) || /\bprocedure\b/i.test(text)) {
+    tags.push('policy');
+  }
+  if (/\breport\b/i.test(text) || /\binforme\b/i.test(text) || /\banalysis\b/i.test(text)) {
+    tags.push('report');
+  }
 
-  // Always add ai-generated tag
-  tags.push('ai-generated');
-
-  // Remove duplicates and limit to 5 tags
-  return [...new Set(tags)].slice(0, 5);
+  return [...new Set(tags)].slice(0, 8);
 }
 
 /**

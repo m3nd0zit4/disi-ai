@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { 
@@ -13,10 +13,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { SeedCard } from "@/components/knowledge-garden/SeedCard";
 import { SeedDetailView } from "@/components/knowledge-garden/SeedDetailView";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { hasFeature } from "@/lib/plans";
+import Link from "next/link";
 
 import { Id } from "@/convex/_generated/dataModel";
 
@@ -32,12 +35,33 @@ export function KBDetailView({ kbId, selectedFileId, onFileSelect }: KBDetailVie
   const [isExtracting, setIsExtracting] = useState(false);
   const [urlInput, setUrlInput] = useState("");
   const [textInput, setTextInput] = useState("");
+  const [loadSeedsAndFiles, setLoadSeedsAndFiles] = useState(false);
   const { toast } = useToast();
 
-  const seeds = useQuery(api.knowledge_garden.seeds.listByKb, { kbId: kbId as Id<"knowledgeBases"> });
-  const files = useQuery(api.system.files.getFiles, { kbId: kbId as Id<"knowledgeBases"> });
-  const availableTags = useQuery(api.knowledge_garden.seeds.listTags, { kbId: kbId as Id<"knowledgeBases"> });
-  const kb = useQuery(api.knowledge_garden.knowledgeBases.get, { id: kbId as Id<"knowledgeBases"> });
+  const user = useQuery(api.users.users.getCurrentUser);
+  const hasKnowledgeGarden = hasFeature(user?.plan, "knowledgeGarden");
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoadSeedsAndFiles(true), 300);
+    return () => clearTimeout(t);
+  }, []);
+
+  const kb = useQuery(
+    api.knowledge_garden.knowledgeBases.get,
+    hasKnowledgeGarden && loadSeedsAndFiles ? { id: kbId as Id<"knowledgeBases"> } : "skip"
+  );
+  const seeds = useQuery(
+    api.knowledge_garden.seeds.listByKb,
+    hasKnowledgeGarden && loadSeedsAndFiles ? { kbId: kbId as Id<"knowledgeBases"> } : "skip"
+  );
+  const files = useQuery(
+    api.system.files.getFiles,
+    hasKnowledgeGarden && loadSeedsAndFiles ? { kbId: kbId as Id<"knowledgeBases"> } : "skip"
+  );
+  const availableTags = useQuery(
+    api.knowledge_garden.seeds.listTags,
+    hasKnowledgeGarden && loadSeedsAndFiles ? { kbId: kbId as Id<"knowledgeBases"> } : "skip"
+  );
   const updateKb = useMutation(api.knowledge_garden.knowledgeBases.update);
   const generateUploadUrl = useAction(api.system.files.generateUploadUrl);
   const extractUrlContent = useAction(api.knowledge_garden.actions.extractUrlContent);
@@ -204,6 +228,17 @@ export function KBDetailView({ kbId, selectedFileId, onFileSelect }: KBDetailVie
     if (!files || !selectedFileId) return null;
     return files.find(f => f._id === selectedFileId);
   }, [files, selectedFileId]);
+
+  if (user !== undefined && !hasKnowledgeGarden) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center gap-4 p-8 text-center">
+        <p className="text-muted-foreground">Knowledge Garden is available on the Pro plan.</p>
+        <Button asChild variant="default" className="rounded-lg">
+          <Link href="/pricing">View Plans and Pricing</Link>
+        </Button>
+      </div>
+    );
+  }
 
   // If a file is selected, show detail view instead of grid
   if (selectedFile) {

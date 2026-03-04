@@ -23,11 +23,18 @@ import {
   ChevronDown,
   Check,
   Copy,
-  Pencil
+  Pencil,
+  Settings,
+  Coins,
+  ChevronRight,
+  CreditCard,
+  CoinsIcon,
+  Zap
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { UserButton } from "@clerk/nextjs"
 import Link from "next/link"
+import { logoFont } from "@/app/fonts"
 import { useQuery, useMutation } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import { Doc, Id } from "@/convex/_generated/dataModel"
@@ -50,8 +57,17 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { GardenStatsPanel } from "./GardenStatsPanel"
+import { useSettingsPanel } from "@/hooks/useSettingsPanel"
+import { usePlansPanel } from "@/hooks/usePlansPanel"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
+import { hasFeature } from "@/lib/plans"
 
 // Canvas List Item Component
 interface CanvasListItemProps {
@@ -136,6 +152,9 @@ export function AppSidebar() {
     // Separate pinned and unpinned canvases
     const pinnedCanvases = canvases?.filter(c => c.isPinned) ?? [];
     const unpinnedCanvases = canvases?.filter(c => !c.isPinned) ?? [];
+
+    const user = useQuery(api.users.users.getCurrentUser);
+    const hasKnowledgeGarden = hasFeature(user?.plan, "knowledgeGarden");
     
     // Knowledge Garden State (from Convex)
     const gardenSettings = useQuery(api.users.settings.getGardenSettings);
@@ -222,7 +241,7 @@ export function AppSidebar() {
             <SidebarHeader className="p-3">
                 <div className="flex justify-between items-center mb-4">
                     <Link href="/canvas" className="flex items-center gap-2 group">
-                        <h1 className="logo-font text-lg tracking-tight mt-2">Disi</h1>
+                        <h1 className={`${logoFont.className} text-3xl font-medium tracking-tight mt-2`}>Disi</h1>
                     </Link>
                     <Button variant="ghost" size="icon" className="size-8 rounded-lg hover:bg-primary/5" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
                         {theme === 'light' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -238,6 +257,7 @@ export function AppSidebar() {
                         <MessageSquarePlus className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100 transition-opacity" />
                     </Button>
                     
+                    {hasKnowledgeGarden && (
                     <Button 
                         variant="ghost" 
                         onClick={() => openKnowledgeCommand()}
@@ -246,9 +266,11 @@ export function AppSidebar() {
                         <span className="text-[13px] font-bold tracking-tight">Knowledge Garden</span>
                         <Leaf className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 transition-opacity" />
                     </Button>
+                    )}
                 </div>
 
-                {/* Knowledge Garden Agent Section */}
+                {/* Knowledge Garden Agent Section - only for Pro */}
+                {hasKnowledgeGarden && (
                 <div className="mt-6 space-y-3">
                     <div className="px-3 flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -299,6 +321,7 @@ export function AppSidebar() {
                         />
                     </div>
                 </div>
+                )}
             </SidebarHeader>
 
             <SidebarContent className="px-1.5">
@@ -378,8 +401,24 @@ export function AppSidebar() {
                     </Collapsible>
                 </SidebarGroup>
             </SidebarContent>
-        <SidebarFooter>
-            <div className="p-3 flex gap-2">
+        <SidebarFooter className="flex flex-col gap-2">
+            {/* Billing card - link to Billing page */}
+            <Link href="/usage" className="mx-2 mt-1 block">
+                <div className="rounded-xl bg-card border border-primary/10 p-2.5 shadow-sm hover:bg-muted/20 transition-colors">
+                    <div className="w-full flex items-center justify-between gap-2 text-left p-1.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <CoinsIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                            <div className="min-w-0">
+                                <p className="text-[11px] font-medium text-foreground truncate">Usage</p>
+                                <p className="text-[9px] text-muted-foreground tabular-nums">{user?.balanceCredits ?? 0} créditos</p>
+                            </div>
+                        </div>
+                        <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                    </div>
+                </div>
+            </Link>
+            {/* Profile row below icons */}
+            <div className="px-2 pb-1 pt-1">
                 <UserButton
                     showName
                     appearance={
@@ -394,6 +433,53 @@ export function AppSidebar() {
                         }
                     }
                 />
+            </div>
+            <div className="px-2 flex items-center gap-1 border-t border-border/40">
+                <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                                onClick={() => usePlansPanel.getState().openPanel()}
+                            >
+                                <Zap className="w-4 h-4" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="text-xs">
+                            Plans and Pricing
+                        </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="size-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50" asChild>
+                                <Link href="/usage">
+                                    <CreditCard className="w-4 h-4" />
+                                </Link>
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="text-xs">
+                            Billing
+                        </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                                onClick={() => useSettingsPanel.getState().openPanel()}
+                            >
+                                <Settings className="w-4 h-4" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="text-xs">
+                            Configuración
+                        </TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
+                <div className="flex-1 min-w-0" />
             </div>
         </SidebarFooter>
         </Sidebar>

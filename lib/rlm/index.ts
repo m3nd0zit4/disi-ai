@@ -1,8 +1,14 @@
 /**
- * RLM Module Index - Public exports
+ * RLM Module - Public API
+ *
+ * Structure:
+ * - types.ts       Shared types
+ * - core/          Orchestrator + Simple RLM (entry points)
+ * - streaming/     StreamProcessor (consumes AI SDK stream via mapAISDKStreamToChunks)
+ * - full/          Planner, Worker, Aggregator (recursive mode)
+ * - internal/      Cache, Budget, Model resolver, Environment
  */
 
-// Types
 export type {
   RLMMode,
   RLMConfig,
@@ -13,37 +19,44 @@ export type {
   WorkerResult,
   ContextSliceSpec,
   CachedResult,
-  // Streaming types
   StreamChunkCallback,
   StreamStatusCallback,
   StreamStatus,
   StreamingOptions,
   RLMStreamPhase,
   RLMProgress,
+  ToolEvent,
 } from "./types";
 
 export { DEFAULT_RLM_CONFIG, DEFAULT_STREAMING_OPTIONS } from "./types";
 
-// Core components
-export { RLMOrchestrator, executeRLM, executeRLMStreaming } from "./orchestrator";
-export { executeSimpleRLM, executeSimpleRLMStreaming } from "./simple-rlm";
+export {
+  RLMOrchestrator,
+  executeRLM,
+  executeRLMStreaming,
+  type OrchestratorOptions,
+  type StreamingOrchestratorOptions,
+} from "./core/orchestrator";
 
-// Stream processing
-export { StreamProcessor, normalizeStream, type NormalizedChunk } from "./stream-normalizer";
+export { executeSimpleRLM, executeSimpleRLMStreaming, type SimpleRLMOptions } from "./core/simple-rlm";
 
-// Environment (Prompt-as-Variable)
-export { 
-  PromptEnvironment, 
-  createEnvironment, 
+export {
+  StreamProcessor,
+  type NormalizedChunk,
+  type StreamCitation,
+} from "./streaming";
+
+export {
+  PromptEnvironment,
+  createEnvironment,
   createEnvironmentFromContext,
   type PromptSlice,
   type QueryResult,
   type EnvironmentConfig,
-} from "./environment";
+} from "./internal";
 
-// Internal (for advanced usage)
-export { RLMCache, getGlobalCache, clearGlobalCache } from "./cache";
-export { BudgetManager } from "./budget";
-export { runPlanner } from "./planner";
-export { executeWorker } from "./worker";
-export { aggregateResults, aggregateResultsStreaming } from "./aggregator";
+export { RLMCache, getGlobalCache, clearGlobalCache } from "./internal";
+export { BudgetManager } from "./internal";
+export { runPlanner } from "./full/planner";
+export { executeWorker } from "./full/worker";
+export { aggregateResults, aggregateResultsStreaming } from "./full/aggregator";

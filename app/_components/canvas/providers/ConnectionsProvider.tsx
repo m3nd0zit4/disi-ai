@@ -45,11 +45,9 @@ interface ConnectionsProviderProps {
 }
 
 export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderProps) => {
-  const { 
-    setEdges,
-    onNodesChange: storeOnNodesChange, 
-    onEdgesChange: storeOnEdgesChange 
-  } = useCanvasStore();
+  const setEdges = useCanvasStore((s) => s.setEdges);
+  const storeOnNodesChange = useCanvasStore((s) => s.onNodesChange);
+  const storeOnEdgesChange = useCanvasStore((s) => s.onEdgesChange);
   
   const updateCanvas = useMutation(api.canvas.canvas.updateCanvas);
   const createCanvasExecution = useMutation(api.canvas.canvasExecutions.createCanvasExecution);
@@ -72,7 +70,7 @@ export const ConnectionsProvider = ({ children, canvasId }: ConnectionsProviderP
     if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
     updateTimeoutRef.current = setTimeout(() => {
       updateCanvas(data);
-    }, 500);
+    }, 900);
   }, [updateCanvas]);
 
   // Unified Sync Logic

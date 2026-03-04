@@ -7,7 +7,9 @@ import { findBestPosition } from "@/lib/canvas/layout";
 export function useNodePreview(
   prompt: string,
   setPrompt: (value: string) => void,
-  selectedModels: SelectedModel[] = []
+  selectedModels: SelectedModel[] = [],
+  /** When this changes (selected input node id + text), we sync that node's text into the prompt. */
+  selectionSyncKey: string = ""
 ) {
   // CRITICAL: Don't subscribe to nodes/edges reactively to avoid infinite loops
   // Use imperative getState() calls inside effects instead
@@ -26,7 +28,8 @@ export function useNodePreview(
   
   const isSyncingRef = useRef(false);
   const hasManuallyMovedPerAnchorMap = useRef<Record<string, boolean>>({});
-  
+  const lastSelectedNodeIdRef = useRef<string | null>(null);
+
   const DEFAULT_PREVIEW_MODEL = "gpt-5.2";
   
   // Cache selectedModels to prevent unnecessary effect re-runs
@@ -90,14 +93,22 @@ export function useNodePreview(
     // "si no hay nodo seleccionado eso quiere decir que es una conversacion nueva"
     const anchorNodeId = selectedNode?.id;
 
+    const { viewport: vp, paneDimensions } = useCanvasStore.getState();
+    const viewportForLayout =
+      vp && paneDimensions && paneDimensions.width > 0 && paneDimensions.height > 0
+        ? { ...vp, width: paneDimensions.width, height: paneDimensions.height }
+        : undefined;
+
     const position = findBestPosition({
       nodes: currentNodes,
       edges: useCanvasStore.getState().edges,
       anchorNodeId: anchorNodeId,
-      newNodeId: newNodeId, // NEW: Pass the preview ID so it can be excluded from siblings check
+      newNodeId: newNodeId,
       newNodeSize,
       newNodeType: "preview-input",
-      isExplicitSelection
+      isExplicitSelection,
+      viewport: viewportForLayout,
+      skipCollisionAvoidance: true,
     });
 
     addNode({
@@ -200,32 +211,34 @@ export function useNodePreview(
     }
   }, [cleanupPreview, ensureInputPreview, setPrompt, updateNodeData]);
 
-  // Selection to Prompt Sync
-  const lastSelectedNodeIdRef = useRef<string | null>(null);
-
+  // Selection to Prompt Sync: when user selects an input node, show its text in the chat.
+  // When user selects a non-input node (e.g. response), do NOT clear so the preview stays visible.
+  // When user deselects (no node selected), clear the ChatInputBox.
   useEffect(() => {
+    if (!selectionSyncKey) {
+      const currentNodes = useCanvasStore.getState().nodes;
+      const anyNodeSelected = currentNodes.some(n => n.selected);
+      if (!anyNodeSelected) {
+        setPrompt("");
+        lastSelectedNodeIdRef.current = null;
+      }
+      return;
+    }
     const currentNodes = useCanvasStore.getState().nodes;
     const selectedInputNode = currentNodes.find(n => n.selected && (n.type === 'input' || n.type === 'preview-input'));
-    
-    if (selectedInputNode) {
-      isSyncingRef.current = true;
-      setPrompt((selectedInputNode.data.text as string) || "");
-      
-      // Clear any preview ONLY if we selected a REAL input node
-      // If we selected a preview node, we want to keep it!
-      if (selectedInputNode.type === 'input') {
-        cleanupPreview();
-      }
-      
-      lastSelectedNodeIdRef.current = selectedInputNode.id;
-      const timer = setTimeout(() => { isSyncingRef.current = false; }, 0);
-      return () => clearTimeout(timer);
-    } else if (lastSelectedNodeIdRef.current) {
-      // If we had a selection and now we don't, clear the prompt
-      setPrompt("");
-      lastSelectedNodeIdRef.current = null;
-    }
-  }, [setPrompt, cleanupPreview]);
+    if (!selectedInputNode) return;
+
+    isSyncingRef.current = true;
+    setPrompt((selectedInputNode.data.text as string) || "");
+
+    // Do not cleanup preview when selecting another node; keep preview visible while user is writing.
+    // Preview is only cleaned on empty prompt (handlePromptChange / prompt effect) or on submit.
+    lastSelectedNodeIdRef.current = selectedInputNode.id;
+    const timer = setTimeout(() => {
+      isSyncingRef.current = false;
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [selectionSyncKey, setPrompt]);
 
   // Track manual movements - runs on every render but uses ref so no infinite loop
   useEffect(() => {
@@ -241,7 +254,11 @@ export function useNodePreview(
   // Real-time update ONLY effect - CRITICAL: Only depends on prompt to avoid infinite loops
   useEffect(() => {
     if (isSyncingRef.current) return;
-    if (!prompt.trim() && previewFileNodeIdsRef.current.size === 0) return;
+    // When prompt is empty and no file previews, always cleanup (paste/delete-all/clear)
+    if (!prompt.trim() && previewFileNodeIdsRef.current.size === 0) {
+      cleanupPreview();
+      return;
+    }
 
     const currentNodes = useCanvasStore.getState().nodes;
     const selectedInputNode = currentNodes.find(n => n.selected && (n.type === 'input' || n.type === 'preview-input'));
@@ -273,6 +290,12 @@ export function useNodePreview(
           const isExplicitSelection = !!selectedNode;
           const anchorNodeId = selectedNode?.id;
 
+          const { viewport: vp, paneDimensions } = useCanvasStore.getState();
+          const viewportForLayout =
+            vp && paneDimensions && paneDimensions.width > 0 && paneDimensions.height > 0
+              ? { ...vp, width: paneDimensions.width, height: paneDimensions.height }
+              : undefined;
+
           const newPos = findBestPosition({
             nodes: currentNodes.filter(n => n.id !== previewNode.id),
             edges: useCanvasStore.getState().edges,
@@ -280,7 +303,9 @@ export function useNodePreview(
             newNodeId: previewNode.id,
             newNodeSize,
             newNodeType: "preview-input",
-            isExplicitSelection
+            isExplicitSelection,
+            viewport: viewportForLayout,
+            skipCollisionAvoidance: true,
           });
 
           if (!isNaN(newPos.x) && !isNaN(newPos.y)) {

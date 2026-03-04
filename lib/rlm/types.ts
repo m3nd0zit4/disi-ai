@@ -91,6 +91,12 @@ export interface PlannerResult {
 // Worker Result
 // =============================================================================
 
+export interface TokenUsageBreakdown {
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens?: number;
+}
+
 export interface WorkerResult {
   /** The answer to the focused question */
   answer: string;
@@ -100,6 +106,8 @@ export interface WorkerResult {
   sourceQuery: string;
   /** Tokens used for this call */
   tokensUsed: number;
+  /** Precise token breakdown when provider returns it (for accurate billing) */
+  tokenUsage?: TokenUsageBreakdown;
   /** Whether from cache */
   fromCache: boolean;
 }
@@ -133,6 +141,8 @@ export interface RLMOutput {
     summary: string;
     type: "model" | "proxy";
   };
+  /** Citations from web search (if available) */
+  citations?: Array<{ url: string; title: string }>;
   /** Execution metadata */
   metadata?: {
     mode: RLMMode;
@@ -140,6 +150,8 @@ export interface RLMOutput {
     subCalls: number;
     cacheHits: number;
     tokensUsed: number;
+    /** Precise token breakdown when available (for accurate billing) */
+    tokenUsage?: TokenUsageBreakdown;
   };
 }
 
@@ -159,6 +171,7 @@ export type RLMStreamPhase =
   | "planning"      // Planner is analyzing query (full mode)
   | "researching"   // Workers are answering sub-queries (full mode)
   | "synthesizing"  // Aggregator is combining results (full mode)
+  | "searching"     // Web search tool is executing
   | "streaming"     // Final response is being streamed
   | "complete"      // Execution finished
   | "error";        // Error occurred
@@ -179,6 +192,44 @@ export interface RLMProgress {
   totalWorkers?: number;
 }
 
+/** Search result from web search tools */
+export interface SearchResult {
+  /** Title of the search result */
+  title: string;
+  /** URL of the source */
+  url: string;
+  /** Short description or snippet */
+  snippet?: string;
+  /** Domain name (e.g., "reuters.com") */
+  domain: string;
+  /** Favicon URL */
+  favicon?: string;
+}
+
+/** Tool execution event for tracking tool lifecycle */
+export interface ToolEvent {
+  /** Name of the tool */
+  tool: string;
+  /** Current status of the tool */
+  status: "processing" | "completed" | "error";
+  /** Number of results (for search tools) */
+  resultsCount?: number;
+  /** Error message if status is "error" */
+  error?: string;
+  /** Input parameters passed to the tool (e.g., { query: "..." }) */
+  input?: Record<string, unknown>;
+  /** Output/results from the tool (for web search: SearchResult[]) */
+  output?: SearchResult[];
+  /** Unique identifier for this tool call */
+  callId?: string;
+  /** Step labels for Steps UI (e.g. ["Buscando...", "N fuentes encontradas"]). When set, UI shows Steps; otherwise Tool only. */
+  steps?: string[];
+  /** Generative UI: canonical block type for client to map to a React component */
+  uiType?: string;
+  /** Generative UI: props for the block (query, results, time, etc.) */
+  uiProps?: Record<string, unknown>;
+}
+
 /** Stream status for UI updates */
 export interface StreamStatus {
   /** Current phase of execution */
@@ -195,6 +246,8 @@ export interface StreamStatus {
   error?: string;
   /** Progress info for full RLM mode */
   progress?: RLMProgress;
+  /** Tool event (when a tool starts/completes/errors) */
+  toolEvent?: ToolEvent;
 }
 
 /** Options for streaming execution */
@@ -213,8 +266,8 @@ export interface StreamingOptions {
 
 export const DEFAULT_STREAMING_OPTIONS: StreamingOptions = {
   enabled: true,
-  batchSize: 50, // Send updates every 50 chars
-  updateInterval: 100, // Or every 100ms, whichever comes first
+  batchSize: 22, // ~20–60 chars per best practice for steady cadence
+  updateInterval: 50, // 30–60 ms for fluid UI updates
 };
 
 // =============================================================================
